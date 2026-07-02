@@ -1,3 +1,4 @@
+import { Suspense } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { Check, History, Settings, Upload } from 'lucide-react';
 import {
@@ -13,6 +14,7 @@ import {
   SidebarProvider,
   SidebarTrigger,
 } from '@/components/ui/sidebar';
+import { Skeleton } from '@/components/ui/skeleton';
 
 const navItems = [
   { key: 'upload', to: '/', label: '上传作业', icon: Upload },
@@ -26,13 +28,31 @@ function getActiveKey(pathname: string): string {
   return 'upload';
 }
 
+function PageSkeleton() {
+  return (
+    <div className="space-y-4">
+      <Skeleton className="h-8 w-48" />
+      <Skeleton className="h-4 w-full" />
+      <Skeleton className="h-4 w-3/4" />
+      <Skeleton className="h-64 w-full" />
+    </div>
+  );
+}
+
 export default function MainLayout() {
   const { pathname } = useLocation();
   const activeKey = getActiveKey(pathname);
 
   return (
-    <SidebarProvider className="h-svh">
-      <Sidebar className="border-r bg-sidebar">
+    <>
+      <a
+        href="#main-content"
+        className="sr-only fixed left-4 top-4 z-[100] rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-lg focus:not-sr-only focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+      >
+        跳转到主内容
+      </a>
+      <SidebarProvider className="h-svh">
+        <Sidebar className="border-r bg-sidebar">
         <SidebarHeader>
           <div className="flex items-center gap-2.5 px-3 py-4">
             <div className="flex size-9 items-center justify-center rounded-lg bg-muted text-primary">
@@ -64,10 +84,10 @@ export default function MainLayout() {
                       >
                         <Link to={item.to}>
                           <span
-                            className={`flex size-7 items-center justify-center rounded-md transition-colors ${
+                            className={`flex size-7 items-center justify-center rounded-md transition-all ${
                               isActive
                                 ? 'bg-primary/10 text-primary'
-                                : 'bg-muted text-muted-foreground group-hover:bg-accent group-hover:text-accent-foreground'
+                                : 'bg-muted text-muted-foreground group-hover:translate-x-0.5 group-hover:scale-105 group-hover:bg-accent group-hover:text-accent-foreground motion-reduce:group-hover:translate-x-0'
                             }`}
                           >
                             <Icon className="size-4" />
@@ -97,10 +117,17 @@ export default function MainLayout() {
             {navItems.find((i) => i.key === activeKey)?.label ?? 'AI 作业批改系统'}
           </span>
         </header>
-        <div className="flex-1 overflow-auto bg-background p-8">
-          <Outlet />
+        <div
+          id="main-content"
+          className="flex-1 overflow-auto bg-background p-8"
+          tabIndex={-1}
+        >
+          <Suspense fallback={<PageSkeleton />}>
+            <Outlet />
+          </Suspense>
         </div>
       </SidebarInset>
     </SidebarProvider>
+    </>
   );
 }

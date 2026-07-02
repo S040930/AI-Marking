@@ -5,7 +5,7 @@ MVP 内部工具,不做鉴权;敏感字段(API Key/Secret)返回真实值供前�
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
 from app.schemas.system_config import ConfigOut, ConfigUpdate
@@ -28,14 +28,14 @@ def _to_config_out(config: dict[str, str]) -> ConfigOut:
 
 
 @router.get("/config", response_model=ConfigOut)
-def get_config(db: Session = Depends(get_db)):
+async def get_config(db: AsyncSession = Depends(get_db)):
     """返回当前所有配置(缺失字段为空字符串)。"""
-    config = get_config_dict(db)
+    config = await get_config_dict(db)
     return _to_config_out(config)
 
 
 @router.put("/config", response_model=ConfigOut)
-def update_config(payload: ConfigUpdate, db: Session = Depends(get_db)):
+async def update_config(payload: ConfigUpdate, db: AsyncSession = Depends(get_db)):
     """批量更新配置(子集 upsert)。
 
     - 未提供的字段保持不变
@@ -48,10 +48,10 @@ def update_config(payload: ConfigUpdate, db: Session = Depends(get_db)):
 
     if not updates:
         # 无更新,直接返回当前配置
-        return _to_config_out(get_config_dict(db))
+        return _to_config_out(await get_config_dict(db))
 
     try:
-        new_config = upsert_config(db, updates)
+        new_config = await upsert_config(db, updates)
     except ConfigError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 

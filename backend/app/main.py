@@ -3,6 +3,7 @@
 使用应用工厂模式创建 FastAPI 实例,模块级 `app` 便于 uvicorn 直接加载。
 """
 
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -13,14 +14,40 @@ from app.api.config import router as config_router
 from app.api.health import router as health_router
 from app.api.submissions import router as submissions_router
 from app.core.config import settings
+from app.db.session import engine as _engine
+from app.services.agent import close_llm_clients
+from app.services.cleanup import periodic_cleanup_loop
+from app.services.ocr import close_client as close_ocr_client
+
+# 后台清理 task 引用保持。lifespan 启动时持有强引用,避免被 GC 回收。
+_cleanup_task: asyncio.Task[None] | None = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """应用生命周期占位:startup / shutdown 钩子后续扩展。"""
-    # startup
-    yield
-    # shutdown
+    """应用生命周期。
+
+    Startup: 启动 uploads/ 定期清理后台任务。
+    Shutdown: 取消清理任务,关闭 OCR/LLM 共享客户端,释放 DB 连接池资源。
+    """
+    global _cleanup_task
+    _cleanup_task = asyncio.create_task(
+        periodic_cleanup_loop(), name="uploads_cleanup"
+    )
+    try:
+        yield
+    finally:
+        # shutdown:先取消清理任务,再关闭共享客户端与 DB 连接池
+        if _cleanup_task is not None and not _cleanup_task.done():
+            _cleanup_task.cancel()
+            try:
+                await _cleanup_task
+            except asyncio.CancelledError:
+                pass
+        _cleanup_task = None
+        await close_ocr_client()
+        await close_llm_clients()
+        await _engine.dispose()
 
 
 def create_app() -> FastAPI:

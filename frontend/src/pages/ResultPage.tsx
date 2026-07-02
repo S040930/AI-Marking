@@ -1,9 +1,19 @@
-import { Loader2, AlertCircle, FileText, ChevronLeft, CheckCircle2 } from 'lucide-react';
-import { useNavigate, useParams } from 'react-router-dom';
+import {
+  Loader2,
+  AlertCircle,
+  FileText,
+  ChevronLeft,
+  CheckCircle2,
+  Bot,
+  ShieldCheck,
+} from 'lucide-react';
+import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import dayjs from 'dayjs';
 import {
   useSubmission,
+  useSubmissionStatus,
   isProcessing,
+  isTerminal,
   type DetailItem,
 } from '@/api/submissions';
 import {
@@ -21,17 +31,7 @@ import {
 } from '@/components/ui/accordion';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-
-function Empty({ text }: { text: string }) {
-  return (
-    <div className="flex flex-col items-center gap-2 py-10 text-muted-foreground">
-      <div className="flex size-10 items-center justify-center rounded-full bg-muted">
-        <FileText className="size-5" />
-      </div>
-      <span className="text-sm">{text}</span>
-    </div>
-  );
-}
+import { Empty } from '@/components/Empty';
 
 export default function ResultPage() {
   const { id } = useParams<{ id: string }>();
@@ -42,7 +42,14 @@ export default function ResultPage() {
       ? rawNumericId
       : undefined;
 
-  const { data, isLoading } = useSubmission(numericId);
+  // P2-L3:轻量 status 先拉,处理中只靠 status 轮询;终态后再 enable 完整详情。
+  // 避免处理中阶段拉取 ocr_text/ai_result 等大字段(此时均为 null,属浪费)。
+  const { data: statusData } = useSubmissionStatus(numericId);
+  const detailEnabled = statusData ? isTerminal(statusData.status) : false;
+  const { data, isLoading: isDetailLoading } = useSubmission(
+    numericId,
+    detailEnabled,
+  );
 
   if (numericId === undefined) {
     return (
@@ -62,7 +69,8 @@ export default function ResultPage() {
     );
   }
 
-  if (isLoading) {
+  // status 首次拉取中
+  if (!statusData) {
     return (
       <div className="flex flex-col items-center justify-center gap-3 py-32">
         <Loader2 className="size-8 animate-spin text-primary" />
@@ -71,40 +79,24 @@ export default function ResultPage() {
     );
   }
 
-  if (!data) {
+  // 处理中:重定向到协同评分页
+  if (isProcessing(statusData.status)) {
+    return <Navigate to={`/review/${numericId}`} replace />;
+  }
+
+  // 终态:详情拉取中
+  if (isDetailLoading || !data) {
     return (
-      <div className="mx-auto max-w-2xl">
-        <Card className="elevated-card border-0">
-          <CardContent>
-            <Empty text="未找到记录" />
-          </CardContent>
-        </Card>
+      <div className="flex flex-col items-center justify-center gap-3 py-32">
+        <Loader2 className="size-8 animate-spin text-primary" />
+        <p className="text-sm text-muted-foreground">加载结果中...</p>
       </div>
     );
   }
 
-  if (isProcessing(data.status)) {
-    return (
-      <div className="mx-auto flex max-w-xl flex-col items-center gap-4 py-28 text-center">
-        <div className="relative flex size-16 items-center justify-center rounded-2xl bg-primary/10">
-          <Loader2 className="size-8 animate-spin text-primary" />
-          <span className="absolute inline-flex size-full animate-ping rounded-2xl bg-primary/20" />
-        </div>
-        <div>
-          <h2 className="text-lg font-semibold text-foreground">正在批改中</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            当前状态：{data.status}
-          </p>
-          <p className="text-xs text-muted-foreground">
-            上传于 {dayjs(data.uploaded_at).format('YYYY-MM-DD HH:mm:ss')}
-          </p>
-        </div>
-        <Button variant="outline" size="sm" onClick={() => navigate('/history')}>
-          <ChevronLeft className="size-4" />
-          返回历史记录
-        </Button>
-      </div>
-    );
+  // 非已审阅/失败状态(如 ready_for_review):重定向到协同评分页
+  if (data.status !== 'reviewed' && data.status !== 'failed') {
+    return <Navigate to={`/review/${numericId}`} replace />;
   }
 
   if (data.status === 'failed') {
@@ -142,7 +134,7 @@ export default function ResultPage() {
           className="gap-1.5 border-success/20 bg-success/10 text-success"
         >
           <CheckCircle2 className="size-3.5" />
-          已完成
+          已审阅
         </Badge>
       </div>
 
@@ -165,6 +157,11 @@ export default function ResultPage() {
                 </>
               )}
             </p>
+            {data.question_original_filename && (
+              <p className="mt-1 text-sm text-muted-foreground">
+                作业题目：{data.question_original_filename}
+              </p>
+            )}
           </div>
           <div className="relative shrink-0 rounded-2xl border border-primary/10 bg-primary/[0.04] px-6 py-4 text-center">
             <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
@@ -172,10 +169,61 @@ export default function ResultPage() {
             </p>
             <p className="text-4xl font-extrabold tracking-tight text-primary">
               {data.score ?? 0}
+              {data.max_score ? (
+                <span className="text-base font-medium text-muted-foreground">
+                  /{data.max_score}
+                </span>
+              ) : null}
             </p>
           </div>
         </CardContent>
       </Card>
+
+      {data.agent_trace && data.agent_trace.length > 0 && (
+        <Card className="elevated-card overflow-hidden">
+          <CardHeader className="pb-4">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Bot className="size-5 text-primary" />
+              Agent 执行摘要
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {data.confidence !== null && (
+              <div className="rounded-lg border bg-muted/40 px-3 py-2 text-sm">
+                自动复核置信度：
+                <strong className="ml-1">{Math.round(data.confidence * 100)}%</strong>
+              </div>
+            )}
+            {data.agent_trace.map((event, index) => (
+              <div key={`${event.node}-${index}`} className="flex gap-3 rounded-xl border p-3">
+                <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+                  {index + 1}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold">
+                    {event.node} · 第 {event.attempt} 次
+                  </p>
+                  <p className="mt-1 text-sm text-muted-foreground">{event.summary}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    耗时 {event.duration_ms} ms
+                  </p>
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {data.reviewed_by && (
+        <Alert>
+          <ShieldCheck />
+          <AlertTitle>已审阅</AlertTitle>
+          <AlertDescription>
+            审核教师：{data.reviewed_by}
+            {data.completed_at && ` · 完成于 ${dayjs(data.completed_at).format('YYYY-MM-DD HH:mm:ss')}`}
+          </AlertDescription>
+        </Alert>
+      )}
 
       <Card className="elevated-card overflow-hidden">
         <CardHeader className="pb-4">
@@ -210,11 +258,17 @@ export default function ResultPage() {
                     <p className="font-semibold text-foreground">{item.criterion}</p>
                     <span className="shrink-0 rounded-lg bg-primary/10 px-2.5 py-0.5 text-sm font-bold text-primary">
                       {item.score}
+                      {item.max_score !== undefined ? `/${item.max_score}` : ''}
                     </span>
                   </div>
                   <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">
                     {item.comment}
                   </p>
+                  {item.evidence && item.evidence.length > 0 && (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      证据：{item.evidence.join('；')}
+                    </p>
+                  )}
                 </div>
               ))}
             </div>
@@ -223,6 +277,33 @@ export default function ResultPage() {
           )}
         </CardContent>
       </Card>
+
+      {data.question_ocr_text && (
+        <Card className="elevated-card overflow-hidden">
+          <CardHeader className="pb-4">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <FileText className="size-5 text-primary/60" />
+              作业题目
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Accordion type="single" collapsible>
+              <AccordionItem value="question" className="border-b-0">
+                <AccordionTrigger className="rounded-lg border border-border bg-muted/50 px-3 py-2 text-sm font-medium hover:bg-muted hover:no-underline">
+                  展开/折叠作业题目原文
+                </AccordionTrigger>
+                <AccordionContent>
+                  <div className="mt-2 max-h-96 overflow-auto rounded-xl border border-border bg-muted/50 p-4">
+                    <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
+                      {data.question_ocr_text}
+                    </p>
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
+          </CardContent>
+        </Card>
+      )}
 
       <Card className="elevated-card overflow-hidden">
         <CardHeader className="pb-4">
@@ -249,6 +330,13 @@ export default function ResultPage() {
           </Accordion>
         </CardContent>
       </Card>
+
+      <div className="flex justify-center pt-4">
+        <Button variant="outline" onClick={() => navigate('/history')}>
+          <ChevronLeft className="size-4" />
+          返回历史
+        </Button>
+      </div>
     </div>
   );
 }

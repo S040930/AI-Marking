@@ -41,15 +41,18 @@ import {
   AlertTitle,
 } from '@/components/ui/alert';
 
-const DEFAULT_RUBRIC_PLACEHOLDER = `评分维度(rubric):
-1. 内容理解(Content Understanding, 30分)
-2. 论证分析(Analysis & Argument, 30分)
-3. 结构组织(Structure & Organization, 20分)
-4. 语言表达(Language & Expression, 10分)
-5. 规范性(Formatting & Citation, 10分)
-总分:100分
+const DEFAULT_RUBRIC_PLACEHOLDER = `留空则按以下优先级使用:
+1. 题目 PDF 中识别出的评分标准
+2. 内置默认 rubric(5 维度 100 分)
 
-留空使用上述默认 rubric。`;
+内置默认 rubric 仅供参考:
+评分维度:
+1. 内容理解(30分)
+2. 论证分析(30分)
+3. 结构组织(20分)
+4. 语言表达(10分)
+5. 规范性(10分)
+总分:100分`;
 
 const configSchema = z.object({
   llm_api_key: z.string().optional(),
@@ -153,10 +156,10 @@ export default function SettingsPage() {
           onSubmit={form.handleSubmit(onSubmit)}
           className="flex flex-col gap-5"
         >
-          <Card className="elevated-card overflow-hidden">
+          <Card className="elevated-card stagger-1 animate-fade-in-up motion-reduce:animate-none overflow-hidden">
             <CardHeader className="pb-4">
               <div className="flex items-center gap-3">
-                <div className="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                <div className="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary/10 to-primary/5 text-primary ring-1 ring-primary/10">
                   <Bot className="size-5" />
                 </div>
                 <div>
@@ -223,10 +226,10 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
 
-          <Card className="elevated-card overflow-hidden">
+          <Card className="elevated-card stagger-2 animate-fade-in-up motion-reduce:animate-none overflow-hidden">
             <CardHeader className="pb-4">
               <div className="flex items-center gap-3">
-                <div className="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                <div className="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary/10 to-primary/5 text-primary ring-1 ring-primary/10">
                   <ScanEye className="size-5" />
                 </div>
                 <div>
@@ -281,11 +284,11 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
 
-          <Card className="elevated-card overflow-hidden">
+          <Card className="elevated-card stagger-3 animate-fade-in-up motion-reduce:animate-none overflow-hidden">
             <CardHeader className="pb-4">
               <div className="flex items-start justify-between gap-4">
                 <div className="flex items-center gap-3">
-                  <div className="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                  <div className="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary/10 to-primary/5 text-primary ring-1 ring-primary/10">
                     <ClipboardCheck className="size-5" />
                   </div>
                   <div>
@@ -330,10 +333,10 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
 
-          <Card className="elevated-card overflow-hidden">
+          <Card className="elevated-card stagger-4 animate-fade-in-up motion-reduce:animate-none overflow-hidden">
             <CardHeader className="pb-4">
               <div className="flex items-center gap-3">
-                <div className="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                <div className="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary/10 to-primary/5 text-primary ring-1 ring-primary/10">
                   <MessageSquareText className="size-5" />
                 </div>
                 <div>

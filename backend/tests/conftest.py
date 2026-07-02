@@ -1,55 +1,74 @@
-"""测试公共 fixtures。"""
+"""测试公共 fixtures(async 版本)。
+
+使用 ``aiosqlite`` 异步 SQLite 内存库 + ``httpx.AsyncClient`` + ``ASGITransport``,
+与生产 ``asyncpg`` + ``AsyncSession`` 异步栈一致。
+"""
 
 import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
+import pytest_asyncio
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import create_app
 from app.services.config import invalidate_config_cache
+from app.services.ocr import reset_circuit_breaker
 
 
 @pytest.fixture(autouse=True)
 def _clear_config_cache():
-    """每个测试前后清除配置缓存,避免测试间互相污染。"""
+    """每个测试前后清除配置缓存与 OCR 熔断状态,避免测试间互相污染。"""
     invalidate_config_cache()
+    reset_circuit_breaker()
     yield
     invalidate_config_cache()
+    reset_circuit_breaker()
 
 
-@pytest.fixture
-def db_session():
-    """SQLite 内存测试数据库,每个测试独立。"""
-    engine = create_engine(
-        "sqlite://",
+@pytest_asyncio.fixture
+async def db_session():
+    """SQLite 内存测试数据库(异步),每个测试独立。"""
+    engine = create_async_engine(
+        "sqlite+aiosqlite://",
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    Base.metadata.create_all(engine)
-    test_session_local = sessionmaker(bind=engine, autocommit=False, autoflush=False)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    test_session_local = async_sessionmaker(
+        bind=engine, class_=AsyncSession, autocommit=False, autoflush=False, expire_on_commit=False
+    )
     session = test_session_local()
     try:
         yield session
     finally:
-        session.close()
-        Base.metadata.drop_all(engine)
+        await session.close()
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
+        await engine.dispose()
 
 
-@pytest.fixture
-def client(db_session: Session):
-    """FastAPI TestClient,数据库依赖注入覆盖为测试 SQLite。"""
+@pytest_asyncio.fixture
+async def client(db_session: AsyncSession, monkeypatch):
+    """FastAPI AsyncClient,数据库依赖注入覆盖为测试 SQLite。"""
+    # 测试环境禁用 uploads 清理后台任务,避免扫描真实文件系统
+    async def _noop_cleanup() -> None:
+        return
+
+    monkeypatch.setattr("app.main.periodic_cleanup_loop", _noop_cleanup)
+
     app = create_app()
 
-    def _override_get_db():
+    async def _override_get_db():
         try:
             yield db_session
         finally:
             pass
 
     app.dependency_overrides[get_db] = _override_get_db
-    with TestClient(app) as c:
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
     app.dependency_overrides.clear()

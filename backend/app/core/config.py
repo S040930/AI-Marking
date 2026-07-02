@@ -12,12 +12,18 @@ class Settings(BaseSettings):
     """应用配置类(仅保留应用级配置)。"""
 
     DATABASE_URL: str = (
-        "postgresql+psycopg2://postgres:postgres@localhost:5432/ai_marking"
+        "postgresql+asyncpg://postgres:postgres@localhost:5432/ai_marking"
     )
     CORS_ORIGINS: list[str] = ["http://localhost:5173"]
 
     # 文件上传目录
     UPLOAD_DIR: str = "./uploads"
+
+    # uploads/ 清理策略:批改完成后 PDF 文本已入库,文件仅在复评场景需要
+    # (当前无复评功能)。retention 天数后自动删除,保留 DB 记录。
+    UPLOAD_RETENTION_DAYS: int = 7
+    # 清理任务扫描间隔(秒)。默认 1 小时。
+    CLEANUP_INTERVAL_SECONDS: int = 3600
 
     model_config = SettingsConfigDict(
         env_file=".env",

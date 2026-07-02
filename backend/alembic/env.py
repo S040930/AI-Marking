@@ -1,10 +1,16 @@
-"""Alembic 迁移环境配置。"""
+"""Alembic 迁移环境配置。
 
+online 迁移使用 ``async_engine_from_config`` + ``connection.run_sync``
+模式,与生产 ``asyncpg`` 驱动一致;offline 模式仅生成 SQL,保留同步。
+"""
+
+import asyncio
 import sys
 from logging.config import fileConfig
 from pathlib import Path
 
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import pool
+from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
 
@@ -43,22 +49,34 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
-def run_migrations_online() -> None:
-    """以 online 模式运行迁移(连接数据库执行)。"""
-    connectable = engine_from_config(
+def do_run_migrations(connection) -> None:
+    """在同步上下文中执行迁移(由 ``connection.run_sync`` 调度)。"""
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+    )
+
+    with context.begin_transaction():
+        context.run_migrations()
+
+
+async def run_migrations_online_async() -> None:
+    """以 online 模式运行迁移(连接数据库执行,异步驱动)。"""
+    connectable = async_engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
 
-    with connectable.connect() as connection:
-        context.configure(
-            connection=connection,
-            target_metadata=target_metadata,
-        )
+    async with connectable.connect() as connection:
+        await connection.run_sync(do_run_migrations)
 
-        with context.begin_transaction():
-            context.run_migrations()
+    await connectable.dispose()
+
+
+def run_migrations_online() -> None:
+    """online 迁移入口:把异步实现挂到事件循环执行。"""
+    asyncio.run(run_migrations_online_async())
 
 
 if context.is_offline_mode():

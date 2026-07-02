@@ -4,6 +4,7 @@ import dayjs from 'dayjs';
 import { ChevronLeft, ChevronRight, FileText, History } from 'lucide-react';
 import {
   useSubmissions,
+  useSubmissionsCount,
   isProcessing,
   type SubmissionOut,
   type SubmissionStatus,
@@ -36,15 +37,18 @@ export const STATUS_TEXT: Record<SubmissionStatus, string> = {
   pending: '待处理',
   ocr_processing: 'OCR识别中',
   ocr_done: 'OCR完成',
-  llm_processing: 'AI批改中',
-  done: '已完成',
+  agent_grading: 'Agent评分中',
+  agent_reviewing: 'Agent复核中',
+  agent_revising: 'Agent修正中',
+  ready_for_review: '待审阅',
+  reviewed: '已审阅',
   failed: '失败',
 };
 
 const PAGE_SIZE = 10;
 
 export function StatusBadge({ status }: { status: SubmissionStatus }) {
-  if (status === 'done') {
+  if (status === 'reviewed') {
     return (
       <Badge className="border border-success/20 bg-success/10 text-success hover:bg-success/15">
         {STATUS_TEXT[status]}
@@ -54,6 +58,13 @@ export function StatusBadge({ status }: { status: SubmissionStatus }) {
   if (status === 'failed') {
     return <Badge variant="destructive">{STATUS_TEXT[status]}</Badge>;
   }
+  if (status === 'ready_for_review') {
+    return (
+      <Badge className="border border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100">
+        {STATUS_TEXT[status]}
+      </Badge>
+    );
+  }
   if (isProcessing(status)) {
     return (
       <Badge
@@ -61,7 +72,7 @@ export function StatusBadge({ status }: { status: SubmissionStatus }) {
         className="gap-1.5 pr-2.5 text-primary"
       >
         <span className="relative flex size-1.5">
-          <span className="absolute inline-flex size-full animate-ping rounded-full bg-primary opacity-75" />
+          <span className="absolute inline-flex size-full animate-ping motion-reduce:animate-none rounded-full bg-primary opacity-75" />
           <span className="relative inline-flex size-1.5 rounded-full bg-primary" />
         </span>
         {STATUS_TEXT[status]}
@@ -78,9 +89,11 @@ export default function HistoryPage() {
     page,
     pageSize: PAGE_SIZE,
   });
+  // 总数独立拉取,不随列表 3s 轮询(避免每次轮询都算 COUNT)。
+  const { data: countData } = useSubmissionsCount();
 
   const rows = data?.items ?? [];
-  const total = data?.total ?? 0;
+  const total = countData?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
 
@@ -96,8 +109,8 @@ export default function HistoryPage() {
           </p>
         </div>
         {!isLoading && (
-          <span className="text-sm text-muted-foreground">
-            共 <span className="font-semibold text-foreground">{total}</span> 条记录
+          <span className="text-xs font-medium text-muted-foreground">
+            共 {total} 条记录
           </span>
         )}
       </div>
@@ -130,7 +143,7 @@ export default function HistoryPage() {
                 ) : rows.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={5} className="h-40 text-center">
-                      <div className="relative flex flex-col items-center gap-3 text-muted-foreground">
+                      <div className="animate-fade-in-up motion-reduce:animate-none relative flex flex-col items-center gap-3 text-muted-foreground">
                         <div className="flex size-12 items-center justify-center rounded-full bg-muted">
                           <History className="size-6" />
                         </div>
@@ -145,11 +158,17 @@ export default function HistoryPage() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  rows.map((item: SubmissionOut) => (
+                  rows.map((item: SubmissionOut) => {
+                    // 已审阅跳结果页,未审阅/失败跳协同评分页(允许手动评分)
+                    const targetPath =
+                      item.status === 'reviewed'
+                        ? `/result/${item.id}`
+                        : `/review/${item.id}`;
+                    return (
                     <TableRow
                       key={item.id}
                       className="group cursor-pointer transition-colors hover:bg-muted/40"
-                      onClick={() => navigate(`/result/${item.id}`)}
+                      onClick={() => navigate(targetPath)}
                     >
                       <TableCell className="max-w-0">
                         <TooltipProvider delayDuration={300}>
@@ -192,14 +211,15 @@ export default function HistoryPage() {
                           className="h-auto p-0 font-semibold text-primary hover:text-primary/80 hover:underline"
                           onClick={(e) => {
                             e.stopPropagation();
-                            navigate(`/result/${item.id}`);
+                            navigate(targetPath);
                           }}
                         >
                           查看
                         </Button>
                       </TableCell>
                     </TableRow>
-                  ))
+                    );
+                  })
                 )}
               </TableBody>
             </Table>

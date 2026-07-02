@@ -1,12 +1,12 @@
 """Submission ORM 模型与状态枚举。
 
-单表存储完整批改流程数据:上传 PDF → OCR → LLM 批改 → 结果。
+单表存储完整批改流程数据:上传 PDF → OCR → Agent 评分与复核 → 结果。
 """
 
 import enum
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, DateTime, Enum, Float, String, Text, func
+from sqlalchemy import JSON, DateTime, Enum, Float, Index, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -16,24 +16,38 @@ class SubmissionStatus(str, enum.Enum):
     """作业批改流程状态。
 
     继承 ``str`` 便于 Pydantic 序列化与 JSON 输出。
+
+    流程:pending → ocr_processing → agent_grading → agent_reviewing
+    → (agent_revising) → ready_for_review → reviewed
+    任何阶段失败:status=failed。
     """
 
     pending = "pending"
     ocr_processing = "ocr_processing"
     ocr_done = "ocr_done"
-    llm_processing = "llm_processing"
-    done = "done"
+    agent_grading = "agent_grading"
+    agent_reviewing = "agent_reviewing"
+    agent_revising = "agent_revising"
+    ready_for_review = "ready_for_review"
+    reviewed = "reviewed"
     failed = "failed"
 
 
 class Submission(Base):
-    """作业提交记录(单表存储完整批改流程数据)。"""
+    """作业提交记录及 Agent 审计、人工审核数据。"""
 
     __tablename__ = "submissions"
+    __table_args__ = (
+        Index("ix_submissions_uploaded_at", "uploaded_at"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
     file_path: Mapped[str] = mapped_column(String(512), nullable=False)
+    question_original_filename: Mapped[str | None] = mapped_column(
+        String(255), nullable=True
+    )
+    question_file_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
     status: Mapped[SubmissionStatus] = mapped_column(
         Enum(SubmissionStatus, name="submission_status"),
         default=SubmissionStatus.pending,
@@ -41,9 +55,21 @@ class Submission(Base):
         nullable=False,
     )
     ocr_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    question_ocr_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    max_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
     feedback: Mapped[str | None] = mapped_column(Text, nullable=True)
     details: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    ai_result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    agent_trace: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # Agent 完成时写入的完整建议分快照(含 score/max_score/feedback/details/confidence)
+    # 与 ai_result 区别:ai_result 是 Agent 内部 draft,ai_suggestion 是面向教师展示的完整建议
+    ai_suggestion: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    review_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reviewed_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    review_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     error_message: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     uploaded_at: Mapped[datetime] = mapped_column(
         DateTime,

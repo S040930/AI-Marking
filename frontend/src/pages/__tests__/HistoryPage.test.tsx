@@ -4,9 +4,9 @@ import { StatusBadge, STATUS_TEXT } from '@/pages/HistoryPage';
 import type { SubmissionStatus } from '@/api/submissions';
 
 describe('StatusBadge', () => {
-  it('done 状态显示"已完成"', () => {
-    render(<StatusBadge status="done" />);
-    expect(screen.getByText(STATUS_TEXT.done)).toBeInTheDocument();
+  it('reviewed 状态显示"已审阅"', () => {
+    render(<StatusBadge status="reviewed" />);
+    expect(screen.getByText(STATUS_TEXT.reviewed)).toBeInTheDocument();
   });
 
   it('failed 状态显示"失败"', () => {
@@ -18,7 +18,9 @@ describe('StatusBadge', () => {
     'pending',
     'ocr_processing',
     'ocr_done',
-    'llm_processing',
+    'agent_grading',
+    'agent_reviewing',
+    'agent_revising',
   ];
 
   processingStatuses.forEach((status) => {
@@ -28,8 +30,8 @@ describe('StatusBadge', () => {
     });
   });
 
-  it('done 状态徽章包含 success 相关样式', () => {
-    const { container } = render(<StatusBadge status="done" />);
+  it('reviewed 状态徽章包含 success 相关样式', () => {
+    const { container } = render(<StatusBadge status="reviewed" />);
     const badge = container.firstChild as HTMLElement;
     expect(badge.className).toContain('text-success');
   });
@@ -38,6 +40,12 @@ describe('StatusBadge', () => {
     const { container } = render(<StatusBadge status="failed" />);
     const badge = container.firstChild as HTMLElement;
     expect(badge.className).toContain('bg-destructive');
+  });
+
+  it('ready_for_review 状态徽章包含 amber 样式', () => {
+    const { container } = render(<StatusBadge status="ready_for_review" />);
+    const badge = container.firstChild as HTMLElement;
+    expect(badge.className).toContain('text-amber');
   });
 
   it('processing 状态徽章包含 animate-ping 脉冲动画', () => {
@@ -51,8 +59,11 @@ describe('STATUS_TEXT 完整性', () => {
     'pending',
     'ocr_processing',
     'ocr_done',
-    'llm_processing',
-    'done',
+    'agent_grading',
+    'agent_reviewing',
+    'agent_revising',
+    'ready_for_review',
+    'reviewed',
     'failed',
   ];
 

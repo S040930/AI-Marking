@@ -138,6 +138,11 @@
   body {
     @apply bg-background text-foreground antialiased;
   }
+  input,
+  textarea,
+  select {
+    letter-spacing: normal;
+  }
 }
 
 html,
@@ -174,17 +179,107 @@ h2 {
   font-weight: 600;
 }
 
-/* 极简卡片：极轻阴影 + 极淡边框 */
+/* 极简卡片：极轻阴影 + 悬停抬升，背景与边框由 shadcn Card 提供 */
 .elevated-card {
-  background: var(--card);
-  border: 1px solid var(--border);
   box-shadow: 0 1px 2px 0 oklch(0.2 0.015 270 / 0.03);
   transition:
     box-shadow 200ms ease,
-    border-color 200ms ease;
+    border-color 200ms ease,
+    transform 200ms ease;
 }
 
 .elevated-card:hover {
-  box-shadow: 0 2px 8px 0 oklch(0.2 0.015 270 / 0.05);
-  border-color: oklch(0.88 0.01 260);
+  box-shadow: 0 4px 12px 0 oklch(0.2 0.015 270 / 0.06);
+  transform: translateY(-1px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .elevated-card:hover {
+    transform: none;
+  }
+}
+
+/* 进入动画 */
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 400ms ease-out forwards;
+}
+
+/* 级联进入延迟 */
+.stagger-1 { animation-delay: 0ms; }
+.stagger-2 { animation-delay: 60ms; }
+.stagger-3 { animation-delay: 120ms; }
+.stagger-4 { animation-delay: 180ms; }
+
+/* 按钮按压反馈 */
+.btn-press {
+  transition: transform 100ms ease;
+}
+
+.btn-press:active {
+  transform: scale(0.98);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn-press:active {
+    transform: none;
+  }
+}
+
+/* 骨架屏 shimmer */
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.animate-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+
+.animate-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    oklch(1 0 0 / 0.25),
+    transparent
+  );
+  animation: shimmer 1.5s infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-shimmer::after {
+    animation: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-spin {
+    animation-duration: 1.8s;
+    animation-timing-function: steps(8);
+  }
+
+  .animate-fade-in-up {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
 }
