@@ -24,3 +24,8 @@ Thumbs.db
 # Logs
 *.log
 logs/
+
+# AI workspace artifacts
+.trae/
+.codebuddy/
+SURF-2026-0031-AI-Agent-Marking.md
