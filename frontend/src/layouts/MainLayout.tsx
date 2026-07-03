@@ -1,6 +1,6 @@
 import { Suspense } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
-import { Check, History, Settings, Upload } from 'lucide-react';
+import { BookOpen, Check, History, Settings, Upload } from 'lucide-react';
 import {
   Sidebar,
   SidebarContent,
@@ -18,11 +18,13 @@ import { Skeleton } from '@/components/ui/skeleton';
 
 const navItems = [
   { key: 'upload', to: '/', label: '上传作业', icon: Upload },
+  { key: 'questions', to: '/questions', label: '题目库', icon: BookOpen },
   { key: 'history', to: '/history', label: '历史记录', icon: History },
   { key: 'settings', to: '/settings', label: '系统设置', icon: Settings },
 ] as const;
 
 function getActiveKey(pathname: string): string {
+  if (pathname.startsWith('/questions')) return 'questions';
   if (pathname.startsWith('/history')) return 'history';
   if (pathname.startsWith('/settings')) return 'settings';
   return 'upload';

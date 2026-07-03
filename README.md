@@ -2,6 +2,15 @@
 
 基于 AI Agent 的作业批改辅助系统,集成 PaddleOCR-VL 文档解析与大语言模型(LLM)实现自动化作业批改与反馈生成。
 
+## 主要功能
+
+- **独立题目库**：题目 PDF 只需上传并 OCR 一次，后续可直接复用于多份学生作业。
+- **智能批改**：结合题目、学生作业与自定义 rubric 生成结构化评分建议。
+- **AI 独立复核**：Critic 检查评分一致性，并给出置信度与风险提示。
+- **教师协同审核**：教师可查看原文证据、调整单项分数、与 AI 对话并确认最终评分。
+- **历史记录管理**：按处理状态查看、选择和安全删除批改记录。
+- **题目安全管理**：支持搜索、预览、重命名、OCR 重试、上传新版及级联删除。
+
 ## 技术栈
 
 | 类别 | 技术 |
@@ -63,7 +72,7 @@ cp backend/.env.example backend/.env
 无密码的本地 Postgres.app 示例：
 
 ```env
-DATABASE_URL=postgresql+psycopg2://mac@localhost:5555/ai_marking
+DATABASE_URL=postgresql+asyncpg://mac@localhost:5555/ai_marking
 CORS_ORIGINS=["http://localhost:5173"]
 UPLOAD_DIR=./uploads
 ```
@@ -71,7 +80,7 @@ UPLOAD_DIR=./uploads
 使用默认端口、用户名和密码的示例：
 
 ```env
-DATABASE_URL=postgresql+psycopg2://postgres:postgres@localhost:5432/ai_marking
+DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/ai_marking
 ```
 
 如密码含 `@`、`:`、`/` 等特殊字符，需要先进行 URL 编码。
@@ -137,6 +146,26 @@ npm run dev
 | `CORS_ORIGINS` | 允许的前端跨域来源 | `["http://localhost:5173"]` |
 | `UPLOAD_DIR` | PDF 上传存储目录 | `./uploads` |
 
+## 使用流程
+
+### 首次批改某个题目
+
+1. 进入“题目库”上传题目 PDF。
+2. 等待题目 OCR 状态变为“可使用”。
+3. 进入“上传作业”，选择该题目并上传一份学生作业 PDF。
+4. 批改完成后，在 Review Page 查看 AI 评分详情并确认最终评分。
+
+### 继续批改同一题目
+
+直接从题目库选择已有题目，只上传新的学生作业，无需重复上传或识别题目。
+
+### 批改其他题目
+
+在题目库上传新的题目 PDF；OCR 完成后即可选择新题目进行批改。
+
+> 上传新版或删除题目会清理该题目关联的终态批改记录。若仍有批改任务正在
+> 处理，系统会拒绝操作。危险操作需要输入完整题目名称进行二次确认。
+
 ## 常见启动问题
 
 - **数据库迁移失败**：检查 `DATABASE_URL` 中的主机、端口、用户名、密码和
@@ -147,6 +176,31 @@ npm run dev
   的进程；已有 PostgreSQL 正常运行时可直接使用该实例。
 - **database "ai_marking" does not exist**：先执行 `createdb` 命令创建项目
   数据库。
+- **`DuplicateObjectError: question_status already exists`**：更新到最新代码后
+  重新运行 `alembic upgrade head`。迁移使用事务执行，失败时不会留下半迁移
+  数据。
+
+## 数据库迁移与数据清理
+
+每次拉取包含数据库结构变更的新代码后执行：
+
+```bash
+cd backend
+.venv/bin/alembic upgrade head
+.venv/bin/alembic current
+```
+
+当前最新迁移包含独立题目库。旧迁移文件必须保留，用于新环境建库、升级和
+回滚。
+
+如需清空题目、作业和对话数据，同时保留系统配置、表结构及迁移版本：
+
+```sql
+TRUNCATE TABLE conversations, submissions, questions
+RESTART IDENTITY CASCADE;
+```
+
+该操作不可恢复，且不会删除 `backend/uploads` 中残留的 PDF 文件。
 
 ## API 配置说明
 
@@ -160,13 +214,16 @@ LLM 与 OCR 的 API Key、Endpoint、评分标准等**业务配置**通过前端
 
 ## Agent 批改流程
 
-后端使用受约束的 LangGraph 状态图执行批改:
+题目入库时先独立完成一次 OCR。后续每份学生作业使用缓存的题目文本，避免
+重复调用题目 OCR。作业批改使用受约束的 LangGraph 状态图：
 
 ```text
-OCR → 评分 Agent → 结构与分数校验 → Critic 复核
-                                      ├─ 通过 → 完成
-                                      ├─ 修正 → 重新评分(最多一次)
-                                      └─ 不确定 → 人工审核
+题目库 OCR（仅首次）
+        ↓
+学生作业 OCR → 评分 Agent → 结构与分数校验 → Critic 复核
+                                               ├─ 通过 → 教师审核
+                                               ├─ 修正 → 重新评分（最多一次）
+                                               └─ 不确定 → 教师审核
 ```
 
 结果页展示不含隐藏推理的执行摘要、复核置信度与风险原因。进入人工审核的
@@ -194,13 +251,10 @@ OCR → 评分 Agent → 结构与分数校验 → Critic 复核
 cd backend
 
 # 代码检查
-ruff check app/ tests/ alembic/
-
-# 代码格式化
-black app/ tests/ alembic/
+ruff check app tests
 
 # 运行测试
-pytest -v
+pytest -q
 ```
 
 ### 前端
@@ -218,5 +272,5 @@ npm run format
 npm run build
 
 # 运行测试
-npm run test:run
+npm test -- --run
 ```

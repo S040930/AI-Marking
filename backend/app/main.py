@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.config import router as config_router
 from app.api.health import router as health_router
+from app.api.questions import router as questions_router
 from app.api.submissions import router as submissions_router
 from app.core.config import settings
 from app.db.session import engine as _engine
@@ -69,6 +70,7 @@ def create_app() -> FastAPI:
 
     app.include_router(health_router, prefix="/api", tags=["health"])
     app.include_router(submissions_router, prefix="/api", tags=["submissions"])
+    app.include_router(questions_router, prefix="/api", tags=["questions"])
     app.include_router(config_router, prefix="/api", tags=["config"])
 
     return app

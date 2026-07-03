@@ -12,6 +12,7 @@ import {
   ScanEye,
   ClipboardCheck,
   MessageSquareText,
+  User,
 } from 'lucide-react';
 import { useConfig, useUpdateConfig } from '@/api/config';
 import {
@@ -62,6 +63,7 @@ const configSchema = z.object({
   paddleocr_token: z.string().optional(),
   rubric: z.string().optional(),
   llm_user_prompt: z.string().optional(),
+  operator_name: z.string().max(100).optional(),
 });
 
 type ConfigFormValues = z.infer<typeof configSchema>;
@@ -74,6 +76,7 @@ const defaultValues: ConfigFormValues = {
   paddleocr_token: '',
   rubric: '',
   llm_user_prompt: '',
+  operator_name: '',
 };
 
 export default function SettingsPage() {
@@ -95,6 +98,7 @@ export default function SettingsPage() {
         paddleocr_token: data.paddleocr_token,
         rubric: data.rubric,
         llm_user_prompt: data.llm_user_prompt,
+        operator_name: data.operator_name,
       });
     }
   }, [data, form]);
@@ -367,6 +371,44 @@ export default function SettingsPage() {
                       <code className="mx-1 rounded bg-muted px-1 py-0.5 text-xs">{'{rubric}'}</code>
                       <code className="mx-1 rounded bg-muted px-1 py-0.5 text-xs">{'{output_format}'}</code>
                       <code className="mx-1 rounded bg-muted px-1 py-0.5 text-xs">{'{ocr_text}'}</code>
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </CardContent>
+          </Card>
+
+          <Card className="elevated-card stagger-5 animate-fade-in-up motion-reduce:animate-none overflow-hidden">
+            <CardHeader className="pb-4">
+              <div className="flex items-center gap-3">
+                <div className="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary/10 to-primary/5 text-primary ring-1 ring-primary/10">
+                  <User className="size-5" />
+                </div>
+                <div>
+                  <CardTitle className="text-lg">操作人信息</CardTitle>
+                  <CardDescription>
+                    提交最终评分时作为 reviewer_name 使用
+                  </CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-5">
+              <FormField
+                control={form.control}
+                name="operator_name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>审核教师姓名</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="请输入审核教师姓名"
+                        maxLength={100}
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      留空时使用默认值 Teacher
                     </FormDescription>
                     <FormMessage />
                   </FormItem>

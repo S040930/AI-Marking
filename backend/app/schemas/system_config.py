@@ -35,6 +35,11 @@ class ConfigUpdate(BaseModel):
         default=None,
         description="自定义 LLM 用户提示词模板(留空使用内置默认,支持 {rubric}/{output_format}/{ocr_text} 占位符)",
     )
+    operator_name: str | None = Field(
+        default=None,
+        max_length=100,
+        description="操作人/审核教师姓名,用于 finalize 提交时作为 reviewer_name",
+    )
 
 
 class ConfigOut(BaseModel):
@@ -49,4 +54,5 @@ class ConfigOut(BaseModel):
     paddleocr_token: str = ""
     rubric: str = ""
     llm_user_prompt: str = ""
+    operator_name: str = ""
     updated_at: datetime | None = None

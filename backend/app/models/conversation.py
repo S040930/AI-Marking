@@ -4,11 +4,12 @@
 每条消息一个角色(user=教师,assistant=AI),按 created_at 升序展示。
 """
 
-from datetime import datetime, timezone
+from datetime import datetime
 
 from sqlalchemy import DateTime, ForeignKey, Index, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.core.time import utc_now_naive
 from app.db.base import Base
 
 
@@ -29,7 +30,7 @@ class Conversation(Base):
     content: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
-        default=lambda: datetime.now(timezone.utc),
+        default=utc_now_naive,
         server_default=func.now(),
         nullable=False,
     )

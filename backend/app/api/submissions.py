@@ -8,30 +8,36 @@
 """
 
 import asyncio
+import logging
 import uuid
-from datetime import datetime, timezone
 from pathlib import Path
 
 import aiofiles
 from fastapi import (
     APIRouter,
+    Body,
     Depends,
     File,
+    Form,
     HTTPException,
     Query,
     UploadFile,
     status,
 )
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import load_only
+from sqlalchemy.orm import load_only, selectinload
 
 from app.core.config import settings
+from app.core.time import utc_now_naive
 from app.db.session import get_db
 from app.models.conversation import Conversation
+from app.models.question import Question, QuestionStatus
 from app.models.submission import Submission, SubmissionStatus
 from app.schemas.submission import (
+    BatchDeleteRequest,
+    BatchDeleteResponse,
     ChatRequest,
     ChatResponse,
     ConversationOut,
@@ -40,6 +46,7 @@ from app.schemas.submission import (
     SubmissionCreateResponse,
     SubmissionDetail,
     SubmissionStatusOut,
+    SuggestionSnapshot,
 )
 from app.services.agent import AgentError, chat_with_teacher
 from app.services.config import get_config_dict
@@ -49,6 +56,13 @@ from app.services.queue import (
 )
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
+DELETABLE_SUBMISSION_STATUSES = {
+    SubmissionStatus.ready_for_review,
+    SubmissionStatus.reviewed,
+    SubmissionStatus.failed,
+}
 
 # 后台批改任务引用保持集合。
 # asyncio.create_task 返回的 task 仅被事件循环弱引用,若不显式持有,
@@ -107,15 +121,17 @@ async def _save_pdf(
 )
 async def create_submission(
     file: UploadFile = File(..., description="学生作业 PDF"),
-    question_file: UploadFile = File(..., description="作业题目 PDF"),
+    question_id: int = Form(..., description="题目库 ID"),
     db: AsyncSession = Depends(get_db),
 ):
-    """上传学生作业 PDF 与作业题目 PDF,并触发批改流程。"""
-    # 校验两份 PDF
+    """上传学生作业 PDF，关联已完成 OCR 的题目并触发批改流程。"""
     if file.content_type != "application/pdf":
         raise HTTPException(status_code=400, detail="作业文件仅支持 PDF")
-    if question_file.content_type != "application/pdf":
-        raise HTTPException(status_code=400, detail="题目文件仅支持 PDF")
+    question = await db.get(Question, question_id, with_for_update=True)
+    if question is None:
+        raise HTTPException(status_code=404, detail="题目不存在")
+    if question.status != QuestionStatus.ready or not question.ocr_text:
+        raise HTTPException(status_code=409, detail="题目尚未完成 OCR，暂不可用于批改")
 
     # 解析并校验上传目录(必须位于后端根目录下,防止任意目录写入)
     backend_root = Path(__file__).resolve().parent.parent.parent
@@ -128,22 +144,23 @@ async def create_submission(
         )
     upload_dir.mkdir(parents=True, exist_ok=True)
 
-    # 保存两份文件(题目加 _question 后缀便于运维区分)
-    question_original_filename, question_saved_path = await _save_pdf(
-        question_file, upload_dir, suffix="_question"
-    )
     original_filename, saved_path = await _save_pdf(file, upload_dir)
 
     # 创建记录
     submission = Submission(
         original_filename=original_filename,
         file_path=str(saved_path),
-        question_original_filename=question_original_filename,
-        question_file_path=str(question_saved_path),
+        question_id=question.id,
         status=SubmissionStatus.pending,
     )
+    question.last_used_at = utc_now_naive()
     db.add(submission)
-    await db.commit()
+    try:
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        saved_path.unlink(missing_ok=True)
+        raise
     await db.refresh(submission)
 
     # 并发闸门:满载时立即拒绝,避免调度任务被永久挂起
@@ -192,14 +209,16 @@ async def list_submissions(
             load_only(
                 Submission.id,
                 Submission.original_filename,
-                Submission.question_original_filename,
+                Submission.question_id,
                 Submission.status,
                 Submission.score,
                 Submission.max_score,
                 Submission.confidence,
+                Submission.ai_suggestion,
                 Submission.uploaded_at,
                 Submission.completed_at,
-            )
+            ),
+            selectinload(Submission.question),
         )
         .order_by(Submission.uploaded_at.desc())
     )
@@ -221,6 +240,64 @@ async def count_submissions(db: AsyncSession = Depends(get_db)) -> dict[str, int
         await db.execute(select(func.count()).select_from(Submission))
     ).scalar_one()
     return {"total": total}
+
+
+@router.delete(
+    "/submissions",
+    response_model=BatchDeleteResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def batch_delete_submissions(
+    payload: BatchDeleteRequest = Body(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """批量删除提交记录。
+
+    - 仅终态记录允许删除;存在处理中记录时整批原子拒绝
+    - 先提交数据库删除,成功后再清理磁盘 PDF(学生作业 + 题目)
+    - 关联的 conversations 由 DB CASCADE 自动级联删除
+    - 不存在的 ID 安全跳过,不影响其他记录的删除
+    - 文件删除失败不阻断流程(如文件已被清理),仅记录日志
+    """
+    unique_ids = list(dict.fromkeys(payload.ids))
+    stmt = (
+        select(Submission)
+        .where(Submission.id.in_(unique_ids))
+        .with_for_update()
+    )
+    subs = (await db.execute(stmt)).scalars().all()
+
+    blocked_ids = sorted(
+        sub.id for sub in subs if sub.status not in DELETABLE_SUBMISSION_STATUSES
+    )
+    if blocked_ids:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "message": "正在处理的记录不可删除，请等待批改完成后重试",
+                "blocked_ids": blocked_ids,
+            },
+        )
+
+    file_paths = [sub.file_path for sub in subs if sub.file_path]
+
+    for sub in subs:
+        await db.delete(sub)
+    try:
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
+
+    # 数据库是删除结果的权威来源。提交成功后再清理文件,避免事务失败时
+    # 出现“记录仍在但 PDF 已丢失”的不可恢复状态。
+    for file_path in file_paths:
+        try:
+            Path(file_path).unlink(missing_ok=True)
+        except OSError as exc:
+            logger.warning("删除 submission PDF 失败 [%s]: %s", file_path, exc)
+
+    return BatchDeleteResponse(deleted_count=len(subs))
 
 
 @router.get("/submissions/{submission_id}", response_model=SubmissionDetail)
@@ -251,6 +328,53 @@ async def get_submission_status(
     return SubmissionStatusOut.model_validate(sub)
 
 
+@router.get("/submissions/{submission_id}/pdf")
+async def get_submission_pdf(
+    submission_id: int,
+    type: str = Query("submission", description="PDF 类型: submission 或 question"),
+    db: AsyncSession = Depends(get_db),
+):
+    """安全返回学生作业或作业题目的 PDF 文件流。
+
+    - 仅终态记录(ready_for_review/reviewed/failed)可访问
+    - 不暴露服务器文件路径,仅通过 DB 读取后本地读取
+    - 使用浏览器原生 PDF 预览(iframe/object)
+    """
+    sub = await db.get(Submission, submission_id)
+    if sub is None:
+        raise HTTPException(status_code=404, detail="提交记录不存在")
+    if sub.status not in (
+        SubmissionStatus.ready_for_review,
+        SubmissionStatus.reviewed,
+        SubmissionStatus.failed,
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="作业尚未处理完成,无法预览 PDF",
+        )
+
+    if type == "question":
+        file_path = sub.question.file_path if sub.question else None
+        original_filename = sub.question_original_filename or "question.pdf"
+    else:
+        file_path = sub.file_path
+        original_filename = sub.original_filename or "submission.pdf"
+
+    if not file_path:
+        raise HTTPException(status_code=404, detail="PDF 文件不存在")
+
+    path = Path(file_path)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="PDF 文件已过期或被清理")
+
+    return FileResponse(
+        path=path,
+        media_type="application/pdf",
+        filename=original_filename,
+        content_disposition_type="inline",
+    )
+
+
 @router.post(
     "/submissions/{submission_id}/chat",
     response_model=ChatResponse,
@@ -264,8 +388,9 @@ async def chat_with_submission(
 
     - 校验状态为 ready_for_review 或 reviewed
     - 持久化教师消息到 conversations 表
-    - 调用 LLM 生成回复(基于作业 OCR + 题目 OCR + ai_suggestion + 历史对话)
-    - 持久化 AI 回复到 conversations 表
+    - 调用 LLM 生成结构化回复(含评分快照与 finalize 意图)
+    - 当 AI 判断教师意图为 finalize 时,直接写入最终评分并将状态置为 reviewed
+    - 持久化 AI 回复文本到 conversations 表
     """
     sub = await db.get(Submission, submission_id)
     if sub is None:
@@ -298,9 +423,9 @@ async def chat_with_submission(
     # 读取 LLM 配置
     config = await get_config_dict(db)
 
-    # 调用 LLM 生成回复
+    # 调用 LLM 生成结构化回复
     try:
-        reply = await chat_with_teacher(
+        chat_result = await chat_with_teacher(
             teacher_message=payload.message,
             ocr_text=sub.ocr_text or "",
             question_text=sub.question_ocr_text or "",
@@ -314,7 +439,18 @@ async def chat_with_submission(
             detail=f"AI 回复失败: {exc}",
         ) from exc
 
-    # 持久化 AI 回复
+    reply = chat_result["reply"]
+    intent = chat_result["intent"]
+    suggestion_raw = chat_result.get("suggestion", {})
+    reviewer_name = chat_result.get("reviewer_name", "") or (payload.reviewer_name or "")
+
+    # 尝试解析评分快照,失败则降级为空
+    try:
+        suggestion = SuggestionSnapshot.model_validate(suggestion_raw)
+    except Exception:
+        suggestion = None
+
+    # 持久化 AI 回复(仅保存文本,结构化评分不进入 conversations 表)
     assistant_msg = Conversation(
         submission_id=submission_id,
         role="assistant",
@@ -324,7 +460,52 @@ async def chat_with_submission(
     await db.commit()
     await db.refresh(assistant_msg)
 
-    return ChatResponse(reply=reply, message_id=assistant_msg.id)
+    finalize_payload = None
+    if intent == "finalize" and suggestion is not None:
+        if sub.status == SubmissionStatus.reviewed:
+            # 已审阅状态下不再重复 finalize,意图降级为普通回复
+            intent = "reply"
+        else:
+            # 优先使用教师提供的姓名,其次使用 AI 从消息中提取的姓名
+            final_reviewer = payload.reviewer_name or reviewer_name
+            if not final_reviewer:
+                raise HTTPException(
+                    status_code=422,
+                    detail="提交最终评分需要提供审核教师姓名",
+                )
+            try:
+                finalize_payload = FinalizeRequest(
+                    reviewer_name=final_reviewer,
+                    score=suggestion.score,
+                    max_score=suggestion.max_score,
+                    feedback=suggestion.feedback,
+                    details=suggestion.details,
+                )
+            except Exception as exc:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"AI 提取的最终评分格式非法: {exc}",
+                ) from exc
+
+            now = utc_now_naive()
+            sub.score = finalize_payload.score
+            sub.max_score = finalize_payload.max_score
+            sub.feedback = finalize_payload.feedback
+            sub.details = [item.model_dump() for item in finalize_payload.details]
+            sub.reviewed_by = finalize_payload.reviewer_name
+            sub.reviewed_at = now
+            sub.completed_at = now
+            sub.status = SubmissionStatus.reviewed
+            await db.commit()
+            await db.refresh(sub)
+
+    return ChatResponse(
+        reply=reply,
+        message_id=assistant_msg.id,
+        action=intent,
+        suggestion=suggestion,
+        finalize_payload=finalize_payload,
+    )
 
 
 @router.get(
@@ -376,7 +557,7 @@ async def finalize_submission(
             detail="作业尚未准备好进行审阅",
         )
 
-    now = datetime.now(timezone.utc)
+    now = utc_now_naive()
     sub.score = payload.score
     sub.max_score = payload.max_score
     sub.feedback = payload.feedback

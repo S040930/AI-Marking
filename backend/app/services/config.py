@@ -21,6 +21,7 @@ CONFIG_KEYS: dict[str, str] = {
     "paddleocr_token": "PaddleOCR-VL Access Token(aistudio.baidu.com 个人访问令牌)",
     "rubric": "自定义评分标准(rubric,留空使用内置默认)",
     "llm_user_prompt": "自定义 LLM 用户提示词模板(留空使用内置默认,支持 {rubric}/{output_format}/{ocr_text} 占位符)",
+    "operator_name": "操作人/审核教师姓名,用于 finalize 提交时作为 reviewer_name",
 }
 
 # 缓存:15 秒 TTL(原 5s。PUT 已主动失效缓存,TTL 仅影响其他读路径的同步延迟,

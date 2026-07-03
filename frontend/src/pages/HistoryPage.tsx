@@ -1,10 +1,13 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
 import dayjs from 'dayjs';
-import { ChevronLeft, ChevronRight, FileText, History } from 'lucide-react';
+import { toast } from 'sonner';
+import { ChevronLeft, ChevronRight, FileText, History, Trash2 } from 'lucide-react';
 import {
   useSubmissions,
   useSubmissionsCount,
+  useBatchDeleteSubmissions,
   isProcessing,
   type SubmissionOut,
   type SubmissionStatus,
@@ -25,7 +28,18 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import {
   Tooltip,
   TooltipContent,
@@ -46,6 +60,39 @@ export const STATUS_TEXT: Record<SubmissionStatus, string> = {
 };
 
 const PAGE_SIZE = 10;
+
+export function isDeletableStatus(status: SubmissionStatus): boolean {
+  return (
+    status === 'ready_for_review' ||
+    status === 'reviewed' ||
+    status === 'failed'
+  );
+}
+
+export function shouldMoveToPreviousPage(
+  page: number,
+  rowCount: number,
+  deletedCount: number,
+): boolean {
+  return page > 1 && rowCount > 0 && rowCount <= deletedCount;
+}
+
+function resolveDeleteError(error: unknown): {
+  message: string;
+  isConflict: boolean;
+} {
+  if (axios.isAxiosError(error) && error.response?.status === 409) {
+    const detail = error.response.data?.detail;
+    if (detail && typeof detail === 'object' && 'message' in detail) {
+      return { message: String(detail.message), isConflict: true };
+    }
+    return {
+      message: '正在处理的记录不可删除，请等待批改完成后重试',
+      isConflict: true,
+    };
+  }
+  return { message: '删除失败，请稍后重试', isConflict: false };
+}
 
 export function StatusBadge({ status }: { status: SubmissionStatus }) {
   if (status === 'reviewed') {
@@ -85,17 +132,84 @@ export function StatusBadge({ status }: { status: SubmissionStatus }) {
 export default function HistoryPage() {
   const navigate = useNavigate();
   const [page, setPage] = useState(1);
-  const { data, isLoading, isPlaceholderData } = useSubmissions({
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const {
+    data,
+    isLoading,
+    isPlaceholderData,
+    refetch: refetchSubmissions,
+  } = useSubmissions({
     page,
     pageSize: PAGE_SIZE,
   });
   // 总数独立拉取,不随列表 3s 轮询(避免每次轮询都算 COUNT)。
-  const { data: countData } = useSubmissionsCount();
+  const { data: countData, refetch: refetchCount } = useSubmissionsCount();
+  const deleteMutation = useBatchDeleteSubmissions();
 
   const rows = data?.items ?? [];
   const total = countData?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
+
+  // 翻页时清空选中,避免跨页选中造成困惑
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [page]);
+
+  const rowIds = rows
+    .filter((row) => isDeletableStatus(row.status))
+    .map((row) => row.id);
+  const allOnPageSelected =
+    rowIds.length > 0 && rowIds.every((id) => selectedIds.has(id));
+  const someOnPageSelected = rowIds.some((id) => selectedIds.has(id));
+
+  const toggleRow = (id: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allOnPageSelected) {
+        rowIds.forEach((id) => next.delete(id));
+      } else {
+        rowIds.forEach((id) => next.add(id));
+      }
+      return next;
+    });
+  };
+
+  const handleConfirmDelete = () => {
+    const ids = Array.from(selectedIds);
+    deleteMutation.mutate(ids, {
+      onSuccess: (res) => {
+        toast.success(`已删除 ${res.deleted_count} 条记录`);
+        setSelectedIds(new Set());
+        setDeleteDialogOpen(false);
+        if (shouldMoveToPreviousPage(page, rows.length, res.deleted_count)) {
+          setPage((current) => Math.max(1, current - 1));
+        }
+      },
+      onError: (error) => {
+        const result = resolveDeleteError(error);
+        toast.error(result.message);
+        if (result.isConflict) {
+          setDeleteDialogOpen(false);
+          void refetchSubmissions();
+          void refetchCount();
+        }
+      },
+    });
+  };
 
   return (
     <div className="mx-auto max-w-5xl">
@@ -108,10 +222,25 @@ export default function HistoryPage() {
             查看已上传作业的批改状态与评分结果
           </p>
         </div>
-        {!isLoading && (
+        {!isLoading && selectedIds.size === 0 && (
           <span className="text-xs font-medium text-muted-foreground">
             共 {total} 条记录
           </span>
+        )}
+        {selectedIds.size > 0 && (
+          <div className="flex items-center gap-3">
+            <span className="text-sm font-medium text-muted-foreground">
+              已选 {selectedIds.size} 项
+            </span>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => setDeleteDialogOpen(true)}
+            >
+              <Trash2 className="size-4" />
+              删除
+            </Button>
+          </div>
         )}
       </div>
 
@@ -124,6 +253,20 @@ export default function HistoryPage() {
             <Table>
               <TableHeader className="border-b bg-muted/50 text-muted-foreground">
                 <TableRow className="hover:bg-transparent">
+                  <TableHead className="w-[40px] font-medium">
+                    <Checkbox
+                      checked={
+                        allOnPageSelected
+                          ? true
+                          : someOnPageSelected
+                            ? 'indeterminate'
+                            : false
+                      }
+                      onCheckedChange={toggleSelectAll}
+                      aria-label="全选当前页"
+                      disabled={rowIds.length === 0}
+                    />
+                  </TableHead>
                   <TableHead className="w-[40%] font-medium">文件名</TableHead>
                   <TableHead className="w-[120px] font-medium">状态</TableHead>
                   <TableHead className="w-[90px] font-medium">分数</TableHead>
@@ -135,14 +278,14 @@ export default function HistoryPage() {
                 {isLoading ? (
                   Array.from({ length: 5 }).map((_, i) => (
                     <TableRow key={`skeleton-${i}`}>
-                      <TableCell colSpan={5} className="py-3">
+                      <TableCell colSpan={6} className="py-3">
                         <Skeleton className="h-5 w-full" />
                       </TableCell>
                     </TableRow>
                   ))
                 ) : rows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="h-40 text-center">
+                    <TableCell colSpan={6} className="h-40 text-center">
                       <div className="animate-fade-in-up motion-reduce:animate-none relative flex flex-col items-center gap-3 text-muted-foreground">
                         <div className="flex size-12 items-center justify-center rounded-full bg-muted">
                           <History className="size-6" />
@@ -164,12 +307,42 @@ export default function HistoryPage() {
                       item.status === 'reviewed'
                         ? `/result/${item.id}`
                         : `/review/${item.id}`;
+                    const canDelete = isDeletableStatus(item.status);
                     return (
                     <TableRow
                       key={item.id}
                       className="group cursor-pointer transition-colors hover:bg-muted/40"
                       onClick={() => navigate(targetPath)}
                     >
+                      <TableCell className="w-[40px]">
+                        {canDelete ? (
+                          <Checkbox
+                            checked={selectedIds.has(item.id)}
+                            onCheckedChange={() => toggleRow(item.id)}
+                            onClick={(e) => e.stopPropagation()}
+                            aria-label={`选择 ${item.original_filename}`}
+                          />
+                        ) : (
+                          <TooltipProvider delayDuration={200}>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span
+                                  className="inline-flex"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <Checkbox
+                                    disabled
+                                    aria-label={`${item.original_filename} 批改完成后方可删除`}
+                                  />
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent side="right">
+                                <p className="text-xs">批改完成后方可删除</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        )}
+                      </TableCell>
                       <TableCell className="max-w-0">
                         <TooltipProvider delayDuration={300}>
                           <Tooltip>
@@ -252,6 +425,32 @@ export default function HistoryPage() {
           )}
         </CardContent>
       </Card>
+
+      <AlertDialog
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认删除</AlertDialogTitle>
+            <AlertDialogDescription>
+              即将删除 {selectedIds.size} 条批改记录,此操作不可撤销,关联的 PDF 文件和对话记录将一并清除。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteMutation.isPending}>
+              取消
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-white hover:bg-destructive/90"
+              disabled={deleteMutation.isPending}
+              onClick={handleConfirmDelete}
+            >
+              {deleteMutation.isPending ? '删除中...' : '确认删除'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

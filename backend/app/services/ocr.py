@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import json
 import time
 
 import aiofiles
@@ -27,6 +28,8 @@ import httpx
 # PaddleOCR-VL layout-parsing 接口超时(秒)
 # 大 PDF + 复杂版面可能耗时较长,这里给到 120s
 _TIMEOUT = httpx.Timeout(120.0)
+_JOB_POLL_INTERVAL_SECONDS = 2.0
+_JOB_MAX_WAIT_SECONDS = 600.0
 
 # 重试参数
 _MAX_ATTEMPTS = 3
@@ -57,9 +60,16 @@ class OCRError(Exception):
 def _normalize_api_url(api_url: str) -> str:
     """规范化 API URL:自动补全 ``/layout-parsing`` 后缀。"""
     base = api_url.rstrip("/")
+    if base.endswith("/api/v2/ocr/jobs"):
+        return base
     if base.endswith("/layout-parsing"):
         return base
     return f"{base}/layout-parsing"
+
+
+def _is_async_jobs_url(url: str) -> bool:
+    """判断是否为 AI Studio 异步 OCR Jobs 接口。"""
+    return url.rstrip("/").endswith("/api/v2/ocr/jobs")
 
 
 def _http_status_for_retry(exc: httpx.HTTPError) -> int | None:
@@ -199,9 +209,12 @@ async def ocr_pdf(file_path: str, api_url: str, token: str) -> str:
         # 文件读取失败属于配置/环境问题,直接抛出(不再重试)
         raise OCRError(f"读取 PDF 文件失败: {exc}") from exc
 
-    pdf_b64 = base64.b64encode(pdf_bytes).decode("ascii")
-
     url = _normalize_api_url(api_url)
+    client = await _get_client()
+    if _is_async_jobs_url(url):
+        return await _ocr_via_async_jobs(client, url, pdf_bytes, token)
+
+    pdf_b64 = base64.b64encode(pdf_bytes).decode("ascii")
     payload = {
         "file": pdf_b64,
         "fileType": 0,  # 0=PDF, 1=图片
@@ -211,7 +224,6 @@ async def ocr_pdf(file_path: str, api_url: str, token: str) -> str:
         "Content-Type": "application/json",
     }
 
-    client = await _get_client()
     data = await _ocr_with_retry(client, url, payload, headers)
 
     # 此后属于响应内容解析,不属于需要重试的瞬时错误
@@ -238,3 +250,93 @@ async def ocr_pdf(file_path: str, api_url: str, token: str) -> str:
         raise OCRError("PaddleOCR-VL 返回空文本,可能 PDF 无有效内容")
 
     return combined.strip()
+
+
+async def _ocr_via_async_jobs(
+    client: httpx.AsyncClient, job_url: str, pdf_bytes: bytes, token: str
+) -> str:
+    """调用 AI Studio `/api/v2/ocr/jobs` 异步接口并轮询结果。"""
+    headers = {"Authorization": f"bearer {token}"}
+    try:
+        response = await client.post(
+            job_url,
+            headers=headers,
+            data={
+                "model": "PaddleOCR-VL",
+                "optionalPayload": json.dumps(
+                    {
+                        "useDocOrientationClassify": False,
+                        "useDocUnwarping": False,
+                        "useChartRecognition": False,
+                    }
+                ),
+            },
+            files={"file": ("document.pdf", pdf_bytes, "application/pdf")},
+        )
+        response.raise_for_status()
+        submitted = response.json()
+        if submitted.get("code") != 0:
+            raise OCRError(
+                f"PaddleOCR-VL 提交任务失败: {submitted.get('msg', submitted)}"
+            )
+        job_id = submitted["data"]["jobId"]
+    except OCRError:
+        raise
+    except (httpx.HTTPError, KeyError, TypeError, ValueError) as exc:
+        raise OCRError(f"PaddleOCR-VL 提交任务失败: {exc}") from exc
+
+    deadline = time.monotonic() + _JOB_MAX_WAIT_SECONDS
+    result_url = ""
+    while time.monotonic() < deadline:
+        try:
+            response = await client.get(f"{job_url}/{job_id}", headers=headers)
+            response.raise_for_status()
+            status_data = response.json()
+            if status_data.get("code") != 0:
+                raise OCRError(
+                    f"PaddleOCR-VL 查询任务失败: "
+                    f"{status_data.get('msg', status_data)}"
+                )
+            job = status_data["data"]
+            state = job["state"]
+        except OCRError:
+            raise
+        except (httpx.HTTPError, KeyError, TypeError, ValueError) as exc:
+            raise OCRError(f"PaddleOCR-VL 查询任务失败: {exc}") from exc
+
+        if state == "done":
+            result_url = job.get("resultUrl", {}).get("jsonUrl", "")
+            break
+        if state == "failed":
+            raise OCRError(
+                f"PaddleOCR-VL 解析失败: {job.get('errorMsg', '未知错误')}"
+            )
+        if state not in {"pending", "running"}:
+            raise OCRError(f"PaddleOCR-VL 返回未知任务状态: {state}")
+        await asyncio.sleep(_JOB_POLL_INTERVAL_SECONDS)
+    else:
+        raise OCRError("PaddleOCR-VL 解析超时，请稍后重试")
+
+    if not result_url:
+        raise OCRError("PaddleOCR-VL 完成任务但未返回结果地址")
+
+    try:
+        response = await client.get(result_url)
+        response.raise_for_status()
+        lines = response.text.splitlines()
+        texts: list[str] = []
+        for line in lines:
+            if not line.strip():
+                continue
+            result = json.loads(line)["result"]
+            for page in result.get("layoutParsingResults", []):
+                text = page.get("markdown", {}).get("text", "")
+                if text:
+                    texts.append(text)
+    except (httpx.HTTPError, KeyError, TypeError, ValueError) as exc:
+        raise OCRError(f"PaddleOCR-VL 下载或解析结果失败: {exc}") from exc
+
+    combined = "\n\n".join(texts).strip()
+    if not combined:
+        raise OCRError("PaddleOCR-VL 返回空文本，可能 PDF 无有效内容")
+    return combined

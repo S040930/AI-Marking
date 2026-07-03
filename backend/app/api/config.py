@@ -24,6 +24,7 @@ def _to_config_out(config: dict[str, str]) -> ConfigOut:
         paddleocr_token=config.get("paddleocr_token", "") or "",
         rubric=config.get("rubric", "") or "",
         llm_user_prompt=config.get("llm_user_prompt", "") or "",
+        operator_name=config.get("operator_name", "") or "",
     )
 
 

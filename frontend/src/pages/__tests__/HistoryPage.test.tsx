@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { StatusBadge, STATUS_TEXT } from '@/pages/HistoryPage';
+import {
+  isDeletableStatus,
+  shouldMoveToPreviousPage,
+  StatusBadge,
+  STATUS_TEXT,
+} from '@/pages/HistoryPage';
 import type { SubmissionStatus } from '@/api/submissions';
 
 describe('StatusBadge', () => {
@@ -72,5 +77,47 @@ describe('STATUS_TEXT 完整性', () => {
       expect(STATUS_TEXT[status]).toBeTruthy();
       expect(typeof STATUS_TEXT[status]).toBe('string');
     });
+  });
+});
+
+describe('isDeletableStatus', () => {
+  const deletable: SubmissionStatus[] = [
+    'ready_for_review',
+    'reviewed',
+    'failed',
+  ];
+  const processing: SubmissionStatus[] = [
+    'pending',
+    'ocr_processing',
+    'ocr_done',
+    'agent_grading',
+    'agent_reviewing',
+    'agent_revising',
+  ];
+
+  deletable.forEach((status) => {
+    it(`${status} 允许删除`, () => {
+      expect(isDeletableStatus(status)).toBe(true);
+    });
+  });
+
+  processing.forEach((status) => {
+    it(`${status} 禁止删除`, () => {
+      expect(isDeletableStatus(status)).toBe(false);
+    });
+  });
+});
+
+describe('shouldMoveToPreviousPage', () => {
+  it('非第一页删除当前页全部记录后回到前一页', () => {
+    expect(shouldMoveToPreviousPage(3, 2, 2)).toBe(true);
+  });
+
+  it('当前页仍有记录时不翻页', () => {
+    expect(shouldMoveToPreviousPage(3, 3, 2)).toBe(false);
+  });
+
+  it('第一页即使删空也不再向前翻页', () => {
+    expect(shouldMoveToPreviousPage(1, 2, 2)).toBe(false);
   });
 });

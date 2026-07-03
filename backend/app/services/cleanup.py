@@ -22,12 +22,20 @@ import logging
 import time
 from pathlib import Path
 
+from sqlalchemy import select
+
 from app.core.config import settings
+from app.db.session import AsyncSessionLocal
+from app.models.question import Question
 
 logger = logging.getLogger(__name__)
 
 
-def cleanup_uploads(upload_dir: Path, retention_days: int) -> int:
+def cleanup_uploads(
+    upload_dir: Path,
+    retention_days: int,
+    protected_paths: set[Path] | None = None,
+) -> int:
     """扫描 ``upload_dir``,删除修改时间早于 ``retention_days`` 天前的 PDF。
 
     Args:
@@ -44,9 +52,12 @@ def cleanup_uploads(upload_dir: Path, retention_days: int) -> int:
         return 0
 
     cutoff = time.time() - retention_days * 86400
+    protected = {path.resolve() for path in (protected_paths or set())}
     deleted = 0
     for entry in upload_dir.iterdir():
         if not entry.is_file() or entry.suffix.lower() != ".pdf":
+            continue
+        if entry.resolve() in protected:
             continue
         try:
             if entry.stat().st_mtime < cutoff:
@@ -80,7 +91,15 @@ async def periodic_cleanup_loop() -> None:
     try:
         while True:
             try:
-                cleanup_uploads(upload_dir, retention)
+                async with AsyncSessionLocal() as db:
+                    question_paths = (
+                        await db.execute(select(Question.file_path))
+                    ).scalars().all()
+                cleanup_uploads(
+                    upload_dir,
+                    retention,
+                    {Path(file_path) for file_path in question_paths if file_path},
+                )
             except Exception:
                 # 单次清理失败不中断循环,等下个周期重试
                 logger.exception("uploads 清理失败,等待下个周期")

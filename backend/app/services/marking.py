@@ -12,7 +12,6 @@
   通过参数注入给 OCR 与 LLM 服务,避免重复读 DB
 """
 
-import asyncio
 import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -67,85 +66,40 @@ async def _run_pipeline_with_semaphore_acquired(submission_id: int) -> None:
         paddleocr_api_url = config.get("paddleocr_api_url", "") or ""
         paddleocr_token = config.get("paddleocr_token", "") or ""
 
-        # === OCR 阶段(并行)===
+        # 题目已在入库时完成 OCR，此处只识别学生作业。
         await _update_status(db, submission_id, SubmissionStatus.ocr_processing)
-
-        # 题目 OCR 与作业 OCR 并行启动。任何一条失败:整个流水线立即转 failed,
-        # 并 cancel 未完成的 task 避免孤儿 task(P1-2 修复)。
-        # 两份文本都需要作为完整输入给 Agent(grade 阶段依赖题目识别 rubric)。
-        question_task: asyncio.Task[str] | None = None
-        if sub.question_file_path:
-            question_task = asyncio.create_task(
-                ocr_pdf(
-                    sub.question_file_path,
-                    paddleocr_api_url,
-                    paddleocr_token,
-                ),
-                name="question_ocr",
+        question_ocr_text = sub.question.ocr_text if sub.question else None
+        if not question_ocr_text:
+            await _update_status(
+                db,
+                submission_id,
+                SubmissionStatus.failed,
+                error_message="关联题目 OCR 内容不存在",
             )
-        submission_task = asyncio.create_task(
-            ocr_pdf(
+            return
+        try:
+            ocr_text = await ocr_pdf(
                 sub.file_path,
                 paddleocr_api_url,
                 paddleocr_token,
-            ),
-            name="submission_ocr",
-        )
-
-        try:
-            question_ocr_text: str | None = None
-            if question_task is not None:
-                question_ocr_text = await question_task
-            ocr_text = await submission_task
+            )
         except OCRError as e:
-            # 任何 OCR 失败:cancel 未完成的 task,避免孤儿 task 泄漏资源
-            for task in (question_task, submission_task):
-                if task is not None and not task.done():
-                    task.cancel()
-            await asyncio.gather(
-                *[t for t in (question_task, submission_task) if t is not None],
-                return_exceptions=True,
-            )
-            # 判断失败来源(题目 vs 作业),用于 error_message 精准提示
-            is_question_failure = (
-                question_task is not None
-                and question_task.done()
-                and not question_task.cancelled()
-                and isinstance(question_task.exception(), OCRError)
-            )
-            prefix = "题目" if is_question_failure else "作业"
             await _update_status(
                 db,
                 submission_id,
                 SubmissionStatus.failed,
-                error_message=f"{prefix} OCR 失败: {e}",
+                error_message=f"作业 OCR 失败: {e}",
             )
-            logger.error("%s OCR 失败 [submission=%s]: %s", prefix, submission_id, e)
+            logger.error("作业 OCR 失败 [submission=%s]: %s", submission_id, e)
             return
         except Exception as e:
-            # 未知错误:同样 cancel 未完成任务
-            for task in (question_task, submission_task):
-                if task is not None and not task.done():
-                    task.cancel()
-            await asyncio.gather(
-                *[t for t in (question_task, submission_task) if t is not None],
-                return_exceptions=True,
-            )
-            is_question_failure = (
-                question_task is not None
-                and question_task.done()
-                and not question_task.cancelled()
-                and question_task.exception() is not None
-                and not isinstance(question_task.exception(), OCRError)
-            )
-            prefix = "题目" if is_question_failure else "作业"
             await _update_status(
                 db,
                 submission_id,
                 SubmissionStatus.failed,
-                error_message=f"{prefix} OCR 未知错误: {e}",
+                error_message=f"作业 OCR 未知错误: {e}",
             )
-            logger.exception("%s OCR 未知错误 [submission=%s]", prefix, submission_id)
+            logger.exception("作业 OCR 未知错误 [submission=%s]", submission_id)
             return
 
         await _update_status(
@@ -153,7 +107,6 @@ async def _run_pipeline_with_semaphore_acquired(submission_id: int) -> None:
             submission_id,
             SubmissionStatus.ocr_done,
             ocr_text=ocr_text,
-            question_ocr_text=question_ocr_text,
         )
 
         # === Agent 评分与复核阶段 ===

@@ -7,12 +7,15 @@
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import create_app
+from app.models.question import Question, QuestionStatus
+from app.models.submission import Submission
 from app.services.config import invalidate_config_cache
 from app.services.ocr import reset_circuit_breaker
 
@@ -41,9 +44,24 @@ async def db_session():
         bind=engine, class_=AsyncSession, autocommit=False, autoflush=False, expire_on_commit=False
     )
     session = test_session_local()
+
+    def _attach_default_question(sync_session, flush_context, instances):
+        """旧接口测试未关心题目时，也满足生产模型的必填外键约束。"""
+        for obj in list(sync_session.new):
+            if isinstance(obj, Submission) and obj.question is None:
+                obj.question = Question(
+                    name="测试题目",
+                    original_filename="question.pdf",
+                    file_path="/tmp/question.pdf",
+                    ocr_text="测试题目内容",
+                    status=QuestionStatus.ready,
+                )
+
+    event.listen(session.sync_session, "before_flush", _attach_default_question)
     try:
         yield session
     finally:
+        event.remove(session.sync_session, "before_flush", _attach_default_question)
         await session.close()
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.drop_all)

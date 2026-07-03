@@ -4,11 +4,23 @@
 """
 
 import enum
-from datetime import datetime, timezone
+from datetime import datetime
+from pathlib import Path
 
-from sqlalchemy import JSON, DateTime, Enum, Float, Index, String, Text, func
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import (
+    JSON,
+    DateTime,
+    Enum,
+    Float,
+    ForeignKey,
+    Index,
+    String,
+    Text,
+    func,
+)
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.core.time import utc_now_naive
 from app.db.base import Base
 
 
@@ -44,10 +56,10 @@ class Submission(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
     file_path: Mapped[str] = mapped_column(String(512), nullable=False)
-    question_original_filename: Mapped[str | None] = mapped_column(
-        String(255), nullable=True
+    question_id: Mapped[int] = mapped_column(
+        ForeignKey("questions.id", ondelete="RESTRICT"), nullable=False, index=True
     )
-    question_file_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    question = relationship("Question", back_populates="submissions", lazy="selectin")
     status: Mapped[SubmissionStatus] = mapped_column(
         Enum(SubmissionStatus, name="submission_status"),
         default=SubmissionStatus.pending,
@@ -55,7 +67,6 @@ class Submission(Base):
         nullable=False,
     )
     ocr_text: Mapped[str | None] = mapped_column(Text, nullable=True)
-    question_ocr_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     score: Mapped[float | None] = mapped_column(Float, nullable=True)
     max_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -73,11 +84,59 @@ class Submission(Base):
     error_message: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     uploaded_at: Mapped[datetime] = mapped_column(
         DateTime,
-        default=lambda: datetime.now(timezone.utc),
+        default=utc_now_naive,
         server_default=func.now(),
         nullable=False,
     )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    @property
+    def question_original_filename(self) -> str | None:
+        return self.question.original_filename if self.question else None
+
+    @question_original_filename.setter
+    def question_original_filename(self, value: str | None) -> None:
+        """兼容旧测试/脚本构造方式；生产写入统一使用 question_id。"""
+        if value is None:
+            return
+        if self.question is None:
+            from app.models.question import Question
+
+            self.question = Question(
+                name=Path(value).stem,
+                original_filename=value,
+                file_path="",
+            )
+        else:
+            self.question.original_filename = value
+
+    @property
+    def question_ocr_text(self) -> str | None:
+        return self.question.ocr_text if self.question else None
+
+    @question_ocr_text.setter
+    def question_ocr_text(self, value: str | None) -> None:
+        if self.question is not None:
+            self.question.ocr_text = value
+
+    @property
+    def question_file_path(self) -> str | None:
+        return self.question.file_path if self.question else None
+
+    @question_file_path.setter
+    def question_file_path(self, value: str | None) -> None:
+        if value is None:
+            return
+        if self.question is None:
+            from app.models.question import Question
+
+            self.question = Question(
+                name="历史题目",
+                original_filename=Path(value).name,
+                file_path=value,
+            )
+        else:
+            self.question.file_path = value
 
     def __repr__(self) -> str:
         return (

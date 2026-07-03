@@ -410,7 +410,7 @@ async def chat_with_teacher(
     ai_suggestion: dict,
     history: list[dict],
     config: dict,
-) -> str:
+) -> dict:
     """教师与 AI 就作业评分进行对话。
 
     Args:
@@ -422,10 +422,10 @@ async def chat_with_teacher(
         config: 系统配置(含 llm_api_key/base_url/model)
 
     Returns:
-        AI 的回复文本
+        结构化结果,包含 reply/intent/suggestion/reviewer_name
 
     Raises:
-        AgentError: LLM 调用失败或配置缺失
+        AgentError: LLM 调用失败、配置缺失或返回结构非法
     """
     client = _client(config)
     model = config.get("llm_model", "") or DEFAULT_LLM_MODEL
@@ -441,7 +441,28 @@ async def chat_with_teacher(
             model=model,
             messages=messages,
             temperature=0.4,
+            response_format={"type": "json_object"},
         )
     except Exception as exc:
         raise AgentError(f"Chat 调用失败: {exc}") from exc
-    return response.choices[0].message.content or ""
+
+    raw = response.choices[0].message.content or "{}"
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise AgentError(f"Chat 返回不是合法 JSON: {exc}") from exc
+
+    intent = data.get("intent", "reply")
+    if intent not in ("reply", "finalize"):
+        intent = "reply"
+
+    reply = data.get("reply", "").strip()
+    if not reply:
+        reply = "我已收到你的反馈。"
+
+    return {
+        "reply": reply,
+        "intent": intent,
+        "suggestion": data.get("suggestion", {}),
+        "reviewer_name": data.get("reviewer_name", ""),
+    }

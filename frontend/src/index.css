@@ -283,3 +283,116 @@ h2 {
     transform: none;
   }
 }
+
+/* 聊天式评分面板：消息气泡柔和阴影与悬停反馈 */
+.message-bubble-ai {
+  box-shadow: 0 1px 2px 0 oklch(0.2 0.015 270 / 0.04);
+  transition: box-shadow 150ms ease, transform 150ms ease;
+}
+
+.message-bubble-ai:hover {
+  box-shadow: 0 3px 8px 0 oklch(0.2 0.015 270 / 0.08);
+}
+
+.message-bubble-user {
+  transition: box-shadow 150ms ease, transform 150ms ease;
+}
+
+.message-bubble-user:hover {
+  box-shadow: 0 3px 10px 0 oklch(0.2 0.015 270 / 0.12);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .message-bubble-ai,
+  .message-bubble-user {
+    transition: none;
+  }
+}
+
+/* 分数维度进度条 */
+.score-bar-track {
+  background: var(--muted);
+  border-radius: 9999px;
+  overflow: hidden;
+}
+
+.score-bar-fill {
+  background: linear-gradient(90deg, var(--primary), oklch(0.66 0.13 265));
+  border-radius: 9999px;
+  transition: width 600ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .score-bar-fill {
+    transition: none;
+  }
+}
+
+/* 消息级联进入动画 */
+@keyframes message-enter {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-message-enter {
+  animation: message-enter 350ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.stagger-msg-1 { animation-delay: 0ms; }
+.stagger-msg-2 { animation-delay: 70ms; }
+.stagger-msg-3 { animation-delay: 140ms; }
+.stagger-msg-4 { animation-delay: 210ms; }
+.stagger-msg-5 { animation-delay: 280ms; }
+
+/* 评分卡片滑入 */
+@keyframes score-card-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-score-card-enter {
+  animation: score-card-enter 400ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* 柔和淡入 */
+@keyframes soft-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.animate-soft-fade-in {
+  animation: soft-fade-in 500ms ease-out forwards;
+}
+
+/* 减少动态效果统一降级 */
+@media (prefers-reduced-motion: reduce) {
+  .message-bubble-ai,
+  .message-bubble-user {
+    transition: none;
+  }
+
+  .message-bubble-ai:hover,
+  .message-bubble-user:hover {
+    transform: none;
+  }
+
+  .animate-message-enter,
+  .animate-score-card-enter,
+  .animate-soft-fade-in {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}

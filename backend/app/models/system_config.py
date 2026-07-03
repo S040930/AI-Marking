@@ -4,11 +4,12 @@
 便于通过页面修改并持久化到数据库,无需重启服务。
 """
 
-from datetime import datetime, timezone
+from datetime import datetime
 
 from sqlalchemy import DateTime, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.core.time import utc_now_naive
 from app.db.base import Base
 
 
@@ -27,9 +28,9 @@ class SystemConfig(Base):
     description: Mapped[str | None] = mapped_column(String(255), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
-        default=lambda: datetime.now(timezone.utc),
+        default=utc_now_naive,
         server_default=func.now(),
-        onupdate=lambda: datetime.now(timezone.utc),
+        onupdate=utc_now_naive,
         nullable=False,
     )
 

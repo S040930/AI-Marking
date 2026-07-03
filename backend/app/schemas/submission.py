@@ -4,6 +4,7 @@
 """
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -97,13 +98,31 @@ class ChatRequest(BaseModel):
     """教师发送的聊天消息。"""
 
     message: str = Field(min_length=1, max_length=2000)
+    reviewer_name: str | None = Field(
+        default=None,
+        max_length=100,
+        description="教师姓名,仅在 AI 判断需要 finalize 时使用",
+    )
+
+
+class SuggestionSnapshot(BaseModel):
+    """聊天过程中 AI 返回的评分快照。"""
+
+    score: float = Field(ge=0)
+    max_score: float = Field(gt=0)
+    confidence: float = Field(ge=0, le=1, default=0)
+    feedback: str = Field(default="")
+    details: list[ReviewDetail] = Field(default_factory=list)
 
 
 class ChatResponse(BaseModel):
-    """Chat 接口返回:AI 回复与消息 ID。"""
+    """Chat 接口返回:AI 回复、消息 ID、评分快照与 finalize 信息。"""
 
     reply: str
     message_id: int
+    action: Literal["reply", "finalize"] = "reply"
+    suggestion: SuggestionSnapshot | None = None
+    finalize_payload: FinalizeRequest | None = None
 
 
 class SubmissionCreateResponse(BaseModel):
@@ -134,6 +153,18 @@ class SubmissionStatusOut(BaseModel):
     uploaded_at: datetime
     completed_at: datetime | None = None
     error_message: str | None = None
+
+
+class BatchDeleteRequest(BaseModel):
+    """批量删除请求。"""
+
+    ids: list[int] = Field(min_length=1, max_length=100)
+
+
+class BatchDeleteResponse(BaseModel):
+    """批量删除响应。"""
+
+    deleted_count: int
 
 
 class PaginatedSubmissions(BaseModel):

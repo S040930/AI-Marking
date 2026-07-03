@@ -202,16 +202,16 @@ export function useSubmissionStatus(id: number | undefined) {
 
 export interface UploadSubmissionPayload {
   file: File;
-  questionFile: File;
+  questionId: number;
 }
 
 export function useUploadSubmission() {
   const queryClient = useQueryClient();
   return useMutation<SubmissionCreateResponse, Error, UploadSubmissionPayload>({
-    mutationFn: ({ file, questionFile }) => {
+    mutationFn: ({ file, questionId }) => {
       const formData = new FormData();
       formData.append('file', file);
-      formData.append('question_file', questionFile);
+      formData.append('question_id', String(questionId));
       return apiClient
         .post<SubmissionCreateResponse>('/submissions', formData, {
           headers: { 'Content-Type': 'multipart/form-data' },
@@ -235,13 +235,25 @@ export interface ConversationMessage {
   created_at: string;
 }
 
+export interface SuggestionSnapshot {
+  score: number;
+  max_score: number;
+  confidence: number;
+  feedback: string;
+  details: AiSuggestionDetail[];
+}
+
 export interface ChatPayload {
   message: string;
+  reviewer_name?: string;
 }
 
 export interface ChatResponse {
   reply: string;
   message_id: number;
+  action: 'reply' | 'finalize';
+  suggestion: SuggestionSnapshot | null;
+  finalize_payload: FinalizePayload | null;
 }
 
 export interface FinalizePayload {
@@ -315,11 +327,19 @@ export function useChat(submissionId: number) {
         );
       }
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       // AI 回复后刷新对话列表(替换乐观消息为服务端真实数据)
       queryClient.invalidateQueries({
         queryKey: ['conversations', submissionId],
       });
+      // 若后端已直接 finalize,同步刷新 submission 详情
+      if (data.action === 'finalize') {
+        queryClient.invalidateQueries({
+          queryKey: ['submission', submissionId],
+        });
+        queryClient.invalidateQueries({ queryKey: ['submissions'] });
+        queryClient.invalidateQueries({ queryKey: ['submissions-count'] });
+      }
     },
   });
 }
@@ -335,6 +355,27 @@ export function useFinalizeSubmission(submissionId: number) {
         .then((r) => r.data),
     onSuccess: (data) => {
       queryClient.setQueryData(['submission', submissionId], data);
+      queryClient.invalidateQueries({ queryKey: ['submissions'] });
+      queryClient.invalidateQueries({ queryKey: ['submissions-count'] });
+    },
+  });
+}
+
+export interface BatchDeleteResponse {
+  deleted_count: number;
+}
+
+export function useBatchDeleteSubmissions() {
+  const queryClient = useQueryClient();
+  return useMutation<BatchDeleteResponse, Error, number[]>({
+    mutationFn: (ids) =>
+      apiClient
+        .delete<BatchDeleteResponse>('/submissions', {
+          data: { ids },
+          skipErrorToast: true,
+        })
+        .then((r) => r.data),
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['submissions'] });
       queryClient.invalidateQueries({ queryKey: ['submissions-count'] });
     },

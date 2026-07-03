@@ -10,6 +10,7 @@ export interface ConfigOut {
   paddleocr_token: string;
   rubric: string;
   llm_user_prompt: string;
+  operator_name: string;
   updated_at: string | null;
 }
 
@@ -23,6 +24,7 @@ export type ConfigUpdate = Partial<
     | 'paddleocr_token'
     | 'rubric'
     | 'llm_user_prompt'
+    | 'operator_name'
   >
 >;
 
