@@ -38,11 +38,21 @@ import QuestionsPage from '@/pages/QuestionsPage';
 describe('QuestionsPage', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('展示 OCR 失败原因并允许重试', () => {
+  it('展示 OCR 失败原因并允许重新上传', () => {
     render(<QuestionsPage />);
-    expect(screen.getByText('OCR 服务异常')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '重新识别' }));
-    expect(mocks.retry).toHaveBeenCalledWith(7);
+    expect(screen.getByText(/OCR 服务异常/)).toBeInTheDocument();
+    const file = new File(['docx'], 'replacement.docx', {
+      type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    });
+    const input = screen.getByLabelText('重新上传 期末作文 文件');
+    expect(input).toHaveAttribute('accept', expect.stringContaining('.docx'));
+    fireEvent.change(input, {
+      target: { files: [file] },
+    });
+    expect(mocks.retry).toHaveBeenCalledWith(
+      { id: 7, file },
+      expect.any(Object),
+    );
   });
 
   it('必须输入完整题目名称才能执行危险删除', () => {

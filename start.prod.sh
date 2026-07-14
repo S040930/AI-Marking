@@ -8,8 +8,13 @@ set -Eeuo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKEND_DIR="$ROOT_DIR/backend"
 FRONTEND_DIR="$ROOT_DIR/frontend"
-PYTHON_BIN="${PYTHON_BIN:-python}"
+if [ -z "${PYTHON_BIN:-}" ] && [ -x "$BACKEND_DIR/.venv/bin/python" ]; then
+  PYTHON_BIN="$BACKEND_DIR/.venv/bin/python"
+else
+  PYTHON_BIN="${PYTHON_BIN:-python}"
+fi
 BACKEND_PID=""
+WORKER_PID=""
 FRONTEND_PID=""
 STOPPED=0
 
@@ -28,8 +33,10 @@ cleanup() {
   STOPPED=1
   info "正在关闭前后端..."
   [ -n "$FRONTEND_PID" ] && kill "$FRONTEND_PID" 2>/dev/null || true
+  [ -n "$WORKER_PID" ] && kill "$WORKER_PID" 2>/dev/null || true
   [ -n "$BACKEND_PID" ] && kill "$BACKEND_PID" 2>/dev/null || true
   [ -n "$FRONTEND_PID" ] && wait "$FRONTEND_PID" 2>/dev/null || true
+  [ -n "$WORKER_PID" ] && wait "$WORKER_PID" 2>/dev/null || true
   [ -n "$BACKEND_PID" ] && wait "$BACKEND_PID" 2>/dev/null || true
 }
 
@@ -62,7 +69,7 @@ if ! (
   info "正在安装后端依赖..."
   (
     cd "$BACKEND_DIR"
-    "$PYTHON_BIN" -m pip install -e '.[dev]'
+    "$PYTHON_BIN" -m pip install --require-hashes -r requirements-prod.txt
   )
 fi
 
@@ -70,7 +77,7 @@ if [ ! -d "$FRONTEND_DIR/node_modules" ]; then
   info "正在安装前端依赖..."
   (
     cd "$FRONTEND_DIR"
-    npm install
+    npm ci
   )
 fi
 
@@ -90,7 +97,17 @@ info "正在构建前端生产包..."
 )
 
 # 默认 worker 数 = CPU 核数,可通过 WORKERS 环境变量覆盖
-WORKERS="${WORKERS:-$(nproc)}"
+# 跨平台检测:优先 nproc(Linux),其次 sysctl -n hw.ncpu(macOS),再次 getconf
+detect_workers() {
+  if command -v nproc >/dev/null 2>&1; then
+    nproc
+  elif command -v sysctl >/dev/null 2>&1; then
+    sysctl -n hw.ncpu
+  else
+    getconf NPROCESSORS_ONLN 2>/dev/null || echo 1
+  fi
+}
+WORKERS="${WORKERS:-$(detect_workers)}"
 info "WORKERS=$WORKERS"
 
 info "正在启动后端(生产模式,$WORKERS workers):http://localhost:8000"
@@ -99,6 +116,13 @@ info "正在启动后端(生产模式,$WORKERS workers):http://localhost:8000"
   exec "$PYTHON_BIN" -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers "$WORKERS"
 ) &
 BACKEND_PID=$!
+
+info "正在启动持久化任务 worker(并发 ${TASK_CONCURRENCY:-4})"
+(
+  cd "$BACKEND_DIR"
+  exec "$PYTHON_BIN" -m app.worker
+) &
+WORKER_PID=$!
 
 info "正在启动前端预览:http://localhost:5173"
 (
@@ -109,7 +133,9 @@ FRONTEND_PID=$!
 
 printf '\n\033[1;32mAI Marking 已启动（生产模式），按 Ctrl+C 同时关闭前后端。\033[0m\n\n'
 
-while kill -0 "$BACKEND_PID" 2>/dev/null && kill -0 "$FRONTEND_PID" 2>/dev/null; do
+while kill -0 "$BACKEND_PID" 2>/dev/null \
+  && kill -0 "$WORKER_PID" 2>/dev/null \
+  && kill -0 "$FRONTEND_PID" 2>/dev/null; do
   sleep 1
 done
 

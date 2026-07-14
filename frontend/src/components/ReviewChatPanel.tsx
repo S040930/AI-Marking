@@ -36,7 +36,7 @@ function normalizeSuggestion(suggestion: AiSuggestion | SuggestionSnapshot | nul
   return {
     score: suggestion.score,
     max_score: suggestion.max_score,
-    confidence: 'confidence' in suggestion ? suggestion.confidence : 0,
+    confidence: suggestion.confidence,
     feedback: suggestion.feedback,
     details: suggestion.details.map((d) => ({
       criterion: d.criterion,
@@ -199,10 +199,12 @@ function ThinkingIndicator() {
 
 function FinalizeConfirmCard({
   suggestion,
+  payload,
   onConfirm,
   onContinue,
 }: {
   suggestion: SuggestionSnapshot;
+  payload: FinalizePayload;
   onConfirm: () => void;
   onContinue: () => void;
 }) {
@@ -215,7 +217,7 @@ function FinalizeConfirmCard({
         <h4 className="text-sm font-semibold text-foreground">最终评分确认</h4>
       </div>
       <p className="mb-3 text-xs leading-relaxed text-muted-foreground">
-        AI 已根据你的反馈校准出最终评分，请确认是否提交。
+        AI 已根据你的反馈校准出最终评分，请确认是否由 {payload.reviewer_name} 提交。
       </p>
       <ScoreInsightCard suggestion={suggestion} />
       <div className="mt-3 flex items-center gap-2">
@@ -254,7 +256,10 @@ export default function ReviewChatPanel({
   const [workingSuggestion, setWorkingSuggestion] = useState<SuggestionSnapshot | null>(
     normalizeSuggestion(initialSuggestion),
   );
-  const [pendingFinalize, setPendingFinalize] = useState<SuggestionSnapshot | null>(null);
+  const [pendingFinalize, setPendingFinalize] = useState<{
+    payload: FinalizePayload;
+    suggestion: SuggestionSnapshot;
+  } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const previousMessageCountRef = useRef<number | null>(null);
 
@@ -276,11 +281,13 @@ export default function ReviewChatPanel({
     }
   }, [chatMutation.isPending, pendingFinalize]);
 
+  // 仅在 suggestion 内容实际变化时重置工作副本,避免引用变化覆盖用户编辑。
+  const suggestionKey = JSON.stringify(initialSuggestion);
   useEffect(() => {
     if (initialSuggestion) {
       setWorkingSuggestion(normalizeSuggestion(initialSuggestion));
     }
-  }, [initialSuggestion]);
+  }, [suggestionKey]);
 
   const handleSendMessage = () => {
     const message = chatInput.trim();
@@ -294,8 +301,19 @@ export default function ReviewChatPanel({
           if (data.suggestion) {
             setWorkingSuggestion(data.suggestion);
           }
-          if (data.action === 'finalize' && data.suggestion) {
-            setPendingFinalize(data.suggestion);
+          if (data.action === 'finalize' && data.finalize_payload) {
+            setPendingFinalize({
+              payload: data.finalize_payload,
+              suggestion:
+                data.suggestion ??
+                ({
+                  score: data.finalize_payload.score,
+                  max_score: data.finalize_payload.max_score,
+                  confidence: 0,
+                  feedback: data.finalize_payload.feedback,
+                  details: data.finalize_payload.details,
+                } satisfies SuggestionSnapshot),
+            });
           }
         },
         onError: () => toast.error('发送失败，请稍后重试'),
@@ -325,20 +343,7 @@ export default function ReviewChatPanel({
   const handleConfirmFinalize = () => {
     if (!pendingFinalize) return;
 
-    const payload: FinalizePayload = {
-      reviewer_name: reviewerName,
-      score: pendingFinalize.score,
-      max_score: pendingFinalize.max_score,
-      feedback: pendingFinalize.feedback,
-      details: pendingFinalize.details.map((d) => ({
-        criterion: d.criterion,
-        score: d.score,
-        max_score: d.max_score,
-        comment: d.comment,
-        evidence: d.evidence ?? [],
-      })),
-    };
-    onFinalize(payload);
+    onFinalize(pendingFinalize.payload);
     setPendingFinalize(null);
   };
 
@@ -363,7 +368,7 @@ export default function ReviewChatPanel({
             <MessageBubble
               key={msg.id}
               message={msg}
-              suggestion={null}
+              suggestion={msg.suggestion}
               index={idx}
             />
           ))}
@@ -378,7 +383,8 @@ export default function ReviewChatPanel({
 
           {pendingFinalize && (
             <FinalizeConfirmCard
-              suggestion={pendingFinalize}
+              suggestion={pendingFinalize.suggestion}
+              payload={pendingFinalize.payload}
               onConfirm={handleConfirmFinalize}
               onContinue={() => setPendingFinalize(null)}
             />

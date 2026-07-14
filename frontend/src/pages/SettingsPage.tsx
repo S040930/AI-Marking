@@ -9,6 +9,7 @@ import {
   Undo2,
   AlertCircle,
   Bot,
+  ShieldCheck,
   ScanEye,
   ClipboardCheck,
   MessageSquareText,
@@ -55,16 +56,36 @@ const DEFAULT_RUBRIC_PLACEHOLDER = `留空则按以下优先级使用:
 5. 规范性(10分)
 总分:100分`;
 
-const configSchema = z.object({
-  llm_api_key: z.string().optional(),
-  llm_base_url: z.string().optional(),
-  llm_model: z.string().optional(),
-  paddleocr_api_url: z.string().optional(),
-  paddleocr_token: z.string().optional(),
-  rubric: z.string().optional(),
-  llm_user_prompt: z.string().optional(),
-  operator_name: z.string().max(100).optional(),
-});
+const configSchema = z
+  .object({
+    llm_api_key: z.string().optional(),
+    llm_base_url: z.string().optional(),
+    llm_model: z.string().optional(),
+    review_llm_api_key: z.string().optional(),
+    review_llm_base_url: z.string().optional(),
+    review_llm_model: z.string().optional(),
+    paddleocr_api_url: z.string().optional(),
+    paddleocr_token: z.string().optional(),
+    rubric: z.string().optional(),
+    llm_user_prompt: z.string().optional(),
+    operator_name: z.string().max(100).optional(),
+  })
+  .superRefine((data, ctx) => {
+    // 审核 LLM「全有或全无」:三字段必须同时填写或同时留空
+    const filled = [
+      data.review_llm_api_key,
+      data.review_llm_base_url,
+      data.review_llm_model,
+    ].filter(Boolean).length;
+    if (filled !== 0 && filled !== 3) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          '审核 LLM 的 API Key、Base URL、Model 必须同时填写或同时留空',
+        path: ['review_llm_api_key'],
+      });
+    }
+  });
 
 type ConfigFormValues = z.infer<typeof configSchema>;
 
@@ -72,6 +93,9 @@ const defaultValues: ConfigFormValues = {
   llm_api_key: '',
   llm_base_url: '',
   llm_model: '',
+  review_llm_api_key: '',
+  review_llm_base_url: '',
+  review_llm_model: '',
   paddleocr_api_url: '',
   paddleocr_token: '',
   rubric: '',
@@ -94,6 +118,9 @@ export default function SettingsPage() {
         llm_api_key: data.llm_api_key,
         llm_base_url: data.llm_base_url,
         llm_model: data.llm_model,
+        review_llm_api_key: data.review_llm_api_key,
+        review_llm_base_url: data.review_llm_base_url,
+        review_llm_model: data.review_llm_model,
         paddleocr_api_url: data.paddleocr_api_url,
         paddleocr_token: data.paddleocr_token,
         rubric: data.rubric,
@@ -151,7 +178,7 @@ export default function SettingsPage() {
           系统设置
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          配置大模型、OCR 解析与评分标准
+          配置批改大模型、审核大模型、OCR 解析与评分标准
         </p>
       </div>
 
@@ -234,6 +261,78 @@ export default function SettingsPage() {
             <CardHeader className="pb-4">
               <div className="flex items-center gap-3">
                 <div className="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary/10 to-primary/5 text-primary ring-1 ring-primary/10">
+                  <ShieldCheck className="size-5" />
+                </div>
+                <div>
+                  <CardTitle className="text-lg">审核 LLM 配置</CardTitle>
+                  <CardDescription>
+                    用于 critic 独立复核节点，与批改 LLM 独立配置
+                  </CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-4 pt-5">
+              <FormField
+                control={form.control}
+                name="review_llm_api_key"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>API Key</FormLabel>
+                    <FormControl>
+                      <Input
+                        type="password"
+                        placeholder="请输入审核 LLM 的 API Key"
+                        autoComplete="new-password"
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormDescription>审核用 LLM 服务的 API Key</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="review_llm_base_url"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Base URL</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="https://ark.cn-beijing.volces.com/api/v3"
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      留空使用默认 https://ark.cn-beijing.volces.com/api/v3（豆包）
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="review_llm_model"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Model / Endpoint ID</FormLabel>
+                    <FormControl>
+                      <Input placeholder="doubao-pro-32k" {...field} />
+                    </FormControl>
+                    <FormDescription>
+                      三字段需同时填写或同时留空；留空时复核将降级为人工审核
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </CardContent>
+          </Card>
+
+          <Card className="elevated-card stagger-3 animate-fade-in-up motion-reduce:animate-none overflow-hidden">
+            <CardHeader className="pb-4">
+              <div className="flex items-center gap-3">
+                <div className="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary/10 to-primary/5 text-primary ring-1 ring-primary/10">
                   <ScanEye className="size-5" />
                 </div>
                 <div>
@@ -258,7 +357,7 @@ export default function SettingsPage() {
                       />
                     </FormControl>
                     <FormDescription>
-                      系统会自动补全 /layout-parsing 后缀
+                      请填写完整接口：异步任务入口 .../api/v2/ocr/jobs，或同步入口 .../layout-parsing；不要填写 .../api/v2/ocr/jobs/layout-parsing。
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
@@ -288,7 +387,7 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
 
-          <Card className="elevated-card stagger-3 animate-fade-in-up motion-reduce:animate-none overflow-hidden">
+          <Card className="elevated-card stagger-4 animate-fade-in-up motion-reduce:animate-none overflow-hidden">
             <CardHeader className="pb-4">
               <div className="flex items-start justify-between gap-4">
                 <div className="flex items-center gap-3">
@@ -379,7 +478,7 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
 
-          <Card className="elevated-card stagger-5 animate-fade-in-up motion-reduce:animate-none overflow-hidden">
+          <Card className="elevated-card stagger-6 animate-fade-in-up motion-reduce:animate-none overflow-hidden">
             <CardHeader className="pb-4">
               <div className="flex items-center gap-3">
                 <div className="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary/10 to-primary/5 text-primary ring-1 ring-primary/10">

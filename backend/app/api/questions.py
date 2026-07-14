@@ -1,6 +1,5 @@
 """独立题目库：上传、OCR、复用、替换与安全删除。"""
 
-import asyncio
 import logging
 from pathlib import Path
 
@@ -16,13 +15,17 @@ from fastapi import (
 )
 from fastapi.responses import FileResponse
 from sqlalchemy import func, or_, select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
-from app.api.submissions import DELETABLE_SUBMISSION_STATUSES, _save_pdf
+from app.api.submissions import DELETABLE_SUBMISSION_STATUSES
 from app.core.config import settings
 from app.core.time import utc_now_naive
-from app.db.session import AsyncSessionLocal, get_db
-from app.models.question import Question, QuestionStatus
+from app.db.session import get_db
+from app.models.question import (
+    Question,
+    QuestionReplacementStatus,
+    QuestionStatus,
+)
 from app.models.submission import Submission
 from app.schemas.question import (
     PaginatedQuestions,
@@ -31,14 +34,20 @@ from app.schemas.question import (
     QuestionMutationResponse,
     QuestionOut,
     QuestionRenameRequest,
+    QuestionReplacementResponse,
 )
-from app.services.config import get_config_dict
-from app.services.ocr import ocr_pdf
-from app.services.queue import get_pipeline_semaphore
+from app.services.document_storage import (
+    save_document_as_pdf,
+    validate_document_upload,
+)
+from app.services.queue import (
+    new_question_ocr_job,
+    reset_question_ocr_job,
+    reset_question_replace_job,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-_question_tasks: set[asyncio.Task] = set()
 
 
 def _upload_dir() -> Path:
@@ -54,40 +63,7 @@ def _upload_dir() -> Path:
     return upload_dir
 
 
-async def _run_question_ocr(question_id: int) -> None:
-    async with AsyncSessionLocal() as db:
-        question = await db.get(Question, question_id)
-        if question is None:
-            return
-        question.status = QuestionStatus.ocr_processing
-        question.error_message = None
-        await db.commit()
-        try:
-            config = await get_config_dict(db)
-            async with get_pipeline_semaphore():
-                text = await ocr_pdf(
-                    question.file_path,
-                    config.get("paddleocr_api_url", "") or "",
-                    config.get("paddleocr_token", "") or "",
-                )
-            question.ocr_text = text
-            question.status = QuestionStatus.ready
-            question.error_message = None
-        except Exception as exc:
-            question.status = QuestionStatus.failed
-            question.error_message = str(exc)[:1024]
-            logger.exception("题目 OCR 失败 [question=%s]", question_id)
-        question.updated_at = utc_now_naive()
-        await db.commit()
-
-
-def _schedule_ocr(question_id: int) -> None:
-    task = asyncio.create_task(_run_question_ocr(question_id))
-    _question_tasks.add(task)
-    task.add_done_callback(_question_tasks.discard)
-
-
-async def _question_with_count(db: AsyncSession, question_id: int):
+def _question_with_count(db: Session, question_id: int):
     count_subquery = (
         select(func.count(Submission.id))
         .where(Submission.question_id == Question.id)
@@ -95,7 +71,7 @@ async def _question_with_count(db: AsyncSession, question_id: int):
         .scalar_subquery()
     )
     return (
-        await db.execute(
+        db.execute(
             select(Question, count_subquery.label("submission_count")).where(
                 Question.id == question_id
             )
@@ -111,6 +87,8 @@ def _serialize(question: Question, submission_count: int, *, detail: bool = Fals
         original_filename=question.original_filename,
         status=question.status,
         error_message=question.error_message,
+        replacement_status=question.replacement_status,
+        replacement_error_message=question.replacement_error_message,
         created_at=question.created_at,
         updated_at=question.updated_at,
         last_used_at=question.last_used_at,
@@ -123,11 +101,12 @@ def _serialize(question: Question, submission_count: int, *, detail: bool = Fals
 async def create_question(
     file: UploadFile = File(...),
     name: str | None = Form(default=None),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
-    if file.content_type != "application/pdf":
-        raise HTTPException(status_code=400, detail="题目文件仅支持 PDF")
-    original_filename, path = await _save_pdf(file, _upload_dir(), suffix="_question")
+    validate_document_upload(file)
+    original_filename, path = await save_document_as_pdf(
+        file, _upload_dir(), suffix="_question"
+    )
     display_name = (name or Path(original_filename).stem).strip()
     if not display_name:
         path.unlink(missing_ok=True)
@@ -140,13 +119,14 @@ async def create_question(
     )
     db.add(question)
     try:
-        await db.commit()
-        await db.refresh(question)
+        db.flush()
+        db.add(new_question_ocr_job(question.id))
+        db.commit()
+        db.refresh(question)
     except Exception:
-        await db.rollback()
+        db.rollback()
         path.unlink(missing_ok=True)
         raise
-    _schedule_ocr(question.id)
     return _serialize(question, 0)
 
 
@@ -156,7 +136,7 @@ async def list_questions(
     limit: int = Query(20, ge=1, le=100),
     search: str = Query(""),
     question_status: QuestionStatus | None = Query(None, alias="status"),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     count_subquery = (
         select(func.count(Submission.id))
@@ -174,10 +154,10 @@ async def list_questions(
         filters.append(Question.status == question_status)
     stmt = select(Question, count_subquery.label("submission_count")).where(*filters)
     total = (
-        await db.execute(select(func.count()).select_from(Question).where(*filters))
+        db.execute(select(func.count()).select_from(Question).where(*filters))
     ).scalar_one()
     rows = (
-        await db.execute(
+        db.execute(
             stmt.order_by(
                 Question.last_used_at.desc().nullslast(), Question.created_at.desc()
             )
@@ -194,24 +174,26 @@ async def list_questions(
 
 
 @router.get("/questions/{question_id}", response_model=QuestionDetail)
-async def get_question(question_id: int, db: AsyncSession = Depends(get_db)):
-    row = await _question_with_count(db, question_id)
+def get_question(question_id: int, db: Session = Depends(get_db)):
+    row = _question_with_count(db, question_id)
     if row is None:
         raise HTTPException(status_code=404, detail="题目不存在")
     return _serialize(row[0], row[1], detail=True)
 
 
 @router.get("/questions/{question_id}/pdf")
-async def get_question_pdf(question_id: int, db: AsyncSession = Depends(get_db)):
-    question = await db.get(Question, question_id)
+def get_question_pdf(question_id: int, db: Session = Depends(get_db)):
+    question = db.get(Question, question_id)
     if question is None:
         raise HTTPException(status_code=404, detail="题目不存在")
     path = Path(question.file_path)
     if not path.exists():
         raise HTTPException(status_code=404, detail="题目 PDF 已过期或被清理")
     return FileResponse(
-        path, media_type="application/pdf", filename=question.original_filename,
-        content_disposition_type="inline"
+        path,
+        media_type="application/pdf",
+        filename=f"{Path(question.original_filename).stem}.pdf",
+        content_disposition_type="inline",
     )
 
 
@@ -219,36 +201,63 @@ async def get_question_pdf(question_id: int, db: AsyncSession = Depends(get_db))
 async def rename_question(
     question_id: int,
     payload: QuestionRenameRequest,
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
-    question = await db.get(Question, question_id)
+    question = db.get(Question, question_id)
     if question is None:
         raise HTTPException(status_code=404, detail="题目不存在")
+    if question.replacement_status in (
+        QuestionReplacementStatus.pending,
+        QuestionReplacementStatus.processing,
+    ):
+        raise HTTPException(status_code=409, detail="题目新版正在处理中")
     question.name = payload.name.strip()
     question.updated_at = utc_now_naive()
-    await db.commit()
-    row = await _question_with_count(db, question_id)
+    db.commit()
+    row = _question_with_count(db, question_id)
     return _serialize(row[0], row[1])
 
 
 @router.post("/questions/{question_id}/retry-ocr", response_model=QuestionOut)
-async def retry_question_ocr(question_id: int, db: AsyncSession = Depends(get_db)):
-    question = await db.get(Question, question_id, with_for_update=True)
+async def retry_question_ocr(
+    question_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
+    """失败后由教师重新上传 PDF，再创建一次 OCR 任务。"""
+    validate_document_upload(file)
+    question = db.get(Question, question_id, with_for_update=True)
     if question is None:
         raise HTTPException(status_code=404, detail="题目不存在")
-    if question.status in (QuestionStatus.pending, QuestionStatus.ocr_processing):
-        raise HTTPException(status_code=409, detail="题目 OCR 正在处理中")
+    if question.status != QuestionStatus.failed:
+        raise HTTPException(status_code=409, detail="仅识别失败的题目可以重新上传")
+
+    original_filename, new_path = await save_document_as_pdf(
+        file, _upload_dir(), suffix="_question"
+    )
+    old_path = question.file_path
+    question.original_filename = original_filename
+    question.file_path = str(new_path)
     question.status = QuestionStatus.pending
     question.error_message = None
-    await db.commit()
-    _schedule_ocr(question.id)
-    row = await _question_with_count(db, question_id)
+    question.updated_at = utc_now_naive()
+    reset_question_ocr_job(db, question.id)
+    try:
+        db.commit()
+        db.refresh(question)
+    except Exception:
+        db.rollback()
+        new_path.unlink(missing_ok=True)
+        raise
+    if old_path != str(new_path):
+        _unlink_after_commit([old_path])
+    row = _question_with_count(db, question_id)
     return _serialize(row[0], row[1])
 
 
-async def _locked_submissions(db: AsyncSession, question_id: int):
+def _locked_submissions(db: Session, question_id: int):
     return (
-        await db.execute(
+        db.execute(
             select(Submission)
             .where(Submission.question_id == question_id)
             .with_for_update()
@@ -272,69 +281,74 @@ def _unlink_after_commit(paths: list[str]) -> None:
 
 
 @router.post(
-    "/questions/{question_id}/replace", response_model=QuestionMutationResponse
+    "/questions/{question_id}/replace",
+    response_model=QuestionReplacementResponse,
+    status_code=202,
 )
 async def replace_question(
     question_id: int,
     file: UploadFile = File(...),
     confirmation_name: str = Form(...),
-    db: AsyncSession = Depends(get_db),
+    acknowledge_deletion: bool = Form(False),
+    db: Session = Depends(get_db),
 ):
-    if file.content_type != "application/pdf":
-        raise HTTPException(status_code=400, detail="题目文件仅支持 PDF")
-    current = await db.get(Question, question_id)
+    validate_document_upload(file)
+    current = db.get(Question, question_id, with_for_update=True)
     if current is None:
         raise HTTPException(status_code=404, detail="题目不存在")
     if confirmation_name != current.name:
         raise HTTPException(status_code=422, detail="题目名称确认不匹配")
-    expected_name = current.name
+    if current.status != QuestionStatus.ready or not current.ocr_text:
+        raise HTTPException(status_code=409, detail="只有可使用的题目可以上传新版")
+    if current.replacement_status in (
+        QuestionReplacementStatus.pending,
+        QuestionReplacementStatus.processing,
+    ):
+        raise HTTPException(status_code=409, detail="题目新版正在处理中")
 
-    original_filename, new_path = await _save_pdf(
-        file, _upload_dir(), suffix="_question"
-    )
-    try:
-        config = await get_config_dict(db)
-        # OCR 可能耗时数分钟，释放读取阶段事务；真正替换前再加行锁复查。
-        await db.rollback()
-        new_ocr_text = await ocr_pdf(
-            str(new_path),
-            config.get("paddleocr_api_url", "") or "",
-            config.get("paddleocr_token", "") or "",
-        )
-    except Exception as exc:
-        new_path.unlink(missing_ok=True)
-        raise HTTPException(status_code=502, detail=f"新版题目 OCR 失败: {exc}") from exc
-
-    question = await db.get(Question, question_id, with_for_update=True)
-    if question is None or question.name != expected_name:
-        new_path.unlink(missing_ok=True)
-        raise HTTPException(status_code=409, detail="题目在操作期间已发生变化")
-    submissions = await _locked_submissions(db, question_id)
+    submissions = _locked_submissions(db, question_id)
     blocked = _blocked_ids(submissions)
     if blocked:
-        new_path.unlink(missing_ok=True)
         raise HTTPException(
             status_code=409,
-            detail={"message": "存在正在处理的批改记录，无法更新题目",
-                    "blocked_submission_ids": blocked},
+            detail={
+                "message": "存在正在处理的批改记录，无法更新题目",
+                "blocked_submission_ids": blocked,
+            },
         )
-    old_paths = [question.file_path, *[sub.file_path for sub in submissions]]
-    for sub in submissions:
-        await db.delete(sub)
-    question.original_filename = original_filename
-    question.file_path = str(new_path)
-    question.ocr_text = new_ocr_text
-    question.status = QuestionStatus.ready
-    question.error_message = None
-    question.updated_at = utc_now_naive()
+
+    affected_count = len(submissions)
+    if affected_count > 0 and not acknowledge_deletion:
+        # 历史作业将被永久删除,要求调用方显式确认
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": "替换题目将永久删除关联的历史批改记录,需二次确认",
+                "affected_submission_count": affected_count,
+                "acknowledge_required": True,
+            },
+        )
+
+    original_filename, new_path = await save_document_as_pdf(
+        file, _upload_dir(), suffix="_question"
+    )
+    current.replacement_status = QuestionReplacementStatus.pending
+    current.replacement_file_path = str(new_path)
+    current.replacement_original_filename = original_filename
+    current.replacement_error_message = None
+    current.updated_at = utc_now_naive()
+    reset_question_replace_job(db, current.id)
     try:
-        await db.commit()
+        db.commit()
     except Exception:
-        await db.rollback()
+        db.rollback()
         new_path.unlink(missing_ok=True)
         raise
-    _unlink_after_commit(old_paths)
-    return QuestionMutationResponse(deleted_submission_count=len(submissions))
+    return QuestionReplacementResponse(
+        question_id=current.id,
+        replacement_status=QuestionReplacementStatus.pending,
+        affected_submission_count=affected_count,
+    )
 
 
 @router.delete(
@@ -343,14 +357,21 @@ async def replace_question(
 async def delete_question(
     question_id: int,
     payload: QuestionConfirmRequest = Body(...),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
-    question = await db.get(Question, question_id, with_for_update=True)
+    question = db.get(Question, question_id, with_for_update=True)
     if question is None:
         raise HTTPException(status_code=404, detail="题目不存在")
     if payload.confirmation_name != question.name:
         raise HTTPException(status_code=422, detail="题目名称确认不匹配")
-    submissions = await _locked_submissions(db, question_id)
+    if question.status in (QuestionStatus.pending, QuestionStatus.ocr_processing):
+        raise HTTPException(status_code=409, detail="题目 OCR 正在处理中")
+    if question.replacement_status in (
+        QuestionReplacementStatus.pending,
+        QuestionReplacementStatus.processing,
+    ):
+        raise HTTPException(status_code=409, detail="题目新版正在处理中")
+    submissions = _locked_submissions(db, question_id)
     blocked = _blocked_ids(submissions)
     if blocked:
         raise HTTPException(
@@ -358,15 +379,18 @@ async def delete_question(
             detail={"message": "存在正在处理的批改记录，无法删除题目",
                     "blocked_submission_ids": blocked},
         )
-    paths = [question.file_path, *[sub.file_path for sub in submissions]]
+    paths = [question.file_path]
+    if question.replacement_file_path:
+        paths.append(question.replacement_file_path)
+    paths.extend(sub.file_path for sub in submissions if sub.file_path)
     for sub in submissions:
-        await db.delete(sub)
-    await db.flush()
-    await db.delete(question)
+        db.delete(sub)
+    db.flush()
+    db.delete(question)
     try:
-        await db.commit()
+        db.commit()
     except Exception:
-        await db.rollback()
+        db.rollback()
         raise
     _unlink_after_commit(paths)
     return QuestionMutationResponse(deleted_submission_count=len(submissions))

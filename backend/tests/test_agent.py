@@ -35,7 +35,7 @@ def _critic(decision: str, confidence: float, issues: list[str] | None = None) -
 async def _run_with_responses(monkeypatch, responses: list[dict]):
     queue = responses.copy()
 
-    async def fake_completion(config, system_prompt, user_prompt, schema):
+    async def fake_completion(config, system_prompt, user_prompt, schema, **kwargs):
         return schema.model_validate(queue.pop(0))
 
     monkeypatch.setattr(agent, "_json_completion", fake_completion)

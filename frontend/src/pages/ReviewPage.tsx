@@ -5,14 +5,16 @@ import {
   type KeyboardEvent,
   type PointerEvent,
 } from 'react';
+import axios from 'axios';
 import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import dayjs from 'dayjs';
-import { Loader2, AlertCircle } from 'lucide-react';
+import { Loader2, AlertCircle, FileUp, RotateCcw } from 'lucide-react';
 import {
   useSubmission,
   useSubmissionStatus,
   useFinalizeSubmission,
+  useRetrySubmission,
   isProcessing,
   isTerminal,
   type SubmissionDetail,
@@ -21,6 +23,7 @@ import {
 } from '@/api/submissions';
 import { useConfig } from '@/api/config';
 import { Button } from '@/components/ui/button';
+import { DOCUMENT_INPUT_ACCEPT } from '@/lib/documentUpload';
 import { Card, CardContent } from '@/components/ui/card';
 import { PdfViewer, PdfViewerPlaceholder } from '@/components/PdfViewer';
 import ReviewChatPanel from '@/components/ReviewChatPanel';
@@ -52,6 +55,74 @@ function normalizeAiSuggestion(data: SubmissionDetail): AiSuggestion | null {
       evidence: d.evidence,
     })),
   };
+}
+
+function FailedRecoveryPanel({ data }: { data: SubmissionDetail }) {
+  const uploadRef = useRef<HTMLInputElement>(null);
+  const retryMutation = useRetrySubmission(data.id);
+
+  const retry = (file?: File) => {
+    retryMutation.mutate(file, {
+      onSuccess: () => toast.success('已重新进入批改队列'),
+      onError: (error) => {
+        const detail = axios.isAxiosError(error)
+          ? error.response?.data?.detail
+          : null;
+        toast.error(
+          typeof detail === 'string'
+            ? detail
+            : error.message || '重新批改失败',
+        );
+      },
+    });
+  };
+
+  return (
+    <div className="flex h-full items-center justify-center p-8">
+      <div className="w-full max-w-md rounded-2xl border border-destructive/20 bg-white p-6 shadow-sm">
+        <AlertCircle className="mb-4 size-8 text-destructive" />
+        <h2 className="text-lg font-semibold">本次批改失败</h2>
+        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+          {data.error_message || '批改过程中发生未知错误'}
+        </p>
+        <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
+          可以使用原文件重新批改；如果文件内容有问题，请重新选择 PDF 或 DOCX 学生作业。
+        </p>
+        <input
+          ref={uploadRef}
+          type="file"
+          accept={DOCUMENT_INPUT_ACCEPT}
+          className="hidden"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) retry(file);
+            event.target.value = '';
+          }}
+        />
+        <div className="mt-5 flex flex-wrap gap-3">
+          <Button
+            disabled={retryMutation.isPending}
+            onClick={() => retry()}
+          >
+            {retryMutation.isPending ? (
+              <Loader2 className="animate-spin" />
+            ) : (
+              <RotateCcw />
+            )}
+            使用原文件重试
+          </Button>
+          <Button
+            variant="outline"
+            disabled={retryMutation.isPending}
+            onClick={() => uploadRef.current?.click()}
+          >
+            <FileUp />
+            重新上传作业
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function ReviewContent({ data }: { data: SubmissionDetail }) {
@@ -171,14 +242,18 @@ function ReviewContent({ data }: { data: SubmissionDetail }) {
 
         {/* Right: AI chat panel */}
         <section className="flex min-h-0 min-w-0 flex-col bg-slate-50/90">
-          <ReviewChatPanel
-            submissionId={data.id}
-            initialSuggestion={aiSuggestion}
-            isReadOnly={isReadOnly || isFailed}
-            reviewerName={reviewerName}
-            onFinalize={handleFinalize}
-            className="flex-1"
-          />
+          {isFailed ? (
+            <FailedRecoveryPanel data={data} />
+          ) : (
+            <ReviewChatPanel
+              submissionId={data.id}
+              initialSuggestion={aiSuggestion}
+              isReadOnly={isReadOnly}
+              reviewerName={reviewerName}
+              onFinalize={handleFinalize}
+              className="flex-1"
+            />
+          )}
         </section>
       </main>
     </div>

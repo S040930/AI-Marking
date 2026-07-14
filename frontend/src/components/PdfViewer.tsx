@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   FileText,
@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
+import { apiClient } from '@/api/client';
 
 interface PdfViewerProps {
   submissionId: number;
@@ -39,6 +40,8 @@ export function PdfViewer({ submissionId, filename, status, className }: PdfView
   const [type, setType] = useState<'submission' | 'question'>('submission');
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
+  // 标记 iframe onLoad 是否已触发,用于兜底超时避免误置错误态。
+  const loadedRef = useRef(false);
 
   const pdfUrl = `/api/submissions/${submissionId}/pdf?type=${type}`;
   const statusBadge = STATUS_BADGE[status] ?? {
@@ -53,6 +56,47 @@ export function PdfViewer({ submissionId, filename, status, className }: PdfView
     setIsLoading(true);
     setHasError(false);
   };
+
+  useEffect(() => {
+    let isMounted = true;
+    const controller = new AbortController();
+    let loadTimeout: ReturnType<typeof setTimeout> | undefined;
+
+    loadedRef.current = false;
+    setIsLoading(true);
+    setHasError(false);
+
+    apiClient
+      .head(`/submissions/${submissionId}/pdf?type=${type}`, {
+        signal: controller.signal,
+      })
+      .then(() => {
+        // Do not set isLoading to false here; let the iframe's onLoad handle it.
+        // 兜底:某些浏览器禁用内置 PDF 阅读器或静默失败时 onLoad 可能不触发,
+        // 8s 后仍未加载则置错误态,避免 spinner 永转。
+        if (isMounted) {
+          setHasError(false);
+          loadTimeout = setTimeout(() => {
+            if (isMounted && !loadedRef.current) {
+              setIsLoading(false);
+              setHasError(true);
+            }
+          }, 8000);
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          setIsLoading(false);
+          setHasError(true);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+      controller.abort();
+      if (loadTimeout) clearTimeout(loadTimeout);
+    };
+  }, [submissionId, type]);
 
   return (
     <div
@@ -164,8 +208,12 @@ export function PdfViewer({ submissionId, filename, status, className }: PdfView
           src={pdfUrl}
           title={type === 'question' ? '作业题目' : '学生作业'}
           className={`min-h-0 w-full flex-1 ${isLoading ? 'opacity-0' : 'animate-soft-fade-in opacity-100'}`}
-          onLoad={() => setIsLoading(false)}
+          onLoad={() => {
+            loadedRef.current = true;
+            setIsLoading(false);
+          }}
           onError={() => {
+            loadedRef.current = true;
             setIsLoading(false);
             setHasError(true);
           }}

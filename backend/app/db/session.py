@@ -1,22 +1,13 @@
-"""数据库异步引擎与 AsyncSession 工厂。
+"""同步 SQLAlchemy 引擎与 Session 工厂。"""
 
-使用 ``asyncpg`` 驱动 + SQLAlchemy 2.0 ``AsyncSession``。
-后台流水线(``app.services.marking``)通过 ``AsyncSessionLocal()``
-显式获取 session;API 层通过 ``get_db`` 依赖注入获取。
-"""
+from collections.abc import Generator
 
-from collections.abc import AsyncGenerator
-
-from sqlalchemy.ext.asyncio import (
-    AsyncSession,
-    async_sessionmaker,
-    create_async_engine,
-)
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import settings
 
-# 显式配置连接池参数,避免默认 5+10 在并发批改 + 轮询场景下不够用
-engine = create_async_engine(
+engine = create_engine(
     settings.DATABASE_URL,
     pool_pre_ping=True,
     pool_size=10,
@@ -25,16 +16,15 @@ engine = create_async_engine(
     pool_recycle=1800,
 )
 
-AsyncSessionLocal = async_sessionmaker(
+SessionLocal = sessionmaker(
     bind=engine,
-    class_=AsyncSession,
     autocommit=False,
     autoflush=False,
     expire_on_commit=False,
 )
 
 
-async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    """FastAPI 依赖:提供一个 AsyncSession 并在结束后关闭。"""
-    async with AsyncSessionLocal() as db:
+def get_db() -> Generator[Session, None, None]:
+    """FastAPI 依赖：提供一个同步 Session 并在请求结束后关闭。"""
+    with SessionLocal() as db:
         yield db

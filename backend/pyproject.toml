@@ -8,29 +8,28 @@ version = "0.1.0"
 description = "AI 作业批改系统后端 (SURF-2026-0031)"
 requires-python = ">=3.10"
 dependencies = [
-    "fastapi",
-    "uvicorn[standard]",
-    "sqlalchemy>=2.0",
-    "alembic",
-    "asyncpg",
-    "psycopg2-binary",
-    "pydantic>=2",
-    "pydantic-settings",
-    "python-dotenv",
-    "python-multipart",
-    "httpx",
-    "openai",
-    "langgraph>=1.0,<2.0",
-    "aiofiles",
+    "fastapi==0.138.2",
+    "uvicorn[standard]==0.49.0",
+    "sqlalchemy==2.0.51",
+    "alembic==1.18.5",
+    "psycopg2-binary==2.9.12",
+    "pydantic==2.13.4",
+    "pydantic-settings==2.14.2",
+    "python-dotenv==1.2.2",
+    "python-multipart==0.0.32",
+    "httpx==0.28.1",
+    "openai==2.44.0",
+    "langgraph==1.2.7",
+    "aiofiles==25.1.0",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "ruff",
-    "black",
-    "pytest",
-    "pytest-asyncio",
-    "aiosqlite",
+    "ruff==0.15.20",
+    "black==26.5.1",
+    "pytest==9.1.1",
+    "pytest-asyncio==1.4.0",
+    "pip-tools==7.5.2",
 ]
 
 [tool.setuptools.packages.find]

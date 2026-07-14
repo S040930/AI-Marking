@@ -4,7 +4,8 @@
 
 ## 主要功能
 
-- **独立题目库**：题目 PDF 只需上传并 OCR 一次，后续可直接复用于多份学生作业。
+- **PDF/DOCX 上传**：题目与学生作业均支持 PDF 或 DOCX；DOCX 转换为 PDF 后进入统一 OCR 链路。
+- **独立题目库**：题目只需上传并 OCR 一次，后续可直接复用于多份学生作业。
 - **智能批改**：结合题目、学生作业与自定义 rubric 生成结构化评分建议。
 - **AI 独立复核**：Critic 检查评分一致性，并给出置信度与风险提示。
 - **教师协同审核**：教师可查看原文证据、调整单项分数、与 AI 对话并确认最终评分。
@@ -19,14 +20,41 @@
 | 后端 | Python + FastAPI + SQLAlchemy 2.0 + Alembic |
 | 数据库 | PostgreSQL |
 | OCR | PaddleOCR-VL(文档解析,输出结构化 Markdown) |
+| 文档转换 | LibreOffice 26.2.4（DOCX → PDF） |
 | LLM | OpenAI 兼容协议(支持豆包/通义/DeepSeek/OpenAI/Kimi 等,默认豆包) |
 | Agent | LangGraph(受约束评分、独立复核、限次修正与人工审核) |
 
 ## 环境要求
 
-- Python >= 3.10
-- Node.js >= 18
+- Python 3.12.13（见 `.python-version`）
+- Node.js 26.4.0（见 `.nvmrc`）
 - PostgreSQL >= 14
+- LibreOffice 26.2.4（必须提供 `soffice` 可执行文件）
+
+### 安装 LibreOffice 26.2.4
+
+macOS：从 [LibreOffice 26.2.4 官方下载页](https://www.libreoffice.org/download/download-libreoffice/) 下载与处理器匹配的 DMG，将应用安装到 `/Applications/LibreOffice.app`。应用会自动查找该标准路径，无需修改环境变量。
+
+Debian/Ubuntu x86-64：使用官方 26.2.4 DEB 包安装，不使用系统仓库中的浮动版本：
+
+```bash
+curl -LO https://download.documentfoundation.org/libreoffice/stable/26.2.4/deb/x86_64/LibreOffice_26.2.4_Linux_x86-64_deb.tar.gz
+tar -xzf LibreOffice_26.2.4_Linux_x86-64_deb.tar.gz
+sudo dpkg -i LibreOffice_26.2.4.1_Linux_x86-64_deb/DEBS/*.deb
+```
+
+验证版本与可执行文件：
+
+```bash
+soffice --version
+# 预期包含：LibreOffice 26.2.4
+```
+
+macOS 若未把应用命令加入 `PATH`，可直接验证：
+
+```bash
+/Applications/LibreOffice.app/Contents/MacOS/soffice --version
+```
 
 ## 快速启动
 
@@ -40,6 +68,18 @@
 
 脚本会自动安装缺失依赖、执行数据库迁移，并同时启动前端和后端。按
 `Ctrl+C` 可一起关闭两个服务。
+
+### 生产启动
+
+构建前端生产包并以多 worker 运行（无热重载）：
+
+```bash
+./start.prod.sh
+```
+
+默认 worker 数等于 CPU 核数，可通过 `WORKERS` 环境变量覆盖（例如
+`WORKERS=4 ./start.prod.sh`）。脚本兼容 Linux（`nproc`）与 macOS
+（`sysctl -n hw.ncpu`）。
 
 ### 1. 配置数据库
 
@@ -72,7 +112,7 @@ cp backend/.env.example backend/.env
 无密码的本地 Postgres.app 示例：
 
 ```env
-DATABASE_URL=postgresql+asyncpg://mac@localhost:5555/ai_marking
+DATABASE_URL=postgresql+psycopg2://mac@localhost:5555/ai_marking
 CORS_ORIGINS=["http://localhost:5173"]
 UPLOAD_DIR=./uploads
 ```
@@ -80,7 +120,7 @@ UPLOAD_DIR=./uploads
 使用默认端口、用户名和密码的示例：
 
 ```env
-DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/ai_marking
+DATABASE_URL=postgresql+psycopg2://postgres:postgres@localhost:5432/ai_marking
 ```
 
 如密码含 `@`、`:`、`/` 等特殊字符，需要先进行 URL 编码。
@@ -110,8 +150,8 @@ Password: 按本地配置填写；无密码时留空
 ```bash
 cd backend
 
-# 安装依赖(含开发工具)
-pip install -e ".[dev]"
+# 安装精确锁定的依赖(含开发工具)
+pip install --require-hashes -r requirements-dev.txt
 
 # 配置环境变量
 cp .env.example .env
@@ -130,7 +170,7 @@ uvicorn app.main:app --reload
 
 ```bash
 cd frontend
-npm install
+npm ci
 npm run dev
 ```
 
@@ -144,27 +184,65 @@ npm run dev
 | --- | --- | --- |
 | `DATABASE_URL` | PostgreSQL 连接字符串 | `postgresql+psycopg2://postgres:postgres@localhost:5432/ai_marking` |
 | `CORS_ORIGINS` | 允许的前端跨域来源 | `["http://localhost:5173"]` |
-| `UPLOAD_DIR` | PDF 上传存储目录 | `./uploads` |
+| `UPLOAD_DIR` | 上传文档转换后 PDF 的存储目录 | `./uploads` |
+| `UPLOAD_RETENTION_DAYS` | 已进入终态或失败的转换后 PDF 最多保留天数 | `7` |
+| `CLEANUP_INTERVAL_SECONDS` | 后台清理任务扫描间隔(秒) | `3600` |
+| `TASK_CONCURRENCY` | 独立任务 worker 最大并发数 | `4` |
+| `TASK_LEASE_SECONDS` | 任务租约秒数 | `90` |
+| `TASK_MAX_ATTEMPTS` | 非预期异常最大执行次数 | `3` |
+| `TASK_POLL_INTERVAL_SECONDS` | 空队列轮询间隔 | `1` |
+
+## 持久化任务 worker
+
+首次题目 OCR、题目新版 OCR 和作业批改不在 FastAPI 请求进程中执行。上传接口在同一数据库事务
+内创建业务记录和 `background_jobs` 任务，独立 worker 再从 PostgreSQL 原子
+领取任务：
+
+```bash
+cd backend
+.venv/bin/python -m app.worker
+```
+
+`start.sh` 与 `start.prod.sh` 已自动启动该 worker。生产环境可以运行多个 API
+worker，但任务 worker 保持一个进程，通过 `TASK_CONCURRENCY` 控制实际并发。
+进程异常退出后，运行中任务会在租约到期后被重新领取；执行容量满时新任务
+保持 `pending` 排队，不再返回队列繁忙 503。
+
+上传支持单个最大 50 MB 的 PDF 或 DOCX。DOCX 会在 API 请求内启动独立
+LibreOffice 进程并使用隔离配置目录，最多等待 120 秒；转换结束后立即删除
+原 DOCX 和临时目录，只持久化转换后的 PDF。转换期间需要额外临时磁盘空间，
+峰值约为原 DOCX 与生成 PDF 大小之和，并占用一个 LibreOffice 进程。
+
+OCR 会在单次任务内对超时、限流和服务端错误进行最多 3 次短暂重试。仍失败
+时页面会保留错误原因；题目可重新上传 PDF/DOCX，学生作业可在原记录上使用转换后的 PDF
+重试或重新上传。AI 对话只生成待确认评分，教师点击确认后才写入最终结果。
 
 ## 使用流程
 
 ### 首次批改某个题目
 
-1. 进入“题目库”上传题目 PDF。
+1. 进入“题目库”上传 PDF 或 DOCX 题目。
 2. 等待题目 OCR 状态变为“可使用”。
-3. 进入“上传作业”，选择该题目并上传一份学生作业 PDF。
+3. 进入“上传作业”，选择该题目并上传一份 PDF 或 DOCX 学生作业。
 4. 批改完成后，在 Review Page 查看 AI 评分详情并确认最终评分。
 
 ### 继续批改同一题目
 
 直接从题目库选择已有题目，只上传新的学生作业，无需重复上传或识别题目。
 
+### 失败后重新批改
+
+失败记录可在 Review Page 使用已保存的转换后 PDF 重新入队，也可重新选择 PDF/DOCX。重试
+沿用原 submission ID，并清空旧 OCR、AI 结果、审核数据和对话。若原 PDF 已
+被定期清理，必须重新上传。
+
 ### 批改其他题目
 
-在题目库上传新的题目 PDF；OCR 完成后即可选择新题目进行批改。
+在题目库上传新的 PDF 或 DOCX 题目；OCR 完成后即可选择新题目进行批改。
 
-> 上传新版或删除题目会清理该题目关联的终态批改记录。若仍有批改任务正在
-> 处理，系统会拒绝操作。危险操作需要输入完整题目名称进行二次确认。
+> 上传新版会先进入后台 OCR 队列，处理期间题目暂时冻结。新版成功后才清理
+> 关联的终态批改记录并原子切换；新版失败时旧题目继续可用。若仍有批改任务
+> 正在处理，系统会拒绝操作。危险操作需要输入完整题目名称确认。
 
 ## 常见启动问题
 
@@ -256,6 +334,30 @@ ruff check app tests
 # 运行测试
 pytest -q
 ```
+
+### 更新后端依赖
+
+直接依赖在 `backend/pyproject.toml` 中固定版本，完整间接依赖与文件哈希分别
+保存在生产和开发锁文件中：
+
+```bash
+cd backend
+.venv/bin/pip-compile pyproject.toml \
+  --output-file requirements-prod.txt \
+  --generate-hashes --allow-unsafe --strip-extras
+.venv/bin/pip-compile pyproject.toml \
+  --extra dev \
+  --output-file requirements-dev.txt \
+  --generate-hashes --allow-unsafe --strip-extras
+```
+
+安装时使用：
+
+```bash
+.venv/bin/pip install --require-hashes -r requirements-dev.txt
+```
+
+前端依赖由 `package-lock.json` 精确锁定，使用 `npm ci` 安装。
 
 ### 前端
 

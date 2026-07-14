@@ -11,6 +11,8 @@ Rubric 优先级:
 之间选择。
 """
 
+import json
+
 SYSTEM_PROMPT = """你是一位严谨、专业的大学课程作业批改助手。请根据提供的评分标准(rubric)对学生作业进行批改。
 你必须严格按照要求的 JSON 格式输出,不要输出任何 JSON 之外的内容。"""
 
@@ -236,7 +238,7 @@ def build_chat_user_prompt(
 {ocr_text or "(无作业内容)"}
 
 【AI 建议评分】
-{__import__('json').dumps(suggestion_summary, ensure_ascii=False, indent=2)}
+{json.dumps(suggestion_summary, ensure_ascii=False, indent=2)}
 
 【历史对话】
 {history_text or "(无历史对话)"}

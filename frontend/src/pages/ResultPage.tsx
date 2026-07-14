@@ -107,11 +107,12 @@ export default function ResultPage() {
           <AlertTitle>批改失败</AlertTitle>
           <AlertDescription>
             {data.error_message || '批改过程中发生未知错误'}
+            。你可以在当前记录上使用原文件重试，或重新上传学生 PDF 后重试。
           </AlertDescription>
         </Alert>
         <div className="mt-6 flex justify-center">
-          <Button onClick={() => navigate('/')}>
-            返回上传
+          <Button onClick={() => navigate(`/review/${data.id}`)}>
+            重新批改此记录
           </Button>
         </div>
       </div>
@@ -168,7 +169,7 @@ export default function ResultPage() {
               总分
             </p>
             <p className="text-4xl font-extrabold tracking-tight text-primary">
-              {data.score ?? 0}
+              {data.score ?? '--'}
               {data.max_score ? (
                 <span className="text-base font-medium text-muted-foreground">
                   /{data.max_score}

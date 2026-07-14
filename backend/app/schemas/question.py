@@ -4,7 +4,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.question import QuestionStatus
+from app.models.question import QuestionReplacementStatus, QuestionStatus
 
 
 class QuestionOut(BaseModel):
@@ -15,6 +15,8 @@ class QuestionOut(BaseModel):
     original_filename: str
     status: QuestionStatus
     error_message: str | None = None
+    replacement_status: QuestionReplacementStatus | None = None
+    replacement_error_message: str | None = None
     created_at: datetime
     updated_at: datetime
     last_used_at: datetime | None = None
@@ -42,3 +44,9 @@ class QuestionConfirmRequest(BaseModel):
 
 class QuestionMutationResponse(BaseModel):
     deleted_submission_count: int
+
+
+class QuestionReplacementResponse(BaseModel):
+    question_id: int
+    replacement_status: QuestionReplacementStatus
+    affected_submission_count: int

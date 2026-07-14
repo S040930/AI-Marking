@@ -4,8 +4,6 @@
 `ConfigOut` 为 GET 接口与 PUT 返回的完整结构(固定 6 字段)。
 """
 
-from datetime import datetime
-
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -24,6 +22,15 @@ class ConfigUpdate(BaseModel):
         default=None, description="LLM Base URL(OpenAI 兼容格式)"
     )
     llm_model: str | None = Field(default=None, description="LLM Model / Endpoint ID")
+    review_llm_api_key: str | None = Field(
+        default=None, description="审核 LLM API Key(用于 critic 复核节点)"
+    )
+    review_llm_base_url: str | None = Field(
+        default=None, description="审核 LLM Base URL"
+    )
+    review_llm_model: str | None = Field(
+        default=None, description="审核 LLM Model / Endpoint ID"
+    )
     paddleocr_api_url: str | None = Field(
         default=None, description="PaddleOCR-VL 文档解析 API URL"
     )
@@ -50,9 +57,11 @@ class ConfigOut(BaseModel):
     llm_api_key: str = ""
     llm_base_url: str = ""
     llm_model: str = ""
+    review_llm_api_key: str = ""
+    review_llm_base_url: str = ""
+    review_llm_model: str = ""
     paddleocr_api_url: str = ""
     paddleocr_token: str = ""
     rubric: str = ""
     llm_user_prompt: str = ""
     operator_name: str = ""
-    updated_at: datetime | None = None

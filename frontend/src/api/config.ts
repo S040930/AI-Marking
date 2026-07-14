@@ -6,12 +6,14 @@ export interface ConfigOut {
   llm_api_key: string;
   llm_base_url: string;
   llm_model: string;
+  review_llm_api_key: string;
+  review_llm_base_url: string;
+  review_llm_model: string;
   paddleocr_api_url: string;
   paddleocr_token: string;
   rubric: string;
   llm_user_prompt: string;
   operator_name: string;
-  updated_at: string | null;
 }
 
 export type ConfigUpdate = Partial<
@@ -20,6 +22,9 @@ export type ConfigUpdate = Partial<
     | 'llm_api_key'
     | 'llm_base_url'
     | 'llm_model'
+    | 'review_llm_api_key'
+    | 'review_llm_base_url'
+    | 'review_llm_model'
     | 'paddleocr_api_url'
     | 'paddleocr_token'
     | 'rubric'

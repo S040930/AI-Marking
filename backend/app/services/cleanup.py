@@ -6,7 +6,7 @@
 
 实现:
 - ``cleanup_uploads``:扫描一次 upload_dir,按 mtime 删除过期 PDF
-- ``periodic_cleanup_loop``:在 FastAPI lifespan 中以后台 task 运行,
+- ``periodic_cleanup_loop``:在独立任务 worker 中以后台 task 运行,
   每隔 ``CLEANUP_INTERVAL_SECONDS`` 扫描一次
 
 注意:
@@ -25,7 +25,7 @@ from pathlib import Path
 from sqlalchemy import select
 
 from app.core.config import settings
-from app.db.session import AsyncSessionLocal
+from app.db.session import SessionLocal
 from app.models.question import Question
 
 logger = logging.getLogger(__name__)
@@ -71,7 +71,7 @@ def cleanup_uploads(
 
 
 async def periodic_cleanup_loop() -> None:
-    """后台定期清理循环,由 FastAPI lifespan 启动。
+    """后台定期清理循环,由独立任务 worker 启动。
 
     循环体:
     1. 立即执行一次清理(startup 时清理历史遗留)
@@ -91,14 +91,23 @@ async def periodic_cleanup_loop() -> None:
     try:
         while True:
             try:
-                async with AsyncSessionLocal() as db:
-                    question_paths = (
-                        await db.execute(select(Question.file_path))
-                    ).scalars().all()
+                with SessionLocal() as db:
+                    question_paths = db.execute(
+                        select(
+                            Question.file_path,
+                            Question.replacement_file_path,
+                        )
+                    ).all()
+                protected_paths = {
+                    Path(file_path)
+                    for row in question_paths
+                    for file_path in row
+                    if file_path
+                }
                 cleanup_uploads(
                     upload_dir,
                     retention,
-                    {Path(file_path) for file_path in question_paths if file_path},
+                    protected_paths,
                 )
             except Exception:
                 # 单次清理失败不中断循环,等下个周期重试

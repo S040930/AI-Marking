@@ -25,6 +25,8 @@ import time
 import aiofiles
 import httpx
 
+from app.services.errors import BusinessError
+
 # PaddleOCR-VL layout-parsing 接口超时(秒)
 # 大 PDF + 复杂版面可能耗时较长,这里给到 120s
 _TIMEOUT = httpx.Timeout(120.0)
@@ -58,13 +60,33 @@ class OCRError(Exception):
 
 
 def _normalize_api_url(api_url: str) -> str:
-    """规范化 API URL:自动补全 ``/layout-parsing`` 后缀。"""
+    """规范化 PaddleOCR API URL。
+
+    仅接受两类明确入口:
+    - 异步任务入口 ``.../api/v2/ocr/jobs``(原样返回,走 ``_ocr_via_async_jobs``)
+    - 同步 layout-parsing 入口 ``.../layout-parsing``(原样返回)
+
+    其余输入(包括误拼为 ``.../api/v2/ocr/jobs/layout-parsing`` 这类把异步
+    与同步后缀混用的地址)一律拒绝,避免把配置错误静默吞掉后向错误的路径
+    发起请求,也避免向同步接口误用异步地址。
+    """
     base = api_url.rstrip("/")
-    if base.endswith("/api/v2/ocr/jobs"):
+    # 先拒绝把异步入口与同步后缀混用的误拼地址
+    if base.endswith("/api/v2/ocr/jobs/layout-parsing"):
+        raise BusinessError(
+            f"PaddleOCR 地址配置错误: {api_url!r}。"
+            "请填写为 .../api/v2/ocr/jobs(异步任务) 或 .../layout-parsing(同步),"
+            "不要将两者后缀混用。"
+        )
+    if _is_async_jobs_url(base):
         return base
     if base.endswith("/layout-parsing"):
         return base
-    return f"{base}/layout-parsing"
+    raise BusinessError(
+        f"PaddleOCR 地址配置错误: {api_url!r}。"
+        "请填写为 .../api/v2/ocr/jobs(异步任务) 或 .../layout-parsing(同步),"
+        "不要将两者后缀混用。"
+    )
 
 
 def _is_async_jobs_url(url: str) -> bool:
@@ -169,8 +191,9 @@ async def _ocr_with_retry(
         except httpx.HTTPError as exc:
             last_exc = exc
             if not _is_retryable(exc):
-                # 不可重试错误(如 4xx 配置错误):不记入熔断计数,直接 raise
-                raise OCRError(f"PaddleOCR-VL 调用失败: {exc}") from exc
+                # 不可重试错误(如 4xx 配置错误):业务失败,不记入熔断计数,
+                # 直接抛出 BusinessError 由 worker 标记终态且不重试。
+                raise BusinessError(f"PaddleOCR-VL 调用失败: {exc}") from exc
             if attempt + 1 >= _MAX_ATTEMPTS:
                 break
             backoff = _BACKOFF_BASE_SECONDS * (2**attempt)
@@ -200,14 +223,14 @@ async def ocr_pdf(file_path: str, api_url: str, token: str) -> str:
         OCRError: 文件读取失败、API 配置缺失、网络异常、返回为空。
     """
     if not api_url or not token:
-        raise OCRError("PaddleOCR-VL API URL / Token 未配置,请在设置页填写")
+        raise BusinessError("PaddleOCR-VL API URL / Token 未配置,请在设置页填写")
 
     try:
         async with aiofiles.open(file_path, "rb") as f:
             pdf_bytes = await f.read()
     except OSError as exc:
         # 文件读取失败属于配置/环境问题,直接抛出(不再重试)
-        raise OCRError(f"读取 PDF 文件失败: {exc}") from exc
+        raise BusinessError(f"读取 PDF 文件失败: {exc}") from exc
 
     url = _normalize_api_url(api_url)
     client = await _get_client()
@@ -230,10 +253,10 @@ async def ocr_pdf(file_path: str, api_url: str, token: str) -> str:
     try:
         results = data["result"]["layoutParsingResults"]
     except (KeyError, TypeError) as exc:
-        raise OCRError(f"PaddleOCR-VL 返回结构异常: {data}") from exc
+        raise BusinessError(f"PaddleOCR-VL 返回结构异常: {data}") from exc
 
     if not results:
-        raise OCRError("PaddleOCR-VL 返回空文本,可能 PDF 无有效内容")
+        raise BusinessError("PaddleOCR-VL 返回空文本,可能 PDF 无有效内容")
 
     # 遍历所有页面,用换行符拼接
     texts: list[str] = []
@@ -247,7 +270,7 @@ async def ocr_pdf(file_path: str, api_url: str, token: str) -> str:
     combined = "\n\n".join(texts)
 
     if not combined or not combined.strip():
-        raise OCRError("PaddleOCR-VL 返回空文本,可能 PDF 无有效内容")
+        raise BusinessError("PaddleOCR-VL 返回空文本,可能 PDF 无有效内容")
 
     return combined.strip()
 
@@ -276,14 +299,14 @@ async def _ocr_via_async_jobs(
         response.raise_for_status()
         submitted = response.json()
         if submitted.get("code") != 0:
-            raise OCRError(
+            raise BusinessError(
                 f"PaddleOCR-VL 提交任务失败: {submitted.get('msg', submitted)}"
             )
         job_id = submitted["data"]["jobId"]
     except OCRError:
         raise
     except (httpx.HTTPError, KeyError, TypeError, ValueError) as exc:
-        raise OCRError(f"PaddleOCR-VL 提交任务失败: {exc}") from exc
+        raise BusinessError(f"PaddleOCR-VL 提交任务失败: {exc}") from exc
 
     deadline = time.monotonic() + _JOB_MAX_WAIT_SECONDS
     result_url = ""
@@ -293,7 +316,7 @@ async def _ocr_via_async_jobs(
             response.raise_for_status()
             status_data = response.json()
             if status_data.get("code") != 0:
-                raise OCRError(
+                raise BusinessError(
                     f"PaddleOCR-VL 查询任务失败: "
                     f"{status_data.get('msg', status_data)}"
                 )
@@ -302,7 +325,7 @@ async def _ocr_via_async_jobs(
         except OCRError:
             raise
         except (httpx.HTTPError, KeyError, TypeError, ValueError) as exc:
-            raise OCRError(f"PaddleOCR-VL 查询任务失败: {exc}") from exc
+            raise BusinessError(f"PaddleOCR-VL 查询任务失败: {exc}") from exc
 
         if state == "done":
             result_url = job.get("resultUrl", {}).get("jsonUrl", "")

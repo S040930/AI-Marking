@@ -5,7 +5,6 @@
 
 import enum
 from datetime import datetime
-from pathlib import Path
 
 from sqlalchemy import (
     JSON,
@@ -79,7 +78,6 @@ class Submission(Base):
     ai_suggestion: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     review_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     reviewed_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    review_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     error_message: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     uploaded_at: Mapped[datetime] = mapped_column(
@@ -94,49 +92,9 @@ class Submission(Base):
     def question_original_filename(self) -> str | None:
         return self.question.original_filename if self.question else None
 
-    @question_original_filename.setter
-    def question_original_filename(self, value: str | None) -> None:
-        """兼容旧测试/脚本构造方式；生产写入统一使用 question_id。"""
-        if value is None:
-            return
-        if self.question is None:
-            from app.models.question import Question
-
-            self.question = Question(
-                name=Path(value).stem,
-                original_filename=value,
-                file_path="",
-            )
-        else:
-            self.question.original_filename = value
-
     @property
     def question_ocr_text(self) -> str | None:
         return self.question.ocr_text if self.question else None
-
-    @question_ocr_text.setter
-    def question_ocr_text(self, value: str | None) -> None:
-        if self.question is not None:
-            self.question.ocr_text = value
-
-    @property
-    def question_file_path(self) -> str | None:
-        return self.question.file_path if self.question else None
-
-    @question_file_path.setter
-    def question_file_path(self, value: str | None) -> None:
-        if value is None:
-            return
-        if self.question is None:
-            from app.models.question import Question
-
-            self.question = Question(
-                name="历史题目",
-                original_filename=Path(value).name,
-                file_path=value,
-            )
-        else:
-            self.question.file_path = value
 
     def __repr__(self) -> str:
         return (

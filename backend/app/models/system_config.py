@@ -25,7 +25,6 @@ class SystemConfig(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     key: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     value: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    description: Mapped[str | None] = mapped_column(String(255), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
         default=utc_now_naive,

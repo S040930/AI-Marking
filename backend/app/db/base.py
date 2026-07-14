@@ -11,6 +11,7 @@ class Base(DeclarativeBase):
 
 # 导入模型确保元数据注册(避免循环导入,放末尾)
 from app.models import (  # noqa: E402, F401
+    background_job,
     conversation,
     question,
     submission,

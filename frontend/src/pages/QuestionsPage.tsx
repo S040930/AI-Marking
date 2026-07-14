@@ -7,10 +7,10 @@ import {
   Loader2,
   Pencil,
   Plus,
-  RefreshCw,
   Search,
   Trash2,
 } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
 import {
   type Question,
@@ -35,6 +35,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { DOCUMENT_INPUT_ACCEPT } from '@/lib/documentUpload';
 
 function errorMessage(error: Error): string {
   if (axios.isAxiosError(error)) {
@@ -59,6 +60,7 @@ export default function QuestionsPage() {
     file?: File;
   } | null>(null);
   const [confirmation, setConfirmation] = useState('');
+  const [acknowledgedDeletion, setAcknowledgedDeletion] = useState(false);
   const createMutation = useCreateQuestion();
   const renameMutation = useRenameQuestion();
   const retryMutation = useRetryQuestionOcr();
@@ -66,6 +68,7 @@ export default function QuestionsPage() {
   const replaceMutation = useReplaceQuestion();
   const { data, isLoading } = useQuestions(search);
   const uploadRef = useRef<HTMLInputElement>(null);
+  const retryRefs = useRef<Record<number, HTMLInputElement | null>>({});
 
   const uploadQuestion = (file?: File) => {
     if (!file) return;
@@ -92,20 +95,20 @@ export default function QuestionsPage() {
 
   const confirmDanger = () => {
     if (!danger || confirmation !== danger.question.name) return;
-    const handlers = {
-      onSuccess: (result: { deleted_submission_count: number }) => {
-        toast.success(
-          `${danger.type === 'delete' ? '题目已删除' : '题目已更新'}，清理了 ${result.deleted_submission_count} 条批改记录`,
-        );
-        setDanger(null);
-        setConfirmation('');
-      },
-      onError: (error: Error) => toast.error(errorMessage(error)),
-    };
     if (danger.type === 'delete') {
       deleteMutation.mutate(
         { id: danger.question.id, confirmationName: confirmation },
-        handlers,
+        {
+          onSuccess: (result) => {
+            toast.success(
+              `题目已删除，清理了 ${result.deleted_submission_count} 条批改记录`,
+            );
+            setDanger(null);
+            setConfirmation('');
+            setAcknowledgedDeletion(false);
+          },
+          onError: (error) => toast.error(errorMessage(error)),
+        },
       );
     } else if (danger.file) {
       replaceMutation.mutate(
@@ -113,8 +116,19 @@ export default function QuestionsPage() {
           id: danger.question.id,
           file: danger.file,
           confirmationName: confirmation,
+          acknowledgeDeletion: acknowledgedDeletion,
         },
-        handlers,
+        {
+          onSuccess: (result) => {
+            toast.success(
+              `新版已进入后台识别，成功后将清理 ${result.affected_submission_count} 条旧批改记录`,
+            );
+            setDanger(null);
+            setConfirmation('');
+            setAcknowledgedDeletion(false);
+          },
+          onError: (error) => toast.error(errorMessage(error)),
+        },
       );
     }
   };
@@ -133,7 +147,7 @@ export default function QuestionsPage() {
         <input
           ref={uploadRef}
           type="file"
-          accept="application/pdf,.pdf"
+          accept={DOCUMENT_INPUT_ACCEPT}
           className="hidden"
           onChange={(event) => {
             uploadQuestion(event.target.files?.[0]);
@@ -164,6 +178,17 @@ export default function QuestionsPage() {
         <div className="grid gap-4 md:grid-cols-2">
           {data.items.map((question) => {
             const meta = statusMeta[question.status];
+            const replacementActive =
+              question.replacement_status === 'pending' ||
+              question.replacement_status === 'processing';
+            const replacementLabel =
+              question.replacement_status === 'pending'
+                ? '新版排队中'
+                : question.replacement_status === 'processing'
+                  ? '新版识别中'
+                  : question.replacement_status === 'failed'
+                    ? '新版识别失败'
+                    : null;
             return (
               <Card key={question.id} className="transition-shadow hover:shadow-md">
                 <CardContent className="space-y-4 p-5">
@@ -179,11 +204,18 @@ export default function QuestionsPage() {
                         </p>
                       </div>
                     </div>
-                    <Badge variant={meta[1]}>
-                      {question.status === 'ocr_processing' && (
+                    <Badge
+                      variant={
+                        question.replacement_status === 'failed'
+                          ? 'destructive'
+                          : meta[1]
+                      }
+                    >
+                      {(question.status === 'ocr_processing' ||
+                        question.replacement_status === 'processing') && (
                         <Loader2 className="mr-1 size-3 animate-spin" />
                       )}
-                      {meta[0]}
+                      {replacementLabel ?? meta[0]}
                     </Badge>
                   </div>
                   <div className="flex gap-5 text-sm text-muted-foreground">
@@ -196,7 +228,12 @@ export default function QuestionsPage() {
                   </div>
                   {question.error_message && (
                     <p className="rounded-lg bg-destructive/10 p-3 text-xs text-destructive">
-                      {question.error_message}
+                      OCR 失败：{question.error_message}。请重新选择 PDF 或 DOCX 上传。
+                    </p>
+                  )}
+                  {question.replacement_error_message && (
+                    <p className="rounded-lg bg-amber-50 p-3 text-xs text-amber-700">
+                      新版识别失败：{question.replacement_error_message}。旧版题目仍可继续使用。
                     </p>
                   )}
                   <div className="flex flex-wrap gap-2 border-t pt-3">
@@ -205,22 +242,54 @@ export default function QuestionsPage() {
                         <Eye />查看
                       </a>
                     </Button>
-                    <Button variant="ghost" size="sm" onClick={() => rename(question)}>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={replacementActive}
+                      onClick={() => rename(question)}
+                    >
                       <Pencil />重命名
                     </Button>
                     {question.status === 'failed' && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => retryMutation.mutate(question.id)}
-                      >
-                        <RefreshCw />重新识别
-                      </Button>
+                      <>
+                        <input
+                          ref={(element) => {
+                            if (element) retryRefs.current[question.id] = element;
+                            else delete retryRefs.current[question.id];
+                          }}
+                          type="file"
+                          accept={DOCUMENT_INPUT_ACCEPT}
+                          aria-label={`重新上传 ${question.name} 文件`}
+                          className="hidden"
+                          onChange={(event) => {
+                            const file = event.target.files?.[0];
+                            if (file) {
+                              retryMutation.mutate(
+                                { id: question.id, file },
+                                {
+                                  onSuccess: () =>
+                                    toast.success('文件已重新上传，正在识别'),
+                                  onError: (error) =>
+                                    toast.error(errorMessage(error)),
+                                },
+                              );
+                            }
+                            event.target.value = '';
+                          }}
+                        />
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => retryRefs.current[question.id]?.click()}
+                        >
+                          <FileUp />重新上传文件
+                        </Button>
+                      </>
                     )}
-                    <label className="inline-flex">
+                    <label className={`inline-flex ${replacementActive ? 'pointer-events-none opacity-50' : ''}`}>
                       <input
                         type="file"
-                        accept="application/pdf,.pdf"
+                        accept={DOCUMENT_INPUT_ACCEPT}
                         className="hidden"
                         onChange={(event) => {
                           const file = event.target.files?.[0];
@@ -228,13 +297,14 @@ export default function QuestionsPage() {
                           event.target.value = '';
                         }}
                       />
-                      <Button variant="ghost" size="sm" asChild>
+                      <Button variant="ghost" size="sm" disabled={replacementActive} asChild>
                         <span><FileUp />上传新版</span>
                       </Button>
                     </label>
                     <Button
                       variant="ghost"
                       size="sm"
+                      disabled={replacementActive}
                       className="text-destructive hover:text-destructive"
                       onClick={() => setDanger({ type: 'delete', question })}
                     >
@@ -250,7 +320,7 @@ export default function QuestionsPage() {
         <div className="rounded-2xl border border-dashed py-20 text-center">
           <BookOpen className="mx-auto mb-3 size-10 text-muted-foreground/50" />
           <p className="font-medium">还没有可显示的题目</p>
-          <p className="mt-1 text-sm text-muted-foreground">上传第一份题目 PDF 开始使用</p>
+          <p className="mt-1 text-sm text-muted-foreground">上传第一份 PDF 或 DOCX 题目开始使用</p>
         </div>
       )}
 
@@ -260,6 +330,7 @@ export default function QuestionsPage() {
           if (!open && !isDangerPending) {
             setDanger(null);
             setConfirmation('');
+            setAcknowledgedDeletion(false);
           }
         }}
       >
@@ -274,6 +345,19 @@ export default function QuestionsPage() {
               <strong className="mt-2 block text-foreground">{danger?.question.name}</strong>
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {danger?.type === 'replace' && (danger.question.submission_count ?? 0) > 0 && (
+            <label className="flex items-start gap-2.5 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+              <Checkbox
+                checked={acknowledgedDeletion}
+                onCheckedChange={(value) => setAcknowledgedDeletion(value === true)}
+                className="mt-0.5 data-[state=checked]:bg-destructive data-[state=checked]:text-destructive-foreground"
+              />
+              <span>
+                我已知晓：替换成功后将永久删除上述 {danger.question.submission_count}{' '}
+                条历史批改记录及其学生 PDF，不可恢复。
+              </span>
+            </label>
+          )}
           <Input
             value={confirmation}
             onChange={(event) => setConfirmation(event.target.value)}
@@ -282,7 +366,13 @@ export default function QuestionsPage() {
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isDangerPending}>取消</AlertDialogCancel>
             <AlertDialogAction
-              disabled={confirmation !== danger?.question.name || isDangerPending}
+              disabled={
+                confirmation !== danger?.question.name ||
+                isDangerPending ||
+                (danger?.type === 'replace' &&
+                  (danger.question.submission_count ?? 0) > 0 &&
+                  !acknowledgedDeletion)
+              }
               onClick={(event) => {
                 event.preventDefault();
                 confirmDanger();

@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/api/client';
 
 export type QuestionStatus = 'pending' | 'ocr_processing' | 'ready' | 'failed';
+export type QuestionReplacementStatus = 'pending' | 'processing' | 'failed';
 
 export interface Question {
   id: number;
@@ -9,6 +10,8 @@ export interface Question {
   original_filename: string;
   status: QuestionStatus;
   error_message: string | null;
+  replacement_status: QuestionReplacementStatus | null;
+  replacement_error_message: string | null;
   created_at: string;
   updated_at: string;
   last_used_at: string | null;
@@ -34,6 +37,11 @@ export function useQuestions(search = '', limit = 50) {
     refetchInterval: (query) =>
       query.state.data?.items.some(
         (item) => item.status === 'pending' || item.status === 'ocr_processing',
+      ) ||
+      query.state.data?.items.some(
+        (item) =>
+          item.replacement_status === 'pending' ||
+          item.replacement_status === 'processing',
       )
         ? 2000
         : false,
@@ -71,11 +79,19 @@ export function useRenameQuestion() {
 
 export function useRetryQuestionOcr() {
   const queryClient = useQueryClient();
-  return useMutation<Question, Error, number>({
-    mutationFn: (id) =>
+  return useMutation<Question, Error, { id: number; file: File }>({
+    mutationFn: ({ id, file }) => {
+      const form = new FormData();
+      form.append('file', file);
+      return (
       apiClient
-        .post<Question>(`/questions/${id}/retry-ocr`)
-        .then((response) => response.data),
+        .post<Question>(`/questions/${id}/retry-ocr`, form, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+          skipErrorToast: true,
+        })
+        .then((response) => response.data)
+      );
+    },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['questions'] }),
   });
 }
@@ -105,14 +121,19 @@ export function useDeleteQuestion() {
 export function useReplaceQuestion() {
   const queryClient = useQueryClient();
   return useMutation<
-    { deleted_submission_count: number },
+    {
+      question_id: number;
+      replacement_status: 'pending';
+      affected_submission_count: number;
+    },
     Error,
-    { id: number; file: File; confirmationName: string }
+    { id: number; file: File; confirmationName: string; acknowledgeDeletion: boolean }
   >({
-    mutationFn: ({ id, file, confirmationName }) => {
+    mutationFn: ({ id, file, confirmationName, acknowledgeDeletion }) => {
       const form = new FormData();
       form.append('file', file);
       form.append('confirmation_name', confirmationName);
+      form.append('acknowledge_deletion', String(acknowledgeDeletion));
       return apiClient
         .post(`/questions/${id}/replace`, form, {
           headers: { 'Content-Type': 'multipart/form-data' },

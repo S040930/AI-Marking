@@ -12,6 +12,7 @@ else
   PYTHON_BIN="${PYTHON_BIN:-python}"
 fi
 BACKEND_PID=""
+WORKER_PID=""
 FRONTEND_PID=""
 STOPPED=0
 
@@ -30,8 +31,10 @@ cleanup() {
   STOPPED=1
   info "正在关闭前后端..."
   [ -n "$FRONTEND_PID" ] && kill "$FRONTEND_PID" 2>/dev/null || true
+  [ -n "$WORKER_PID" ] && kill "$WORKER_PID" 2>/dev/null || true
   [ -n "$BACKEND_PID" ] && kill "$BACKEND_PID" 2>/dev/null || true
   [ -n "$FRONTEND_PID" ] && wait "$FRONTEND_PID" 2>/dev/null || true
+  [ -n "$WORKER_PID" ] && wait "$WORKER_PID" 2>/dev/null || true
   [ -n "$BACKEND_PID" ] && wait "$BACKEND_PID" 2>/dev/null || true
 }
 
@@ -64,7 +67,7 @@ if ! (
   info "正在安装后端依赖..."
   (
     cd "$BACKEND_DIR"
-    "$PYTHON_BIN" -m pip install -e '.[dev]'
+    "$PYTHON_BIN" -m pip install --require-hashes -r requirements-dev.txt
   )
 fi
 
@@ -72,7 +75,7 @@ if [ ! -d "$FRONTEND_DIR/node_modules" ]; then
   info "正在安装前端依赖..."
   (
     cd "$FRONTEND_DIR"
-    npm install
+    npm ci
   )
 fi
 
@@ -92,6 +95,13 @@ info "正在启动后端：http://localhost:8000"
 ) &
 BACKEND_PID=$!
 
+info "正在启动持久化任务 worker"
+(
+  cd "$BACKEND_DIR"
+  exec "$PYTHON_BIN" -m app.worker
+) &
+WORKER_PID=$!
+
 info "正在启动前端：http://localhost:5173"
 (
   cd "$FRONTEND_DIR"
@@ -101,7 +111,9 @@ FRONTEND_PID=$!
 
 printf '\n\033[1;32mAI Marking 已启动，按 Ctrl+C 同时关闭前后端。\033[0m\n\n'
 
-while kill -0 "$BACKEND_PID" 2>/dev/null && kill -0 "$FRONTEND_PID" 2>/dev/null; do
+while kill -0 "$BACKEND_PID" 2>/dev/null \
+  && kill -0 "$WORKER_PID" 2>/dev/null \
+  && kill -0 "$FRONTEND_PID" 2>/dev/null; do
   sleep 1
 done
 

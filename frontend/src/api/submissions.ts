@@ -54,13 +54,7 @@ export interface DetailItem {
   evidence?: string[];
 }
 
-/**
- * AI 建议评分(协同评分页用)。由 AI 自动产出的建议分数/反馈/明细,
- * 教师可在 ReviewPage 中据此调整后提交最终评分。
- */
-export type AISuggestion = AiSuggestion;
-
-export interface AgentTraceEvent {
+interface AgentTraceEvent {
   node: string;
   status: string;
   attempt: number;
@@ -78,7 +72,6 @@ export interface SubmissionDetail extends SubmissionOut {
   agent_trace: AgentTraceEvent[] | null;
   review_reason: string | null;
   reviewed_by: string | null;
-  review_note: string | null;
   reviewed_at: string | null;
   error_message: string | null;
 }
@@ -227,11 +220,39 @@ export function useUploadSubmission() {
   });
 }
 
+export function useRetrySubmission(submissionId: number) {
+  const queryClient = useQueryClient();
+  return useMutation<SubmissionCreateResponse, Error, File | undefined>({
+    mutationFn: (file) => {
+      const form = new FormData();
+      if (file) form.append('file', file);
+      return apiClient
+        .post<SubmissionCreateResponse>(
+          `/submissions/${submissionId}/retry`,
+          form,
+          {
+            headers: { 'Content-Type': 'multipart/form-data' },
+            skipErrorToast: true,
+          },
+        )
+        .then((response) => response.data);
+    },
+    onSuccess: () => {
+      queryClient.removeQueries({ queryKey: ['submission', submissionId] });
+      queryClient.invalidateQueries({
+        queryKey: ['submission-status', submissionId],
+      });
+      queryClient.invalidateQueries({ queryKey: ['submissions'] });
+    },
+  });
+}
+
 export interface ConversationMessage {
   id: number;
   submission_id: number;
   role: 'user' | 'assistant';
   content: string;
+  suggestion: AiSuggestion | null;
   created_at: string;
 }
 
@@ -310,6 +331,7 @@ export function useChat(submissionId: number) {
         submission_id: submissionId,
         role: 'user',
         content: payload.message,
+        suggestion: null,
         created_at: new Date().toISOString(),
       };
       queryClient.setQueryData<ConversationMessage[]>(
@@ -327,19 +349,11 @@ export function useChat(submissionId: number) {
         );
       }
     },
-    onSuccess: (data) => {
+    onSuccess: () => {
       // AI 回复后刷新对话列表(替换乐观消息为服务端真实数据)
       queryClient.invalidateQueries({
         queryKey: ['conversations', submissionId],
       });
-      // 若后端已直接 finalize,同步刷新 submission 详情
-      if (data.action === 'finalize') {
-        queryClient.invalidateQueries({
-          queryKey: ['submission', submissionId],
-        });
-        queryClient.invalidateQueries({ queryKey: ['submissions'] });
-        queryClient.invalidateQueries({ queryKey: ['submissions-count'] });
-      }
     },
   });
 }

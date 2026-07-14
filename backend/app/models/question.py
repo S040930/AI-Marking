@@ -17,6 +17,12 @@ class QuestionStatus(str, enum.Enum):
     failed = "failed"
 
 
+class QuestionReplacementStatus(str, enum.Enum):
+    pending = "pending"
+    processing = "processing"
+    failed = "failed"
+
+
 class Question(Base):
     __tablename__ = "questions"
     __table_args__ = (
@@ -36,6 +42,19 @@ class Question(Base):
         nullable=False,
     )
     error_message: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    replacement_status: Mapped[QuestionReplacementStatus | None] = mapped_column(
+        Enum(QuestionReplacementStatus, name="question_replacement_status"),
+        nullable=True,
+    )
+    replacement_file_path: Mapped[str | None] = mapped_column(
+        String(512), nullable=True
+    )
+    replacement_original_filename: Mapped[str | None] = mapped_column(
+        String(255), nullable=True
+    )
+    replacement_error_message: Mapped[str | None] = mapped_column(
+        String(1024), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=utc_now_naive, server_default=func.now(), nullable=False
     )

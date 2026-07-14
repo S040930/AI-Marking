@@ -17,6 +17,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { DOCUMENT_DROPZONE_ACCEPT } from '@/lib/documentUpload';
 
 interface FileSlotProps {
   label: string;
@@ -27,7 +28,7 @@ interface FileSlotProps {
 
 function FileSlot({ label, description, file, onFile }: FileSlotProps) {
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    accept: { 'application/pdf': ['.pdf'] },
+    accept: DOCUMENT_DROPZONE_ACCEPT,
     maxFiles: 1,
     multiple: false,
     onDrop: (acceptedFiles) => {
@@ -36,7 +37,7 @@ function FileSlot({ label, description, file, onFile }: FileSlotProps) {
       }
     },
     onDropRejected: () => {
-      toast.error('仅支持 PDF 文件');
+      toast.error('仅支持 PDF 或 DOCX 文件');
     },
   });
 
@@ -68,9 +69,9 @@ function FileSlot({ label, description, file, onFile }: FileSlotProps) {
         </div>
         <div className="space-y-1">
           <p className="text-sm font-semibold text-foreground">
-            {isDragActive ? '释放以上传 PDF' : '点击或拖拽 PDF 文件到此区域'}
+            {isDragActive ? '释放以上传文件' : '点击或拖拽 PDF/DOCX 文件到此区域'}
           </p>
-          <p className="text-xs text-muted-foreground">仅支持单个 PDF 文件</p>
+          <p className="text-xs text-muted-foreground">仅支持单个 PDF 或 DOCX 文件</p>
         </div>
       </div>
 
@@ -116,16 +117,28 @@ export default function UploadPage() {
   const selectedQuestion = questionsData?.items.find(
     (question) => question.id === selectedQuestionId,
   );
+  const selectedQuestionFrozen =
+    selectedQuestion?.replacement_status === 'pending' ||
+    selectedQuestion?.replacement_status === 'processing';
 
   useEffect(() => {
-    if (selectedQuestion?.status === 'ready' && mode === 'new') {
+    if (
+      selectedQuestion?.status === 'ready' &&
+      !selectedQuestionFrozen &&
+      mode === 'new'
+    ) {
       setMode('existing');
       toast.success('题目识别完成，已自动选中');
     }
-  }, [mode, selectedQuestion?.status]);
+  }, [mode, selectedQuestion?.status, selectedQuestionFrozen]);
 
   const handleSubmit = () => {
-    if (!file || !selectedQuestionId || selectedQuestion?.status !== 'ready') return;
+    if (
+      !file ||
+      !selectedQuestionId ||
+      selectedQuestion?.status !== 'ready' ||
+      selectedQuestionFrozen
+    ) return;
     uploadMutation.mutate(
       { file, questionId: selectedQuestionId },
       {
@@ -167,7 +180,7 @@ export default function UploadPage() {
           上传作业
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          从题目库选择评分依据，再上传一份学生作业 PDF。
+          从题目库选择评分依据，再上传一份 PDF 或 DOCX 学生作业。
         </p>
       </div>
 
@@ -195,14 +208,21 @@ export default function UploadPage() {
               <Button
                 type="button"
                 variant={mode === 'existing' ? 'secondary' : 'ghost'}
-                onClick={() => setMode('existing')}
+                onClick={() => {
+                  setMode('existing');
+                  setNewQuestionFile(null);
+                  setNewQuestionName('');
+                }}
               >
                 <BookOpen />选择已有题目
               </Button>
               <Button
                 type="button"
                 variant={mode === 'new' ? 'secondary' : 'ghost'}
-                onClick={() => setMode('new')}
+                onClick={() => {
+                  setMode('new');
+                  setSelectedQuestionId(null);
+                }}
               >
                 <Plus />上传新题目
               </Button>
@@ -222,17 +242,24 @@ export default function UploadPage() {
                 <div className="max-h-64 space-y-2 overflow-y-auto rounded-xl border p-2">
                   {questionsData?.items.length ? (
                     questionsData.items.map((question) => (
+                      (() => {
+                        const replacementActive =
+                          question.replacement_status === 'pending' ||
+                          question.replacement_status === 'processing';
+                        const disabled =
+                          question.status !== 'ready' || replacementActive;
+                        return (
                       <button
                         key={question.id}
                         type="button"
-                        disabled={question.status !== 'ready'}
+                        disabled={disabled}
                         onClick={() => setSelectedQuestionId(question.id)}
                         className={cn(
                           'flex w-full items-center gap-3 rounded-lg border px-3 py-3 text-left transition-colors',
                           selectedQuestionId === question.id
                             ? 'border-primary bg-primary/5'
                             : 'border-transparent hover:bg-muted',
-                          question.status !== 'ready' && 'cursor-not-allowed opacity-55',
+                          disabled && 'cursor-not-allowed opacity-55',
                         )}
                       >
                         <BookOpen className="size-4 shrink-0 text-primary" />
@@ -242,14 +269,22 @@ export default function UploadPage() {
                             {question.original_filename} · {question.submission_count} 份记录
                           </span>
                         </span>
-                        <Badge variant={question.status === 'ready' ? 'secondary' : question.status === 'failed' ? 'destructive' : 'outline'}>
-                          {question.status === 'ready'
+                        <Badge variant={question.status === 'failed' ? 'destructive' : 'secondary'}>
+                          {replacementActive
+                            ? question.replacement_status === 'pending'
+                              ? '新版排队中'
+                              : '新版识别中'
+                            : question.replacement_status === 'failed'
+                              ? '旧版可用'
+                              : question.status === 'ready'
                             ? '可使用'
                             : question.status === 'failed'
                               ? '识别失败'
                               : '识别中'}
                         </Badge>
                       </button>
+                        );
+                      })()
                     ))
                   ) : (
                     <p className="py-8 text-center text-sm text-muted-foreground">
@@ -266,7 +301,7 @@ export default function UploadPage() {
                   placeholder="题目名称（可选，默认使用文件名）"
                 />
                 <FileSlot
-                  label="新题目 PDF"
+                  label="新题目文件"
                   description="上传后系统会自动 OCR，之后可重复使用"
                   file={newQuestionFile}
                   onFile={setNewQuestionFile}
@@ -296,7 +331,7 @@ export default function UploadPage() {
             )}
           </div>
           <FileSlot
-            label="学生作业 PDF"
+            label="学生作业文件"
             description="学生提交的作业内容"
             file={file}
             onFile={setFile}
@@ -308,6 +343,7 @@ export default function UploadPage() {
               !file ||
               !selectedQuestionId ||
               selectedQuestion?.status !== 'ready' ||
+              selectedQuestionFrozen ||
               uploadMutation.isPending
             }
             onClick={handleSubmit}

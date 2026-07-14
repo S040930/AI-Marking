@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     """应用配置类(仅保留应用级配置)。"""
 
     DATABASE_URL: str = (
-        "postgresql+asyncpg://postgres:postgres@localhost:5432/ai_marking"
+        "postgresql+psycopg2://postgres:postgres@localhost:5432/ai_marking"
     )
     CORS_ORIGINS: list[str] = ["http://localhost:5173"]
 
@@ -24,6 +24,12 @@ class Settings(BaseSettings):
     UPLOAD_RETENTION_DAYS: int = 7
     # 清理任务扫描间隔(秒)。默认 1 小时。
     CLEANUP_INTERVAL_SECONDS: int = 3600
+
+    # PostgreSQL 持久化任务 worker
+    TASK_CONCURRENCY: int = 4
+    TASK_LEASE_SECONDS: int = 90
+    TASK_MAX_ATTEMPTS: int = 3
+    TASK_POLL_INTERVAL_SECONDS: float = 1.0
 
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -39,7 +39,6 @@ class SubmissionDetail(SubmissionOut):
     agent_trace: list[dict] | None = None
     review_reason: str | None = None
     reviewed_by: str | None = None
-    review_note: str | None = None
     reviewed_at: datetime | None = None
     error_message: str | None = None
 
@@ -91,6 +90,7 @@ class ConversationOut(BaseModel):
     submission_id: int
     role: str
     content: str
+    suggestion: dict | None = None
     created_at: datetime
 
 

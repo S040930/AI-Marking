@@ -56,7 +56,7 @@
   - 底部以进度条可视化各维度得分，默认展示前 3 项，可展开全部。
 - **快捷操作**："采纳当前评分"、"要求 AI 复核"。
 - **输入区**：大圆角 textarea + 圆形发送按钮；Enter 直接发送，Shift+Enter 换行。
-- **最终评分确认（FinalizeConfirmCard）**：当 AI 返回 `action=finalize` 时展示，教师确认后提交。
+- **最终评分确认（FinalizeConfirmCard）**：当 AI 返回 `action=finalize` 且包含有效 `finalize_payload` 时展示，教师确认后提交该 payload。
 - **审核教师姓名**：不在本页输入，统一从系统配置的 `operator_name` 读取（Settings 中维护）。
 
 ## CSS 工具类
@@ -73,4 +73,4 @@
 - `useConfig` 读取 `operator_name` 作为 `reviewer_name`。
 - `useConversations` 获取历史对话；`useChat` 发送教师消息并接收结构化响应。
 - `useFinalizeSubmission` 提交教师确认的最终评分。
-- AI 返回 `action=finalize` 时前端显示确认卡片，由教师二次确认后写入数据库。
+- AI 返回 `action=finalize` 时必须同时返回 `finalize_payload`；前端显示确认卡片，并在教师二次确认后用该 payload 写入数据库。
