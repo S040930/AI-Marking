@@ -24,6 +24,59 @@ error() {
   printf '\033[1;31m%s\033[0m\n' "$1" >&2
 }
 
+backend_port_is_open() {
+  "$PYTHON_BIN" - <<'PY'
+import socket
+
+with socket.socket() as sock:
+    sock.settimeout(0.3)
+    raise SystemExit(0 if sock.connect_ex(("127.0.0.1", 8000)) == 0 else 1)
+PY
+}
+
+backend_service_identity() {
+  "$PYTHON_BIN" - <<'PY'
+import json
+import urllib.request
+
+try:
+    with urllib.request.urlopen("http://127.0.0.1:8000/api/health", timeout=1) as response:
+        payload = json.load(response)
+except Exception:
+    print("unknown")
+else:
+    print(payload.get("service", "unknown"))
+PY
+}
+
+ensure_backend_port_available() {
+  if ! backend_port_is_open; then
+    return
+  fi
+  if [ "$(backend_service_identity)" = "ai-marking" ]; then
+    error "8000 端口已有 AI-Marking 进程。请先停止旧进程，避免 MCP 连接到过期后端。"
+  else
+    error "8000 端口已被其他服务占用。请停止该进程后再启动 AI-Marking。"
+  fi
+  exit 1
+}
+
+wait_for_backend() {
+  local attempt identity
+  for attempt in $(seq 1 20); do
+    if kill -0 "$BACKEND_PID" 2>/dev/null && backend_port_is_open; then
+      identity="$(backend_service_identity)"
+      if [ "$identity" = "ai-marking" ]; then
+        info "后端身份检查通过：ai-marking API"
+        return
+      fi
+    fi
+    sleep 1
+  done
+  error "后端未在 20 秒内通过服务身份检查，请查看上方 uvicorn 日志。"
+  exit 1
+}
+
 cleanup() {
   if [ "$STOPPED" -eq 1 ]; then
     return
@@ -62,7 +115,7 @@ fi
 
 if ! (
   cd "$BACKEND_DIR"
-  "$PYTHON_BIN" -c 'import app, langgraph'
+  "$PYTHON_BIN" -c 'import app, langgraph, mcp'
 ) >/dev/null 2>&1; then
   info "正在安装后端依赖..."
   (
@@ -79,6 +132,8 @@ if [ ! -d "$FRONTEND_DIR/node_modules" ]; then
   )
 fi
 
+ensure_backend_port_available
+
 info "正在检查数据库并执行迁移..."
 if ! (
   cd "$BACKEND_DIR"
@@ -91,9 +146,10 @@ fi
 info "正在启动后端：http://localhost:8000"
 (
   cd "$BACKEND_DIR"
-  exec "$PYTHON_BIN" -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+  exec "$PYTHON_BIN" -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ) &
 BACKEND_PID=$!
+wait_for_backend
 
 info "正在启动持久化任务 worker"
 (

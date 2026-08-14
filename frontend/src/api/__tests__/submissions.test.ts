@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  canLoadSubmissionDetail,
   isTerminal,
   isProcessing,
   type SubmissionStatus,
@@ -18,6 +19,14 @@ describe('isTerminal', () => {
     expect(isTerminal('failed')).toBe(true);
   });
 
+  it('awaiting_codex 仍需等待 Codex，不是终态', () => {
+    expect(isTerminal('awaiting_codex')).toBe(false);
+  });
+
+  it('awaiting_codex 可加载恢复页详情', () => {
+    expect(canLoadSubmissionDetail('awaiting_codex')).toBe(true);
+  });
+
   const nonTerminal: SubmissionStatus[] = [
     'pending',
     'ocr_processing',
@@ -25,6 +34,7 @@ describe('isTerminal', () => {
     'agent_grading',
     'agent_reviewing',
     'agent_revising',
+    'awaiting_codex',
   ];
 
   nonTerminal.forEach((status) => {
@@ -71,6 +81,7 @@ describe('isTerminal 与 isProcessing 互斥', () => {
     'agent_grading',
     'agent_reviewing',
     'agent_revising',
+    'awaiting_codex',
     'ready_for_review',
     'reviewed',
     'failed',

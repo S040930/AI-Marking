@@ -28,6 +28,7 @@ interface ReviewChatPanelProps {
   isReadOnly: boolean;
   reviewerName: string;
   onFinalize: (payload: FinalizePayload) => void;
+  disableChat?: boolean;
   className?: string;
 }
 
@@ -248,6 +249,7 @@ export default function ReviewChatPanel({
   isReadOnly,
   reviewerName,
   onFinalize,
+  disableChat = false,
   className,
 }: ReviewChatPanelProps) {
   const { data: conversations } = useConversations(submissionId);
@@ -291,7 +293,7 @@ export default function ReviewChatPanel({
 
   const handleSendMessage = () => {
     const message = chatInput.trim();
-    if (!message || chatMutation.isPending || isReadOnly) return;
+    if (!message || chatMutation.isPending || isReadOnly || disableChat) return;
 
     chatMutation.mutate(
       { message, reviewer_name: reviewerName },
@@ -364,7 +366,7 @@ export default function ReviewChatPanel({
             />
           )}
 
-          {messages.map((msg, idx) => (
+          {!disableChat && messages.map((msg, idx) => (
             <MessageBubble
               key={msg.id}
               message={msg}
@@ -428,6 +430,13 @@ export default function ReviewChatPanel({
           <div className="flex items-center justify-center gap-2 rounded-xl border border-border bg-muted/40 py-3 text-sm text-muted-foreground">
             <CheckCircle2 className="size-4" />
             该作业已审阅，对话已锁定
+          </div>
+        ) : disableChat ? (
+          <div className="rounded-xl border border-primary/15 bg-primary/[0.04] px-4 py-3 text-sm text-muted-foreground">
+            <p className="font-medium text-foreground">Codex 评分建议</p>
+            <p className="mt-1 text-xs leading-relaxed">
+              请在 Codex 中读取最新上下文并修订建议。网页只负责查看和确认最终成绩。
+            </p>
           </div>
         ) : (
           <div className="flex gap-2">

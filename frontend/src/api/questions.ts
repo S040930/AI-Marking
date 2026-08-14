@@ -6,6 +6,7 @@ export type QuestionReplacementStatus = 'pending' | 'processing' | 'failed';
 
 export interface Question {
   id: number;
+  config_profile_id: number;
   name: string;
   original_filename: string;
   status: QuestionStatus;
@@ -50,11 +51,12 @@ export function useQuestions(search = '', limit = 50) {
 
 export function useCreateQuestion() {
   const queryClient = useQueryClient();
-  return useMutation<Question, Error, { file: File; name?: string }>({
-    mutationFn: ({ file, name }) => {
+  return useMutation<Question, Error, { file: File; name?: string; configProfileId?: number }>({
+    mutationFn: ({ file, name, configProfileId }) => {
       const form = new FormData();
       form.append('file', file);
       if (name) form.append('name', name);
+      if (configProfileId) form.append('config_profile_id', String(configProfileId));
       return apiClient
         .post<Question>('/questions', form, {
           headers: { 'Content-Type': 'multipart/form-data' },
@@ -92,6 +94,19 @@ export function useRetryQuestionOcr() {
         .then((response) => response.data)
       );
     },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['questions'] }),
+  });
+}
+
+export function useChangeQuestionConfigProfile() {
+  const queryClient = useQueryClient();
+  return useMutation<Question, Error, { id: number; configProfileId: number }>({
+    mutationFn: ({ id, configProfileId }) =>
+      apiClient
+        .patch<Question>(`/questions/${id}/config-profile`, {
+          config_profile_id: configProfileId,
+        })
+        .then((response) => response.data),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['questions'] }),
   });
 }

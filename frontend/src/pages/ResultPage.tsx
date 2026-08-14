@@ -49,6 +49,7 @@ export default function ResultPage() {
   const { data, isLoading: isDetailLoading } = useSubmission(
     numericId,
     detailEnabled,
+    statusData?.status,
   );
 
   if (numericId === undefined) {
@@ -211,6 +212,39 @@ export default function ResultPage() {
                 </div>
               </div>
             ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {data.code_files?.some((codeFile) => codeFile.execution_result || codeFile.artifacts?.length || codeFile.visual_reviews?.length) && (
+        <Card className="elevated-card overflow-hidden">
+          <CardHeader className="pb-4">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <FileText className="size-5 text-primary" />
+              代码运行摘要
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {data.code_files.map((codeFile) => (
+              (codeFile.execution_result || codeFile.artifacts?.length || codeFile.visual_reviews?.length) ? <div key={codeFile.id} className="rounded-xl border p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm font-medium">
+                    第 {codeFile.question_number} 题 · {codeFile.original_filename}
+                  </span>
+                  <Badge variant={codeFile.execution_status === 'completed' ? 'secondary' : 'destructive'}>
+                    {codeFile.execution_status === 'completed' ? '运行完成' : '运行异常'}
+                  </Badge>
+                </div>
+                {codeFile.execution_result?.exception && (
+                  <pre className="mt-2 max-h-28 overflow-auto rounded-lg bg-red-50 p-2 text-xs text-red-800">
+                    {codeFile.execution_result.exception}
+                  </pre>
+                )}
+              </div> : null
+            ))}
+            <Button variant="outline" onClick={() => navigate(`/review/${data.id}`)}>
+              查看报告与代码证据
+            </Button>
           </CardContent>
         </Card>
       )}

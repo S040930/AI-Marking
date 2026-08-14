@@ -7,4 +7,6 @@ async def test_health_returns_ok(client):
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "ok"
+    assert data["service"] == "ai-marking"
+    assert data["api_version"] == "1"
     assert "timestamp" in data

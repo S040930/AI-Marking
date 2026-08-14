@@ -1,6 +1,7 @@
 """独立题目库：上传、OCR、复用、替换与安全删除。"""
 
 import logging
+import shutil
 from pathlib import Path
 
 from fastapi import (
@@ -15,7 +16,7 @@ from fastapi import (
 )
 from fastapi.responses import FileResponse
 from sqlalchemy import func, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.api.submissions import DELETABLE_SUBMISSION_STATUSES
 from app.core.config import settings
@@ -29,12 +30,17 @@ from app.models.question import (
 from app.models.submission import Submission
 from app.schemas.question import (
     PaginatedQuestions,
+    QuestionConfigProfileRequest,
     QuestionConfirmRequest,
     QuestionDetail,
     QuestionMutationResponse,
     QuestionOut,
     QuestionRenameRequest,
     QuestionReplacementResponse,
+)
+from app.services.config import (
+    get_or_create_default_profile,
+    get_profile,
 )
 from app.services.document_storage import (
     save_document_as_pdf,
@@ -83,6 +89,7 @@ def _serialize(question: Question, submission_count: int, *, detail: bool = Fals
     schema = QuestionDetail if detail else QuestionOut
     return schema(
         id=question.id,
+        config_profile_id=question.config_profile_id,
         name=question.name,
         original_filename=question.original_filename,
         status=question.status,
@@ -101,9 +108,16 @@ def _serialize(question: Question, submission_count: int, *, detail: bool = Fals
 async def create_question(
     file: UploadFile = File(...),
     name: str | None = Form(default=None),
+    config_profile_id: int | None = Form(default=None),
     db: Session = Depends(get_db),
 ):
     validate_document_upload(file)
+    # 未指定配置项目时使用默认项目(保证题目始终有可用配置)
+    if config_profile_id is None:
+        default = get_or_create_default_profile(db)
+        config_profile_id = default.id
+    elif get_profile(db, config_profile_id) is None:
+        raise HTTPException(status_code=422, detail="配置项目不存在")
     original_filename, path = await save_document_as_pdf(
         file, _upload_dir(), suffix="_question"
     )
@@ -116,6 +130,7 @@ async def create_question(
         original_filename=original_filename,
         file_path=str(path),
         status=QuestionStatus.pending,
+        config_profile_id=config_profile_id,
     )
     db.add(question)
     try:
@@ -131,7 +146,7 @@ async def create_question(
 
 
 @router.get("/questions", response_model=PaginatedQuestions)
-async def list_questions(
+def list_questions(
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
     search: str = Query(""),
@@ -181,7 +196,10 @@ def get_question(question_id: int, db: Session = Depends(get_db)):
     return _serialize(row[0], row[1], detail=True)
 
 
-@router.get("/questions/{question_id}/pdf")
+@router.api_route(
+    "/questions/{question_id}/pdf",
+    methods=["GET", "HEAD"],
+)
 def get_question_pdf(question_id: int, db: Session = Depends(get_db)):
     question = db.get(Question, question_id)
     if question is None:
@@ -198,7 +216,7 @@ def get_question_pdf(question_id: int, db: Session = Depends(get_db)):
 
 
 @router.patch("/questions/{question_id}", response_model=QuestionOut)
-async def rename_question(
+def rename_question(
     question_id: int,
     payload: QuestionRenameRequest,
     db: Session = Depends(get_db),
@@ -212,6 +230,27 @@ async def rename_question(
     ):
         raise HTTPException(status_code=409, detail="题目新版正在处理中")
     question.name = payload.name.strip()
+    question.updated_at = utc_now_naive()
+    db.commit()
+    row = _question_with_count(db, question_id)
+    return _serialize(row[0], row[1])
+
+
+@router.patch("/questions/{question_id}/config-profile", response_model=QuestionOut)
+def change_question_config_profile(
+    question_id: int,
+    payload: QuestionConfigProfileRequest,
+    db: Session = Depends(get_db),
+):
+    """切换题目使用的配置项目。"""
+    if get_profile(db, payload.config_profile_id) is None:
+        raise HTTPException(status_code=422, detail="配置项目不存在")
+    question = db.get(Question, question_id)
+    if question is None:
+        raise HTTPException(status_code=404, detail="题目不存在")
+    if question.status in (QuestionStatus.pending, QuestionStatus.ocr_processing):
+        raise HTTPException(status_code=409, detail="题目 OCR 正在处理中")
+    question.config_profile_id = payload.config_profile_id
     question.updated_at = utc_now_naive()
     db.commit()
     row = _question_with_count(db, question_id)
@@ -257,18 +296,25 @@ async def retry_question_ocr(
 
 def _locked_submissions(db: Session, question_id: int):
     return (
-        db.execute(
-            select(Submission)
-            .where(Submission.question_id == question_id)
-            .with_for_update()
+        (
+            db.execute(
+                select(Submission)
+                .options(
+                    selectinload(Submission.code_files),
+                    selectinload(Submission.code_input_files),
+                )
+                .where(Submission.question_id == question_id)
+                .with_for_update()
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
 
 def _blocked_ids(submissions: list[Submission]) -> list[int]:
     return sorted(
-        sub.id for sub in submissions
-        if sub.status not in DELETABLE_SUBMISSION_STATUSES
+        sub.id for sub in submissions if sub.status not in DELETABLE_SUBMISSION_STATUSES
     )
 
 
@@ -351,10 +397,8 @@ async def replace_question(
     )
 
 
-@router.delete(
-    "/questions/{question_id}", response_model=QuestionMutationResponse
-)
-async def delete_question(
+@router.delete("/questions/{question_id}", response_model=QuestionMutationResponse)
+def delete_question(
     question_id: int,
     payload: QuestionConfirmRequest = Body(...),
     db: Session = Depends(get_db),
@@ -376,13 +420,31 @@ async def delete_question(
     if blocked:
         raise HTTPException(
             status_code=409,
-            detail={"message": "存在正在处理的批改记录，无法删除题目",
-                    "blocked_submission_ids": blocked},
+            detail={
+                "message": "存在正在处理的批改记录，无法删除题目",
+                "blocked_submission_ids": blocked,
+            },
         )
     paths = [question.file_path]
     if question.replacement_file_path:
         paths.append(question.replacement_file_path)
     paths.extend(sub.file_path for sub in submissions if sub.file_path)
+    paths.extend(
+        code_file.file_path
+        for sub in submissions
+        for code_file in sub.code_files
+        if code_file.file_path
+    )
+    paths.extend(
+        input_file.file_path
+        for sub in submissions
+        for input_file in sub.code_input_files
+        if input_file.file_path
+    )
+    artifact_roots = [
+        Path(settings.UPLOAD_DIR).resolve() / "code-artifacts" / str(sub.id)
+        for sub in submissions
+    ]
     for sub in submissions:
         db.delete(sub)
     db.flush()
@@ -393,4 +455,6 @@ async def delete_question(
         db.rollback()
         raise
     _unlink_after_commit(paths)
+    for artifact_root in artifact_roots:
+        shutil.rmtree(artifact_root, ignore_errors=True)
     return QuestionMutationResponse(deleted_submission_count=len(submissions))

@@ -5,7 +5,17 @@ LLM/OCR 的 API Key、endpoint、rubric 等业务配置已迁移到数据库
 (由 ``app/services/config.py`` 与设置页面管理),不再在此声明。
 """
 
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# .env 按文件位置解析,不依赖启动时的工作目录,保证
+# 无论从哪个目录(如 CC Switch 启动 stdio)都能读到配置。
+_BACKEND_DIR = Path(__file__).resolve().parents[2]
+
+AI_MARKING_SERVICE = "ai-marking"
+BACKEND_API_VERSION = "1"
+MCP_API_VERSION = "8"
 
 
 class Settings(BaseSettings):
@@ -31,8 +41,13 @@ class Settings(BaseSettings):
     TASK_MAX_ATTEMPTS: int = 3
     TASK_POLL_INTERVAL_SECONDS: float = 1.0
 
+    # Deprecated compatibility setting; loopback MCP no longer authenticates
+    # requests with a shared token.
+    MCP_INTERNAL_TOKEN: str = ""
+    MCP_MAX_GRADING_CONTEXT_CHARS: int = 200_000
+
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=_BACKEND_DIR / ".env",
         env_file_encoding="utf-8",
         case_sensitive=True,
     )

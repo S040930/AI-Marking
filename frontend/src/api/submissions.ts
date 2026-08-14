@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from './client';
 
@@ -9,6 +10,7 @@ export type SubmissionStatus =
   | 'agent_grading'
   | 'agent_reviewing'
   | 'agent_revising'
+  | 'awaiting_codex'
   | 'ready_for_review'
   | 'reviewed'
   | 'failed';
@@ -38,12 +40,47 @@ export interface SubmissionOut {
   original_filename: string;
   question_original_filename: string | null;
   status: SubmissionStatus;
+  grading_mode: 'backend_agent' | 'codex';
+  grading_revision: number;
+  graded_at: string | null;
   score: number | null;
   max_score: number | null;
   confidence: number | null;
-  ai_suggestion: AiSuggestion | null;
   uploaded_at: string;
   completed_at: string | null;
+  has_code?: boolean;
+}
+
+export interface SubmissionCodeFile {
+  id: number;
+  question_number: number;
+  original_filename: string;
+  file_kind: string;
+  source_sha256: string;
+  source_text: string | null;
+  execution_status: 'pending' | 'running' | 'completed' | 'failed';
+  execution_result: {
+    stdout?: string;
+    stderr?: string;
+    exception?: string | null;
+    failure_kind?: string | null;
+    notebook_outputs?: Array<{ cell: number; text?: string; error?: string }>;
+  } | null;
+  artifacts: Array<{
+    filename: string;
+    artifact_id: string;
+    kind: string;
+    size: number;
+    sha256: string;
+  }> | null;
+  visual_reviews: Array<Record<string, unknown>> | null;
+}
+
+export interface SubmissionCodeInputFile {
+  id: number;
+  original_filename: string;
+  size_bytes: number;
+  sha256: string;
 }
 
 export interface DetailItem {
@@ -67,6 +104,7 @@ export interface SubmissionDetail extends SubmissionOut {
   ocr_text: string | null;
   question_ocr_text: string | null;
   feedback: string | null;
+  ai_suggestion: AiSuggestion | null;
   details: DetailItem[] | null;
   ai_result: Record<string, unknown> | null;
   agent_trace: AgentTraceEvent[] | null;
@@ -74,6 +112,16 @@ export interface SubmissionDetail extends SubmissionOut {
   reviewed_by: string | null;
   reviewed_at: string | null;
   error_message: string | null;
+  code_runtime: Record<string, unknown> | null;
+  code_visual_assets: Array<{
+    asset_id: string;
+    filename: string;
+    mime_type: string;
+    page: number | null;
+    sha256: string;
+  }> | null;
+  code_files: SubmissionCodeFile[];
+  code_input_files: SubmissionCodeInputFile[];
 }
 
 // 轻量状态:处理中轮询用,字段集合刻意比 SubmissionOut 小
@@ -81,6 +129,8 @@ export interface SubmissionDetail extends SubmissionOut {
 export interface SubmissionStatusOut {
   id: number;
   status: SubmissionStatus;
+  grading_mode: 'backend_agent' | 'codex';
+  grading_revision: number;
   original_filename: string;
   score: number | null;
   max_score: number | null;
@@ -102,8 +152,12 @@ export interface PaginatedSubmissions {
   limit: number;
 }
 
-// 终态判断
-const TERMINAL_STATUSES: SubmissionStatus[] = ['ready_for_review', 'reviewed', 'failed'];
+// 终态判断：awaiting_codex 仍需要等待 Codex 保存建议，不能停止状态刷新。
+const TERMINAL_STATUSES: SubmissionStatus[] = [
+  'ready_for_review',
+  'reviewed',
+  'failed',
+];
 
 export function isTerminal(status: SubmissionStatus): boolean {
   return TERMINAL_STATUSES.includes(status);
@@ -111,6 +165,14 @@ export function isTerminal(status: SubmissionStatus): boolean {
 
 export function isProcessing(status: SubmissionStatus): boolean {
   return !isTerminal(status);
+}
+
+/**
+ * awaiting_codex 已经有可展示的作业详情，但仍等待 Codex 写入建议。
+ * 其他处理中状态的大字段尚未准备好，避免提前拉取完整详情。
+ */
+export function canLoadSubmissionDetail(status: SubmissionStatus): boolean {
+  return status === 'awaiting_codex' || isTerminal(status);
 }
 
 // hooks
@@ -126,11 +188,11 @@ export function useSubmissions({ page, pageSize }: { page: number; pageSize: num
         })
         .then((r) => r.data),
     placeholderData: (prev) => prev,
-    // 存在非终态记录时每 3 秒轮询
+    // 历史列表只承担状态摘要展示，低频刷新避免放大数据库压力。
     refetchInterval: (query) => {
       const data = query.state.data;
       if (!data) return false;
-      return data.items.some((s) => isProcessing(s.status)) ? 3000 : false;
+      return data.items.some((s) => isProcessing(s.status)) ? 15000 : false;
     },
     refetchIntervalInBackground: false,
   });
@@ -139,7 +201,7 @@ export function useSubmissions({ page, pageSize }: { page: number; pageSize: num
 /**
  * 提交总数(独立 query,不随列表轮询)。
  *
- * 拆分原因:list 接口在处理中时每 3s 轮询,若每次都算 COUNT(*) 会产生
+ * 拆分原因:list 接口在处理中时每 15s 轮询,若每次都算 COUNT(*) 会产生
  * 无谓 DB 往返。总数只在翻页/首次加载时需要,用 staleTime 30s 平滑缓存。
  */
 export function useSubmissionsCount() {
@@ -159,9 +221,15 @@ export function useSubmissionsCount() {
  * P2-L3:调用方应根据轻量 status 判断是否终态,处理中传 ``enabled=false``
  * 避免拉取大字段(此时大字段为 null,属于浪费)。终态后再 enable 拉取。
  */
-export function useSubmission(id: number | undefined, enabled: boolean = true) {
+export function useSubmission(
+  id: number | undefined,
+  enabled: boolean = true,
+  status?: SubmissionStatus,
+) {
   return useQuery<SubmissionDetail>({
-    queryKey: ['submission', id],
+    // 状态变化时切换详情 key，避免 fallback 轮询更新 status 后仍复用
+    // awaiting_codex 的旧建议；同时保留 ['submission', id] 前缀供 SSE 失效缓存。
+    queryKey: ['submission', id, status ?? 'detail'],
     queryFn: () =>
       apiClient.get<SubmissionDetail>(`/submissions/${id}`).then((r) => r.data),
     enabled: id !== undefined && !isNaN(id) && enabled,
@@ -171,12 +239,60 @@ export function useSubmission(id: number | undefined, enabled: boolean = true) {
 }
 
 /**
- * 轻量状态轮询:处理中每 2 秒拉取 ``/submissions/{id}/status``.
+ * SSE 订阅:监听 ``/submissions/{id}/events`` 推送的状态变更事件。
  *
- * 进入终态后停止轮询,调用方通常应当用 ``useSubmission(id)`` 再拉一次
+ * 收到事件后立即 invalidate 对应 status query,触发 ``useSubmissionStatus``
+ * 重新拉取轻量状态。终态事件额外 invalidate 完整详情 query,触发
+ * ``useSubmission`` 拉取 ``SubmissionDetail``。
+ *
+ * 与 ``useSubmissionStatus`` 的 30s 兜底轮询配合:SSE 主路径推送,
+ * 轮询仅在 SSE 断开时(网络抖动、代理超时)仍能恢复。
+ */
+export function useSubmissionEvents(id: number | undefined) {
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    if (id === undefined || isNaN(id)) return;
+    // EventSource 在 SSR / 部分测试环境不存在,守卫一下避免崩溃
+    if (typeof window === 'undefined' || typeof EventSource === 'undefined') {
+      return;
+    }
+    const es = new EventSource(`/api/submissions/${id}/events`);
+    es.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data) as {
+          submission_id?: number;
+          status?: SubmissionStatus;
+        };
+        if (data.submission_id !== id) return;
+        queryClient.invalidateQueries({
+          queryKey: ['submission-status', id],
+        });
+        if (data.status && isTerminal(data.status)) {
+          // 终态:刷新完整详情,供 ResultPage 渲染 ocr_text/feedback 等
+          queryClient.invalidateQueries({ queryKey: ['submission', id] });
+        }
+      } catch {
+        // ignore parse errors(包括 keepalive 注释行,虽然 EventSource 不会
+        // 把注释行投递到 onmessage,但兜底防御)
+      }
+    };
+    // EventSource 自带断线重连,无需手动处理 onerror;
+    // 显式 onerror=null 让浏览器走默认重连逻辑,避免控制台噪音。
+    es.onerror = null;
+    return () => {
+      es.close();
+    };
+  }, [id, queryClient]);
+}
+
+/**
+ * 轻量状态查询:主路径靠 SSE 推送触发 invalidate,30s 兜底轮询。
+ *
+ * 进入终态后停止轮询。调用方在终态下应当用 ``useSubmission(id)`` 拉
  * 完整 ``SubmissionDetail`` 用于结果渲染。
  */
 export function useSubmissionStatus(id: number | undefined) {
+  useSubmissionEvents(id);
   return useQuery<SubmissionStatusOut>({
     queryKey: ['submission-status', id],
     queryFn: () =>
@@ -184,10 +300,11 @@ export function useSubmissionStatus(id: number | undefined) {
         .get<SubmissionStatusOut>(`/submissions/${id}/status`)
         .then((r) => r.data),
     enabled: id !== undefined && !isNaN(id),
+    // 兜底轮询:SSE 断开时仍能更新;30s 远小于原 2s 的请求量
     refetchInterval: (query) => {
       const data = query.state.data;
       if (!data) return false;
-      return isProcessing(data.status) ? 2000 : false;
+      return isProcessing(data.status) ? 30000 : false;
     },
     refetchIntervalInBackground: false,
   });
@@ -196,15 +313,32 @@ export function useSubmissionStatus(id: number | undefined) {
 export interface UploadSubmissionPayload {
   file: File;
   questionId: number;
+  gradingMode?: 'backend_agent' | 'codex';
+  reviewEnabled?: boolean;
+  codeFiles?: File[];
+  codeManifest?: Array<{ filename: string; question_number: number }>;
 }
 
 export function useUploadSubmission() {
   const queryClient = useQueryClient();
   return useMutation<SubmissionCreateResponse, Error, UploadSubmissionPayload>({
-    mutationFn: ({ file, questionId }) => {
+    mutationFn: ({
+      file,
+      questionId,
+      gradingMode = 'backend_agent',
+      reviewEnabled = false,
+      codeFiles = [],
+      codeManifest,
+    }) => {
       const formData = new FormData();
       formData.append('file', file);
       formData.append('question_id', String(questionId));
+      formData.append('grading_mode', gradingMode);
+      // 默认关闭自动复核：评分完成后由 ReviewPage 主动询问是否复核，
+      // 实现「评分与复核独立、用户自行选择」。
+      formData.append('review_enabled', String(reviewEnabled));
+      codeFiles.forEach((codeFile) => formData.append('code_files', codeFile));
+      if (codeManifest) formData.append('code_manifest', JSON.stringify(codeManifest));
       return apiClient
         .post<SubmissionCreateResponse>('/submissions', formData, {
           headers: { 'Content-Type': 'multipart/form-data' },
@@ -216,6 +350,38 @@ export function useUploadSubmission() {
     onSuccess: () => {
       // 上传成功后失效总数缓存,下次进入历史页重新拉取
       queryClient.invalidateQueries({ queryKey: ['submissions-count'] });
+    },
+  });
+}
+
+/**
+ * 判断该提交是否已运行过 AI 复核（critic 节点）。
+ * 用于 ReviewPage 决定是否展示「是否需要复核」询问。
+ */
+export function didReviewRun(data: Pick<SubmissionDetail, 'agent_trace' | 'ai_suggestion'>): boolean {
+  const trace = data.agent_trace ?? [];
+  if (trace.some((event) => event.node === 'critic')) return true;
+  const summary = (data.ai_suggestion?.critic_summary ?? '').trim();
+  if (summary) return true;
+  return false;
+}
+
+/**
+ * 评分完成后按需触发一次 AI 复核（critic）。
+ * 成功后刷新完整详情与轻量状态，供 ReviewPage 展示复核摘要。
+ */
+export function useReviewSubmission(submissionId: number) {
+  const queryClient = useQueryClient();
+  return useMutation<SubmissionDetail, Error, void>({
+    mutationFn: () =>
+      apiClient
+        .post<SubmissionDetail>(`/submissions/${submissionId}/review`, undefined, {
+          skipErrorToast: true,
+        })
+        .then((r) => r.data),
+    onSuccess: (data) => {
+      queryClient.setQueryData(['submission', submissionId], data);
+      queryClient.invalidateQueries({ queryKey: ['submission-status', submissionId] });
     },
   });
 }

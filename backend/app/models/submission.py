@@ -8,6 +8,7 @@ from datetime import datetime
 
 from sqlalchemy import (
     JSON,
+    Boolean,
     DateTime,
     Enum,
     Float,
@@ -36,12 +37,20 @@ class SubmissionStatus(str, enum.Enum):
     pending = "pending"
     ocr_processing = "ocr_processing"
     ocr_done = "ocr_done"
+    awaiting_codex = "awaiting_codex"
     agent_grading = "agent_grading"
     agent_reviewing = "agent_reviewing"
     agent_revising = "agent_revising"
     ready_for_review = "ready_for_review"
     reviewed = "reviewed"
     failed = "failed"
+
+
+class SubmissionGradingMode(str, enum.Enum):
+    """评分来源。旧记录默认使用后端 Agent，Codex 记录等待外部评分。"""
+
+    backend_agent = "backend_agent"
+    codex = "codex"
 
 
 class Submission(Base):
@@ -65,6 +74,20 @@ class Submission(Base):
         server_default="pending",
         nullable=False,
     )
+    grading_mode: Mapped[SubmissionGradingMode] = mapped_column(
+        Enum(SubmissionGradingMode, name="submission_grading_mode"),
+        default=SubmissionGradingMode.backend_agent,
+        server_default="backend_agent",
+        nullable=False,
+    )
+    # None=沿用配置项 review_enabled;True/False=单次覆盖是否执行 critic 复核
+    review_enabled: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    grading_revision: Mapped[int] = mapped_column(
+        default=0,
+        server_default="0",
+        nullable=False,
+    )
+    graded_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     ocr_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     score: Mapped[float | None] = mapped_column(Float, nullable=True)
     max_score: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -76,6 +99,8 @@ class Submission(Base):
     # Agent 完成时写入的完整建议分快照(含 score/max_score/feedback/details/confidence)
     # 与 ai_result 区别:ai_result 是 Agent 内部 draft,ai_suggestion 是面向教师展示的完整建议
     ai_suggestion: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    code_runtime: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    code_visual_assets: Mapped[list | None] = mapped_column(JSON, nullable=True)
     review_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     reviewed_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -88,6 +113,21 @@ class Submission(Base):
     )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
+    code_files = relationship(
+        "SubmissionCodeFile",
+        back_populates="submission",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="SubmissionCodeFile.question_number",
+    )
+    code_input_files = relationship(
+        "SubmissionCodeInputFile",
+        back_populates="submission",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="SubmissionCodeInputFile.original_filename",
+    )
+
     @property
     def question_original_filename(self) -> str | None:
         return self.question.original_filename if self.question else None
@@ -95,6 +135,10 @@ class Submission(Base):
     @property
     def question_ocr_text(self) -> str | None:
         return self.question.ocr_text if self.question else None
+
+    @property
+    def has_code(self) -> bool:
+        return bool(self.code_files)
 
     def __repr__(self) -> str:
         return (

@@ -27,6 +27,9 @@ from sqlalchemy import select
 from app.core.config import settings
 from app.db.session import SessionLocal
 from app.models.question import Question
+from app.models.submission import Submission
+from app.models.submission_code_file import SubmissionCodeFile
+from app.models.submission_code_input_file import SubmissionCodeInputFile
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +73,41 @@ def cleanup_uploads(
     return deleted
 
 
+def cleanup_code_artifacts(
+    upload_dir: Path,
+    retention_days: int,
+    protected_paths: set[Path] | None = None,
+) -> int:
+    """清理过期代码源文件与运行产物，同时保留数据库仍引用的路径。"""
+    if retention_days < 1:
+        return 0
+    roots = [
+        upload_dir / "code",
+        upload_dir / "code-inputs",
+        upload_dir / "code-artifacts",
+    ]
+    cutoff = time.time() - retention_days * 86400
+    protected = {path.resolve() for path in (protected_paths or set())}
+    deleted = 0
+    for root in roots:
+        if not root.exists():
+            continue
+        for path in sorted(root.rglob("*"), reverse=True):
+            if path.is_file():
+                try:
+                    if path.resolve() not in protected and path.stat().st_mtime < cutoff:
+                        path.unlink(missing_ok=True)
+                        deleted += 1
+                except OSError as exc:
+                    logger.warning("删除代码运行文件 %s 失败: %s", path, exc)
+            elif path.is_dir():
+                try:
+                    path.rmdir()
+                except OSError:
+                    pass
+    return deleted
+
+
 async def periodic_cleanup_loop() -> None:
     """后台定期清理循环,由独立任务 worker 启动。
 
@@ -92,11 +130,26 @@ async def periodic_cleanup_loop() -> None:
         while True:
             try:
                 with SessionLocal() as db:
+                    # 题目表通常 < 1000 行,每行两个 path 字段,内存占用 < 100KB,
+                    # 可接受。真正的瓶颈是 iterdir() 扫描磁盘,不是 DB 查询。
+                    # 加 LIMIT 防止极端情况下题目表暴涨导致 OOM。
                     question_paths = db.execute(
                         select(
                             Question.file_path,
                             Question.replacement_file_path,
-                        )
+                        ).limit(10000)
+                    ).all()
+                    submission_paths = db.execute(
+                        select(Submission.file_path)
+                        .limit(10000)
+                    ).all()
+                    code_paths = db.execute(
+                        select(SubmissionCodeFile.file_path)
+                        .limit(10000)
+                    ).all()
+                    input_paths = db.execute(
+                        select(SubmissionCodeInputFile.file_path)
+                        .limit(10000)
                     ).all()
                 protected_paths = {
                     Path(file_path)
@@ -104,11 +157,30 @@ async def periodic_cleanup_loop() -> None:
                     for file_path in row
                     if file_path
                 }
+                protected_paths.update(
+                    Path(file_path)
+                    for row in submission_paths
+                    for file_path in row
+                    if file_path
+                )
+                protected_paths.update(
+                    Path(file_path)
+                    for row in input_paths
+                    for file_path in row
+                    if file_path
+                )
+                protected_paths.update(
+                    Path(file_path)
+                    for row in code_paths
+                    for file_path in row
+                    if file_path
+                )
                 cleanup_uploads(
                     upload_dir,
                     retention,
                     protected_paths,
                 )
+                cleanup_code_artifacts(upload_dir, retention, protected_paths)
             except Exception:
                 # 单次清理失败不中断循环,等下个周期重试
                 logger.exception("uploads 清理失败,等待下个周期")

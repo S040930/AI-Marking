@@ -3,7 +3,7 @@
 import enum
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, Index, String, Text, func
+from sqlalchemy import JSON, DateTime, Enum, ForeignKey, Index, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.time import utc_now_naive
@@ -31,10 +31,26 @@ class Question(Base):
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    config_profile_id: Mapped[int] = mapped_column(
+        ForeignKey("config_profiles.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
     file_path: Mapped[str] = mapped_column(String(512), nullable=False)
     ocr_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 题目 OCR 阶段由服务端提取并校验的规范 rubric 文本；可信性还需同时满足
+    # extracted_rubric_items、OCR hash、version 和时间字段。题目被替换时清空。
+    extracted_rubric: Mapped[str | None] = mapped_column(Text, nullable=True)
+    extracted_rubric_items: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    extracted_rubric_ocr_hash: Mapped[str | None] = mapped_column(
+        String(71), nullable=True
+    )
+    extracted_rubric_version: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    extracted_rubric_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     status: Mapped[QuestionStatus] = mapped_column(
         Enum(QuestionStatus, name="question_status"),
         default=QuestionStatus.pending,

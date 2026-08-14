@@ -26,6 +26,7 @@ import aiofiles
 import httpx
 
 from app.services.errors import BusinessError
+from app.services.metrics import ocr_calls
 
 # PaddleOCR-VL layout-parsing 接口超时(秒)
 # 大 PDF + 复杂版面可能耗时较长,这里给到 120s
@@ -176,6 +177,7 @@ async def _ocr_with_retry(
     """调用 PaddleOCR-VL,带指数退避的重试与熔断。"""
     # 熔断打开时直接 raise,避免无谓重试占用信号量
     if await _check_circuit_open():
+        ocr_calls.labels(result="circuit_open").inc()
         raise OCRError(
             "PaddleOCR-VL 熔断中(连续失败过多),请稍后再试"
         )
@@ -187,12 +189,14 @@ async def _ocr_with_retry(
             resp.raise_for_status()
             data = resp.json()
             await _record_success()
+            ocr_calls.labels(result="success").inc()
             return data
         except httpx.HTTPError as exc:
             last_exc = exc
             if not _is_retryable(exc):
                 # 不可重试错误(如 4xx 配置错误):业务失败,不记入熔断计数,
                 # 直接抛出 BusinessError 由 worker 标记终态且不重试。
+                ocr_calls.labels(result="failure").inc()
                 raise BusinessError(f"PaddleOCR-VL 调用失败: {exc}") from exc
             if attempt + 1 >= _MAX_ATTEMPTS:
                 break
@@ -201,6 +205,7 @@ async def _ocr_with_retry(
 
     # 重试耗尽:记一次熔断失败(整个 _ocr_with_retry 算一次失败)
     await _record_failure()
+    ocr_calls.labels(result="failure").inc()
     status_code = _http_status_for_retry(last_exc) if last_exc else None
     detail = f"HTTP {status_code}" if status_code else type(last_exc).__name__
     raise OCRError(
@@ -343,21 +348,48 @@ async def _ocr_via_async_jobs(
     if not result_url:
         raise OCRError("PaddleOCR-VL 完成任务但未返回结果地址")
 
-    try:
-        response = await client.get(result_url)
-        response.raise_for_status()
-        lines = response.text.splitlines()
-        texts: list[str] = []
-        for line in lines:
-            if not line.strip():
-                continue
-            result = json.loads(line)["result"]
-            for page in result.get("layoutParsingResults", []):
-                text = page.get("markdown", {}).get("text", "")
-                if text:
-                    texts.append(text)
-    except (httpx.HTTPError, KeyError, TypeError, ValueError) as exc:
-        raise OCRError(f"PaddleOCR-VL 下载或解析结果失败: {exc}") from exc
+    # The job may be marked ``done`` a moment before its object-store result is
+    # readable. Retry the download and accept both NDJSON and a single JSON
+    # object; otherwise a transient empty response is incorrectly reported as
+    # a permanent student OCR failure.
+    last_error: Exception | None = None
+    texts: list[str] = []
+    for attempt in range(5):
+        try:
+            response = await client.get(result_url)
+            response.raise_for_status()
+            raw = response.text.strip()
+            if raw.startswith(("{", "[")):
+                try:
+                    parsed = json.loads(raw)
+                    records = parsed if isinstance(parsed, list) else [parsed]
+                except json.JSONDecodeError:
+                    # The async endpoint normally returns NDJSON; its first
+                    # line also starts with ``{`` and therefore needs this
+                    # fallback when multiple JSON objects are concatenated.
+                    records = [
+                        json.loads(line) for line in raw.splitlines() if line.strip()
+                    ]
+            else:
+                records = [
+                    json.loads(line) for line in raw.splitlines() if line.strip()
+                ]
+            texts = []
+            for record in records:
+                result = record.get("result", record)
+                for page in result.get("layoutParsingResults", []):
+                    text = page.get("markdown", {}).get("text", "")
+                    if text:
+                        texts.append(text)
+            if texts:
+                break
+            last_error = ValueError("结果为空")
+        except (httpx.HTTPError, KeyError, TypeError, ValueError) as exc:
+            last_error = exc
+        if attempt < 4:
+            await asyncio.sleep(2)
+    if not texts:
+        raise OCRError(f"PaddleOCR-VL 下载或解析结果失败: {last_error}") from last_error
 
     combined = "\n\n".join(texts).strip()
     if not combined:

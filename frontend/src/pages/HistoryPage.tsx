@@ -54,6 +54,7 @@ export const STATUS_TEXT: Record<SubmissionStatus, string> = {
   agent_grading: 'Agent评分中',
   agent_reviewing: 'Agent复核中',
   agent_revising: 'Agent修正中',
+  awaiting_codex: '等待 Codex 评分',
   ready_for_review: '待审阅',
   reviewed: '已审阅',
   failed: '失败',
@@ -64,6 +65,7 @@ const PAGE_SIZE = 10;
 export function isDeletableStatus(status: SubmissionStatus): boolean {
   return (
     status === 'ready_for_review' ||
+    status === 'awaiting_codex' ||
     status === 'reviewed' ||
     status === 'failed'
   );
@@ -112,6 +114,9 @@ export function StatusBadge({ status }: { status: SubmissionStatus }) {
       </Badge>
     );
   }
+  if (status === 'awaiting_codex') {
+    return <Badge variant="outline">{STATUS_TEXT[status]}</Badge>;
+  }
   if (isProcessing(status)) {
     return (
       <Badge
@@ -143,7 +148,7 @@ export default function HistoryPage() {
     page,
     pageSize: PAGE_SIZE,
   });
-  // 总数独立拉取,不随列表 3s 轮询(避免每次轮询都算 COUNT)。
+  // 总数独立拉取,不随列表 15s 轮询(避免每次轮询都算 COUNT)。
   const { data: countData, refetch: refetchCount } = useSubmissionsCount();
   const deleteMutation = useBatchDeleteSubmissions();
 

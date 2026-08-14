@@ -1,43 +1,55 @@
-"""上传文档的校验、DOCX 转换与 PDF 持久化。"""
+"""本机上传文件校验与持久化。所有持久化路径都位于本地 uploads 目录。"""
 
-import asyncio
-import os
+import ast
+import hashlib
+import json
 import shutil
-import signal
 import tempfile
+import unicodedata
 import uuid
-import zipfile
 from pathlib import Path
 
 import aiofiles
 from fastapi import HTTPException, UploadFile
 
 PDF_MIME_TYPE = "application/pdf"
-DOCX_MIME_TYPE = (
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-)
 MAX_DOCUMENT_SIZE_BYTES = 50 * 1024 * 1024
-CONVERSION_TIMEOUT_SECONDS = 120
-MAX_DOCX_UNCOMPRESSED_BYTES = 500 * 1024 * 1024
-MAX_DOCX_XML_BYTES = 50 * 1024 * 1024
+CODE_EXTENSIONS = {
+    ".py", ".ipynb", ".r", ".java", ".c", ".cc", ".cpp", ".cxx",
+    ".h", ".hh", ".hpp", ".hxx",
+}
+ENTRYPOINT_EXTENSIONS = {".py", ".ipynb", ".r", ".java", ".c", ".cc", ".cpp", ".cxx"}
+# Runtime inputs are ordinary files named by the assignment.  They may be
+# text or binary (CSV/JSON/TXT/XLSX/etc.); executable/source extensions remain
+# forbidden so an input cannot silently become another program.
+CODE_INPUT_EXTENSIONS: set[str] = set()
+FORBIDDEN_INPUT_EXTENSIONS = CODE_EXTENSIONS | {
+    ".app", ".bin", ".com", ".dll", ".dylib", ".exe", ".jar", ".o", ".so",
+    ".sh", ".bash", ".zsh", ".bat", ".cmd", ".ps1", ".pl", ".rb", ".go", ".rs", ".swift", ".kt", ".m", ".mm",
+}
+MAX_CODE_FILES = 20
+MAX_CODE_TOTAL_BYTES = 100 * 1024 * 1024
+MAX_CODE_FILE_BYTES = 20 * 1024 * 1024
+MAX_CODE_INPUT_FILES = 5
+MAX_CODE_INPUT_TOTAL_BYTES = 100 * 1024 * 1024
+MAX_CODE_INPUT_FILE_BYTES = 50 * 1024 * 1024
 _CHUNK_SIZE = 1024 * 1024
 
 
 def validate_document_upload(upload_file: UploadFile) -> str:
-    """校验上传声明并返回 ``pdf`` 或 ``docx``。"""
+    """校验上传声明并返回 ``pdf``。"""
     filename = upload_file.filename or ""
     suffix = Path(filename).suffix.lower()
     if suffix == ".pdf" and upload_file.content_type == PDF_MIME_TYPE:
         return "pdf"
-    if suffix == ".docx" and upload_file.content_type == DOCX_MIME_TYPE:
-        return "docx"
-    raise HTTPException(status_code=422, detail="文件仅支持 PDF 或 DOCX 格式")
+    raise HTTPException(status_code=422, detail="文件仅支持 PDF 格式")
 
 
 async def _stream_upload(
     upload_file: UploadFile, destination: Path, max_size_bytes: int
 ) -> None:
     written = 0
+    prefix = bytearray()
     async with aiofiles.open(destination, "wb") as output:
         while chunk := await upload_file.read(_CHUNK_SIZE):
             written += len(chunk)
@@ -46,98 +58,13 @@ async def _stream_upload(
                     status_code=413,
                     detail=f"文件超过最大允许大小 {max_size_bytes} 字节",
                 )
+            if len(prefix) < 5:
+                prefix.extend(chunk[: 5 - len(prefix)])
             await output.write(chunk)
     if written == 0:
         raise HTTPException(status_code=422, detail="上传文件不能为空")
-
-
-def _validate_docx(path: Path) -> None:
-    try:
-        with zipfile.ZipFile(path) as archive:
-            members = set(archive.namelist())
-            required = {"[Content_Types].xml", "_rels/.rels", "word/document.xml"}
-            if not required.issubset(members):
-                raise HTTPException(status_code=422, detail="DOCX 文件结构无效")
-            if sum(info.file_size for info in archive.infolist()) > (
-                MAX_DOCX_UNCOMPRESSED_BYTES
-            ):
-                raise HTTPException(status_code=422, detail="DOCX 解压后内容过大")
-            if archive.getinfo("word/document.xml").file_size > MAX_DOCX_XML_BYTES:
-                raise HTTPException(status_code=422, detail="DOCX 文档结构内容过大")
-            # 读取核心部件，确保其 CRC 和压缩数据可正常解析。
-            archive.read("[Content_Types].xml")
-            archive.read("word/document.xml")
-    except (zipfile.BadZipFile, OSError, RuntimeError, KeyError) as exc:
-        raise HTTPException(status_code=422, detail="DOCX 文件损坏或结构无效") from exc
-
-
-def _soffice_executable() -> str:
-    executable = shutil.which("soffice")
-    if executable:
-        return executable
-    macos_executable = Path("/Applications/LibreOffice.app/Contents/MacOS/soffice")
-    if macos_executable.is_file() and os.access(macos_executable, os.X_OK):
-        return str(macos_executable)
-    raise HTTPException(
-        status_code=503,
-        detail="服务器未安装或无法执行 LibreOffice 26.2.4",
-    )
-
-
-async def _terminate_process_group(process: asyncio.subprocess.Process) -> None:
-    if process.returncode is not None:
-        return
-    try:
-        os.killpg(process.pid, signal.SIGKILL)
-    except ProcessLookupError:
-        pass
-    await process.communicate()
-
-
-async def _convert_docx_to_pdf(source: Path, output_dir: Path, profile: Path) -> Path:
-    executable = _soffice_executable()
-    try:
-        process = await asyncio.create_subprocess_exec(
-            executable,
-            "--headless",
-            "--nologo",
-            "--nodefault",
-            "--nolockcheck",
-            "--nofirststartwizard",
-            f"-env:UserInstallation={profile.as_uri()}",
-            "--convert-to",
-            "pdf",
-            "--outdir",
-            str(output_dir),
-            str(source),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            start_new_session=True,
-        )
-    except OSError as exc:
-        raise HTTPException(
-            status_code=503,
-            detail="服务器无法启动 LibreOffice 26.2.4",
-        ) from exc
-    try:
-        _stdout, _stderr = await asyncio.wait_for(
-            process.communicate(), timeout=CONVERSION_TIMEOUT_SECONDS
-        )
-    except TimeoutError as exc:
-        await _terminate_process_group(process)
-        raise HTTPException(status_code=504, detail="DOCX 转换 PDF 超时") from exc
-    except asyncio.CancelledError:
-        await _terminate_process_group(process)
-        raise
-
-    converted = output_dir / f"{source.stem}.pdf"
-    if process.returncode != 0 or not converted.is_file():
-        raise HTTPException(status_code=422, detail="DOCX 无法转换为 PDF")
-    with converted.open("rb") as converted_file:
-        header = converted_file.read(5)
-    if converted.stat().st_size == 0 or header != b"%PDF-":
-        raise HTTPException(status_code=422, detail="DOCX 转换结果不是有效 PDF")
-    return converted
+    if bytes(prefix) != b"%PDF-":
+        raise HTTPException(status_code=422, detail="文件内容不是有效 PDF")
 
 
 async def save_document_as_pdf(
@@ -146,31 +73,301 @@ async def save_document_as_pdf(
     suffix: str = "",
     max_size_bytes: int = MAX_DOCUMENT_SIZE_BYTES,
 ) -> tuple[str, Path]:
-    """流式接收 PDF/DOCX，并只持久化可供 OCR 使用的 PDF。"""
+    """流式接收 PDF 并持久化到上传目录。"""
     original_filename = upload_file.filename or ""
     temporary_dir: Path | None = None
     try:
-        kind = validate_document_upload(upload_file)
+        validate_document_upload(upload_file)
         upload_dir.mkdir(parents=True, exist_ok=True)
         temporary_dir = Path(tempfile.mkdtemp(prefix=".document-", dir=upload_dir))
         stored_stem = f"{uuid.uuid4().hex}{suffix}"
-        source = temporary_dir / f"{stored_stem}.{kind}"
+        source = temporary_dir / f"{stored_stem}.pdf"
         await _stream_upload(upload_file, source, max_size_bytes)
 
-        if kind == "docx":
-            await asyncio.to_thread(_validate_docx, source)
-            converted = await _convert_docx_to_pdf(
-                source,
-                temporary_dir,
-                temporary_dir / "libreoffice-profile",
-            )
-        else:
-            converted = source
-
         saved_path = upload_dir / f"{stored_stem}.pdf"
-        converted.replace(saved_path)
+        source.replace(saved_path)
         return original_filename, saved_path
     finally:
         await upload_file.close()
         if temporary_dir is not None:
             shutil.rmtree(temporary_dir, ignore_errors=True)
+
+
+def _safe_code_filename(filename: str | None) -> tuple[str, str]:
+    """Return a normalized flat code filename and extension.
+
+    Code uploads intentionally do not preserve directories: a submitted file is
+    one member of a per-question source group. Rejecting separators also prevents a
+    multipart client from smuggling an arbitrary destination path.
+    """
+    raw = filename or ""
+    if not raw:
+        raise HTTPException(status_code=422, detail="代码文件必须是无目录的文件名")
+    # NFKC first: homoglyphs like U+2215 (∕) normalize to "/" and must be
+    # rejected as separators rather than smuggled into a nested path.
+    normalized = unicodedata.normalize("NFKC", raw)
+    if Path(normalized).name != normalized or "/" in normalized or "\\" in normalized:
+        raise HTTPException(status_code=422, detail="代码文件必须是无目录的文件名")
+    suffix = Path(normalized).suffix.lower()
+    if suffix not in CODE_EXTENSIONS:
+        raise HTTPException(status_code=422, detail="代码文件类型不受支持")
+    if not normalized.strip() or normalized.startswith("."):
+        raise HTTPException(status_code=422, detail="代码文件名无效")
+    return normalized, suffix[1:]
+
+
+def validate_code_filenames(filenames: list[str]) -> list[str]:
+    """Validate count and Unicode/case-insensitive uniqueness."""
+    if not filenames:
+        raise HTTPException(status_code=422, detail="至少需要一个代码文件")
+    if len(filenames) > MAX_CODE_FILES:
+        raise HTTPException(
+            status_code=413, detail=f"代码文件最多 {MAX_CODE_FILES} 个"
+        )
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for filename in filenames:
+        safe, _kind = _safe_code_filename(filename)
+        key = unicodedata.normalize("NFKC", safe).casefold()
+        if key in seen:
+            raise HTTPException(status_code=422, detail="代码文件名不能重复")
+        seen.add(key)
+        normalized.append(safe)
+    return normalized
+
+
+def _safe_code_input_filename(filename: str | None) -> str:
+    """Validate a question-declared runtime dataset filename.
+
+    The input is a question-declared ordinary file. It is copied into
+    the same read-only execution directory as the entry point and never
+    treated as executable source or an arbitrary path.
+    """
+    raw = filename or ""
+    if not raw:
+        raise HTTPException(status_code=422, detail="数据文件必须是无目录的文件名")
+    # NFKC first: homoglyphs like U+2215 (∕) normalize to "/" and must be
+    # rejected as separators rather than smuggled into a nested path.
+    normalized = unicodedata.normalize("NFKC", raw)
+    if Path(normalized).name != normalized or "/" in normalized or "\\" in normalized:
+        raise HTTPException(status_code=422, detail="数据文件必须是无目录的文件名")
+    suffix = Path(normalized).suffix.lower()
+    if suffix in FORBIDDEN_INPUT_EXTENSIONS:
+        raise HTTPException(status_code=422, detail="运行输入不能是源码或可执行文件")
+    if not normalized.strip() or normalized.startswith("."):
+        raise HTTPException(status_code=422, detail="数据文件名无效")
+    return normalized
+
+
+def validate_code_input_filenames(filenames: list[str]) -> list[str]:
+    if not filenames:
+        raise HTTPException(status_code=422, detail="数据文件列表不能为空")
+    if len(filenames) > MAX_CODE_INPUT_FILES:
+        raise HTTPException(
+            status_code=413, detail=f"数据文件最多 {MAX_CODE_INPUT_FILES} 个"
+        )
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for filename in filenames:
+        safe = _safe_code_input_filename(filename)
+        key = safe.casefold()
+        if key in seen:
+            raise HTTPException(status_code=422, detail="数据文件名不能重复")
+        seen.add(key)
+        normalized.append(safe)
+    return normalized
+
+
+def validate_independent_code_entries(files: list[dict]) -> None:
+    """Reject imports between submitted entry points while retaining normal imports.
+
+    Files in the same question may import one another; imports across question
+    groups remain rejected because each group is executed independently.
+    """
+    modules = {Path(item["filename"]).stem: int(item["question_number"]) for item in files}
+    by_question: dict[int, list[dict]] = {}
+    for item in files:
+        by_question.setdefault(int(item["question_number"]), []).append(item)
+    for question_number, group in by_question.items():
+        entrypoints = [item for item in group if item.get("entrypoint", False)]
+        if len(entrypoints) != 1:
+            raise HTTPException(
+                status_code=422,
+                detail=f"第 {question_number} 题必须且只能有一个代码入口文件",
+            )
+        language = Path(entrypoints[0]["filename"]).suffix.lower()
+        if language in {".c", ".cc", ".cpp", ".cxx"} and any(
+            Path(item["filename"]).suffix.lower() not in (
+                {".c", ".h", ".hh", ".hpp", ".hxx"}
+                if language == ".c"
+                else {".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".hxx"}
+            )
+            for item in group
+        ):
+            raise HTTPException(status_code=422, detail="C/C++ 同题代码文件必须使用同一语言或头文件")
+    for item in files:
+        source = item.get("source_text", "")
+        if item.get("kind") == "ipynb":
+            try:
+                notebook = json.loads(source)
+                source = "\n".join(
+                    "".join(cell.get("source", []))
+                    if isinstance(cell.get("source"), list)
+                    else str(cell.get("source", ""))
+                    for cell in notebook.get("cells", [])
+                    if isinstance(cell, dict) and cell.get("cell_type") == "code"
+                )
+            except (json.JSONDecodeError, AttributeError):
+                continue
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            continue
+        for node in ast.walk(tree):
+            imported: list[str] = []
+            if isinstance(node, ast.Import):
+                imported = [alias.name.split(".", 1)[0] for alias in node.names]
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                imported = [node.module.split(".", 1)[0]]
+            if any(
+                name in modules
+                and modules[name] != int(item["question_number"])
+                for name in imported
+            ):
+                raise HTTPException(
+                    status_code=422,
+                    detail="不同小题代码不能互相 import",
+                )
+
+
+async def save_code_files(
+    upload_files: list[UploadFile],
+    upload_dir: Path,
+    *,
+    question_numbers: list[int],
+    entrypoints: list[bool] | None = None,
+) -> list[dict]:
+    """Persist multiple flat Python files and return audit metadata.
+
+    The entire batch is written beneath a UUID directory. Callers must remove
+    ``storage_dir`` if the surrounding database transaction fails.
+    """
+    if len(upload_files) != len(question_numbers):
+        raise HTTPException(status_code=422, detail="代码文件与小题映射数量不一致")
+    entrypoints = entrypoints or [True] * len(upload_files)
+    if len(entrypoints) != len(upload_files):
+        raise HTTPException(status_code=422, detail="代码入口标记数量不一致")
+    filenames = validate_code_filenames([item.filename or "" for item in upload_files])
+    if len(set(question_numbers)) != len(question_numbers) or any(
+        number < 1 for number in question_numbers
+    ):
+        raise HTTPException(status_code=422, detail="小题编号必须为正整数且不能重复")
+
+    storage_dir = upload_dir / "code" / uuid.uuid4().hex
+    storage_dir.mkdir(parents=True, exist_ok=True)
+    written = 0
+    result: list[dict] = []
+    try:
+        for upload_file, filename, question_number, entrypoint in zip(
+            upload_files, filenames, question_numbers, entrypoints, strict=True
+        ):
+            destination = storage_dir / filename
+            size = 0
+            chunks: list[bytes] = []
+            async for chunk in _read_upload_chunks(upload_file):
+                size += len(chunk)
+                written += len(chunk)
+                if size > MAX_CODE_FILE_BYTES or written > MAX_CODE_TOTAL_BYTES:
+                    raise HTTPException(status_code=413, detail="代码文件超过大小限制")
+                chunks.append(chunk)
+            data = b"".join(chunks)
+            if not data:
+                raise HTTPException(status_code=422, detail="代码文件不能为空")
+            try:
+                source_text = unicodedata.normalize(
+                    "NFKC", data.decode("utf-8")
+                ).replace("\r\n", "\n").replace("\r", "\n")
+            except UnicodeDecodeError as exc:
+                raise HTTPException(
+                    status_code=422, detail=f"{filename} 必须是 UTF-8 文本"
+                ) from exc
+            if "\x00" in source_text:
+                raise HTTPException(status_code=422, detail=f"{filename} 含有非法 NUL 字节")
+            if filename.lower().endswith(".ipynb"):
+                try:
+                    notebook = json.loads(source_text)
+                except json.JSONDecodeError as exc:
+                    raise HTTPException(status_code=422, detail=f"{filename} 不是合法 Notebook") from exc
+                if not isinstance(notebook, dict) or not isinstance(notebook.get("cells"), list):
+                    raise HTTPException(status_code=422, detail=f"{filename} 不是合法 Notebook")
+            destination.write_bytes(data)
+            result.append(
+                {
+                    "filename": filename,
+                    "question_number": question_number,
+                    "entrypoint": bool(entrypoint),
+                    "kind": Path(filename).suffix.lower()[1:],
+                    "path": str(destination),
+                    "source_text": source_text,
+                    "source_sha256": hashlib.sha256(data).hexdigest(),
+                }
+            )
+        return result
+    except Exception:
+        shutil.rmtree(storage_dir, ignore_errors=True)
+        raise
+    finally:
+        for upload_file in upload_files:
+            await upload_file.close()
+
+
+async def save_code_input_files(
+    upload_files: list[UploadFile], upload_dir: Path
+) -> list[dict]:
+    """Persist question-declared ordinary inputs for the restricted code runner."""
+    filenames = validate_code_input_filenames([item.filename or "" for item in upload_files])
+    storage_dir = upload_dir / "code-inputs" / uuid.uuid4().hex
+    storage_dir.mkdir(parents=True, exist_ok=True)
+    written = 0
+    result: list[dict] = []
+    try:
+        for upload_file, filename in zip(upload_files, filenames, strict=True):
+            destination = storage_dir / filename
+            chunks: list[bytes] = []
+            size = 0
+            async for chunk in _read_upload_chunks(upload_file):
+                size += len(chunk)
+                written += len(chunk)
+                if (
+                    size > MAX_CODE_INPUT_FILE_BYTES
+                    or written > MAX_CODE_INPUT_TOTAL_BYTES
+                ):
+                    raise HTTPException(status_code=413, detail="数据文件超过大小限制")
+                chunks.append(chunk)
+            data = b"".join(chunks)
+            if not data:
+                raise HTTPException(status_code=422, detail="数据文件不能为空")
+            if data.startswith(b"#!") or data[:4] in {b"\x7fELF", b"\xca\xfe\xba\xbe", b"\xfe\xed\xfa\xce", b"\xce\xfa\xed\xfe"}:
+                raise HTTPException(status_code=422, detail=f"{filename} 不能是可执行文件")
+            destination.write_bytes(data)
+            destination.chmod(0o400)
+            result.append(
+                {
+                    "filename": filename,
+                    "path": str(destination),
+                    "size": len(data),
+                    "sha256": hashlib.sha256(data).hexdigest(),
+                }
+            )
+        return result
+    except Exception:
+        shutil.rmtree(storage_dir, ignore_errors=True)
+        raise
+    finally:
+        for upload_file in upload_files:
+            await upload_file.close()
+
+
+async def _read_upload_chunks(upload_file: UploadFile):
+    while chunk := await upload_file.read(_CHUNK_SIZE):
+        yield chunk

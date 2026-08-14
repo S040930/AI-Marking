@@ -1,10 +1,14 @@
 """SystemConfig Pydantic schemas。
 
 `ConfigUpdate` 为 PUT 接口入参(字段全部可选,表示更新子集);
-`ConfigOut` 为 GET 接口与 PUT 返回的完整结构(固定 6 字段)。
+`ConfigOut` 为 GET 接口与 PUT 返回的完整结构。
 """
 
+from datetime import datetime
+
 from pydantic import BaseModel, ConfigDict, Field
+
+from app.services.rubric import RubricDefinition
 
 
 class ConfigUpdate(BaseModel):
@@ -37,15 +41,17 @@ class ConfigUpdate(BaseModel):
     paddleocr_token: str | None = Field(
         default=None, description="PaddleOCR-VL Access Token(AI Studio 令牌)"
     )
-    rubric: str | None = Field(default=None, description="自定义评分标准(rubric)")
+    rubric_definition: RubricDefinition | None = Field(
+        default=None,
+        description="结构化评分标准；每个条目包含 criterion、max_score、details",
+    )
     llm_user_prompt: str | None = Field(
         default=None,
         description="自定义 LLM 用户提示词模板(留空使用内置默认,支持 {rubric}/{output_format}/{ocr_text} 占位符)",
     )
-    operator_name: str | None = Field(
+    review_enabled: bool | None = Field(
         default=None,
-        max_length=100,
-        description="操作人/审核教师姓名,用于 finalize 提交时作为 reviewer_name",
+        description="是否执行 critic 自动复核(默认开启;关闭时跳过 critic/revise 以节省 token)",
     )
 
 
@@ -62,6 +68,37 @@ class ConfigOut(BaseModel):
     review_llm_model: str = ""
     paddleocr_api_url: str = ""
     paddleocr_token: str = ""
-    rubric: str = ""
+    rubric_definition: RubricDefinition | None = None
     llm_user_prompt: str = ""
-    operator_name: str = ""
+    review_enabled: bool = True
+
+
+class ConfigProfileOut(BaseModel):
+    """配置项目元信息输出。"""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    is_default: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class ConfigProfileCreate(BaseModel):
+    """新建配置项目入参。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=100)
+    copy_from_id: int | None = Field(
+        default=None, description="非空时复制该项目的全部配置值"
+    )
+
+
+class ConfigProfileRename(BaseModel):
+    """重命名配置项目入参。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=100)

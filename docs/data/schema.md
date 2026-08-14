@@ -4,12 +4,20 @@
 
 | 表 | 核心数据 | 生命周期 |
 |---|---|---|
-| `questions` | 题目 PDF、OCR 文本、初始 OCR 与新版替换状态 | 可被多份作业复用；新版成功后切换 |
+| `questions` | 题目 PDF、OCR 文本、后端校验的结构化 rubric 快照与新版替换状态 | 可被多份作业复用；新版成功后切换 |
 | `submissions` | 学生 PDF 路径、作业 OCR、评分、复核与人工审核结果 | 必须关联一个题目；终态记录可单独删除 |
 | `conversations` | 教师与 AI 针对一份作业的消息 | 随 submission 通过外键级联删除 |
 | `background_jobs` | 待执行、运行中或死信的题目 OCR/作业批改任务 | 成功后删除；随业务实体级联删除 |
-| `system_config` | OCR、LLM、rubric 和操作人配置 | 独立于业务记录长期保留 |
+| `system_config` | OCR、LLM 与服务端校验的 `rubric_definition` JSON 配置 | 独立于业务记录长期保留；旧自由文本 rubric 不参与新评分 |
 | `alembic_version` | 当前数据库迁移版本 | 由 Alembic 管理 |
+
+`submissions` 的 Codex 审计字段：`grading_mode`（`backend_agent`/`codex`，默认后端模式）、`grading_revision`（乐观锁整数，默认 0）和 `graded_at`（最近一次建议保存时间）。评分来源在界面统一显示为「Codex」，不保存未经验证的模型名称。
+
+`questions.extracted_rubric*` 只有在 rubric item 的 OCR 原文引用、分值和总分通过后端确定性校验且 OCR SHA-256 匹配时才构成可信 `question_extracted` 快照；历史旧文本没有来源标记时不参与 MCP rubric 选择。
+
+`mcp_assessment_receipts` 以 `(submission_id, request_id)` 保存 Codex MCP 成功保存的请求哈希、句柄哈希和响应，用于跨 revision、服务重启和句柄过期后的精确幂等重放。
+
+Codex 代码联动字段：新提交只写入 `submission_code_files` 中的题号、入口标记、规范化源文本和 SHA-256。后端不编译或执行代码，不保存运行输入、日志、Notebook 新输出或代码产物；代码运行由当前 Codex 任务在临时目录中完成，结果只存在于对话。`submissions.code_runtime`、`submissions.code_visual_assets`、`submission_code_input_files`、执行状态、产物和 `visual_reviews` 仅作为历史数据只读保留，新评分上下文不会读取它们。
 
 ## 关系
 
@@ -46,7 +54,7 @@ queued → running → 成功后删除
 
 ### 单条作业删除（终态）
 
-`DELETE /api/submissions` 仅接受终态（`ready_for_review` / `reviewed` / `failed`）记录，存在处理中记录时整批原子拒绝。数据库先删记录（级联删 `conversations`），提交成功后再清理学生 PDF；**共享题目 PDF 始终保留**。文件删除失败仅记录 warning，数据库是删除结果的权威来源。
+`DELETE /api/submissions` 仅接受可删除终态（`awaiting_codex` / `ready_for_review` / `reviewed` / `failed`）记录，存在后台处理中记录时整批原子拒绝。数据库先删记录（级联删 `conversations`），提交成功后再清理学生 PDF；**共享题目 PDF 始终保留**。文件删除失败仅记录 warning，数据库是删除结果的权威来源。
 
 ### 题目级联删除
 
@@ -85,6 +93,13 @@ null → pending → processing → 成功后回到 null
 pending → ocr_processing → ocr_done → agent_grading
   → agent_reviewing → [agent_revising → agent_grading]
   → ready_for_review → reviewed
+
+Codex 模式：
+pending → ocr_processing → awaiting_codex
+  → ready_for_review → reviewed
+```
+
+`submissions.grading_mode` 为 `backend_agent`（默认）或 `codex`；`grading_revision` 从 0 开始，每次成功保存 Codex 建议递增；`graded_at` 为最近一次 Codex 建议保存时间。`awaiting_codex` 不会自动超时，Codex 会话退出后仍可重新读取上下文。
 
 任一处理阶段可进入 failed。
 ```

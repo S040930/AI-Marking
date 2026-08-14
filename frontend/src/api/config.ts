@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from './client';
 
 // 配置项类型
@@ -11,45 +11,117 @@ export interface ConfigOut {
   review_llm_model: string;
   paddleocr_api_url: string;
   paddleocr_token: string;
-  rubric: string;
+  rubric_definition: {
+    items: { criterion: string; max_score: number; details: string }[];
+    total_max_score: number;
+  } | null;
   llm_user_prompt: string;
-  operator_name: string;
 }
 
-export type ConfigUpdate = Partial<
-  Pick<
-    ConfigOut,
-    | 'llm_api_key'
-    | 'llm_base_url'
-    | 'llm_model'
-    | 'review_llm_api_key'
-    | 'review_llm_base_url'
-    | 'review_llm_model'
-    | 'paddleocr_api_url'
-    | 'paddleocr_token'
-    | 'rubric'
-    | 'llm_user_prompt'
-    | 'operator_name'
-  >
->;
+export type ConfigUpdate = Partial<Omit<ConfigOut, 'rubric_definition'>> & {
+  rubric_definition?: ConfigOut['rubric_definition'];
+};
+
+// 配置项目类型
+export interface ConfigProfile {
+  id: number;
+  name: string;
+  is_default: boolean;
+  created_at: string;
+  updated_at: string;
+}
 
 // hooks
-export function useConfig() {
+export function useConfig(profileId?: number) {
   return useQuery<ConfigOut>({
-    queryKey: ['config'],
-    queryFn: () => apiClient.get<ConfigOut>('/config').then((r) => r.data),
+    queryKey: ['config', profileId ?? 'default'],
+    queryFn: () =>
+      apiClient
+        .get<ConfigOut>('/config', {
+          params: profileId ? { profile_id: profileId } : {},
+        })
+        .then((r) => r.data),
   });
 }
 
-export function useUpdateConfig() {
+export function useUpdateConfig(profileId?: number) {
   const queryClient = useQueryClient();
   return useMutation<ConfigOut, Error, ConfigUpdate>({
     mutationFn: (payload: ConfigUpdate) =>
-      apiClient.put<ConfigOut>('/config', payload).then((r) => r.data),
+      apiClient
+        .put<ConfigOut>('/config', payload, {
+          params: profileId ? { profile_id: profileId } : {},
+        })
+        .then((r) => r.data),
     onSuccess: (data) => {
       // 直接写入缓存并 invalidate,确保 UI 立即同步
-      queryClient.setQueryData(['config'], data);
+      queryClient.setQueryData(['config', profileId ?? 'default'], data);
       queryClient.invalidateQueries({ queryKey: ['config'] });
+    },
+  });
+}
+
+// 配置项目 CRUD hooks
+export function useConfigProfiles() {
+  return useQuery<ConfigProfile[]>({
+    queryKey: ['config-profiles'],
+    queryFn: () =>
+      apiClient
+        .get<ConfigProfile[]>('/config/profiles')
+        .then((r) => r.data),
+  });
+}
+
+export function useCreateConfigProfile() {
+  const queryClient = useQueryClient();
+  return useMutation<
+    ConfigProfile,
+    Error,
+    { name: string; copy_from_id?: number }
+  >({
+    mutationFn: (payload) =>
+      apiClient
+        .post<ConfigProfile>('/config/profiles', payload)
+        .then((r) => r.data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['config-profiles'] });
+    },
+  });
+}
+
+export function useRenameConfigProfile() {
+  const queryClient = useQueryClient();
+  return useMutation<ConfigProfile, Error, { id: number; name: string }>({
+    mutationFn: ({ id, name }) =>
+      apiClient
+        .patch<ConfigProfile>(`/config/profiles/${id}`, { name })
+        .then((r) => r.data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['config-profiles'] });
+    },
+  });
+}
+
+export function useSetDefaultConfigProfile() {
+  const queryClient = useQueryClient();
+  return useMutation<ConfigProfile, Error, number>({
+    mutationFn: (id) =>
+      apiClient
+        .post<ConfigProfile>(`/config/profiles/${id}/default`)
+        .then((r) => r.data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['config-profiles'] });
+    },
+  });
+}
+
+export function useDeleteConfigProfile() {
+  const queryClient = useQueryClient();
+  return useMutation<void, Error, number>({
+    mutationFn: (id) =>
+      apiClient.delete(`/config/profiles/${id}`).then(() => undefined),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['config-profiles'] });
     },
   });
 }

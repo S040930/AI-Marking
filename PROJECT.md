@@ -2,14 +2,13 @@
 
 ## 项目简介
 
-面向高校作业场景的智能批改平台。教师上传 PDF 或 DOCX 格式的学生作业与题目，DOCX 先转换为 PDF，系统再通过 OCR 提取文本并由 LLM 依据 rubric 生成评分建议；最终由教师在协同评分页与 AI 对话、调整分数并确认最终得分。
+面向高校作业场景的智能批改平台。教师上传 PDF 格式的学生作业与题目，系统通过 OCR 提取文本并由 LLM 依据 rubric 生成评分建议；最终由教师在协同评分页与 AI 对话、调整分数并确认最终得分。
 
 ## 技术栈
 
 - **前端**：React 19 + Vite + TypeScript + Tailwind CSS v4 + shadcn/ui + React Router v7 + TanStack Query
 - **后端**：FastAPI + Uvicorn + SQLAlchemy 2.0 同步 Session + Alembic + PostgreSQL
 - **LLM**：OpenAI Python SDK（兼容 OpenAI Chat Completions 格式服务：豆包、通义千问、DeepSeek、OpenAI、Kimi、Ollama 等）
-- **文档转换**：LibreOffice 26.2.4（DOCX → PDF）
 - **OCR**：PaddleOCR-VL（PDF → 结构化 Markdown）
 - **任务队列**：PostgreSQL 持久化队列 + 独立 worker
 
@@ -19,6 +18,7 @@
 AI-Marking/
 ├── backend/          # FastAPI 后端
 ├── frontend/         # React 前端
+├── scripts/          # Codex MCP 一键接入、诊断与 STDIO 启动器
 ├── docs/             # 架构、数据与界面设计文档（见下文索引）
 ├── PROJECT.md        # 本文档：主索引
 └── README.md         # 运行与开发说明
@@ -33,13 +33,14 @@ AI-Marking/
   └─ React SPA
       ├─ React Router：页面路由
       ├─ TanStack Query：服务端状态、缓存与轮询
-      └─ Axios：/api 请求
+      ├─ Axios：/api 请求
+  └─ EventSource：/api/submissions/{id}/events SSE 实时推送
            ↓
 FastAPI API workers
-  ├─ API：questions / submissions / config / health
-  ├─ SQLAlchemy 同步 Session
-  ├─ DOCX 校验与 LibreOffice 隔离转换
-  └─ 本地 uploads/ 转换后 PDF 文件
+  ├─ API：questions / submissions / config / admin / health
+  ├─ SQLAlchemy 同步 Session（路由 def，含 await 的路由 async def）
+  ├─ Prometheus 指标：/metrics
+  └─ 本地 uploads 文件存储（仅 loopback 部署）
            ↓
 PostgreSQL 持久化队列
   ├─ questions             ├─ PaddleOCR-VL
@@ -52,26 +53,48 @@ PostgreSQL 持久化队列
   ├─ 租约、心跳、崩溃恢复与限次重试
   ├─ 并发上限（默认 4）
   ├─ 首次题目 OCR / 题目新版 OCR / 作业批改
-  └─ uploads/ 定期清理
+  ├─ uploads/ 定期清理
+  └─ Prometheus 业务指标埋点（队列深度、任务时长、重试/死信计数、OCR/LLM 调用）
+           ↑
+本机 Codex MCP（STDIO）
+  ├─ setup-codex-mcp → MCP 注册、版本与数据库诊断
+  ├─ run-ai-marking-mcp → FastAPI /api/mcp（loopback）
+  ├─ Codex 内预检报告 PDF + 多语言小题文件，再提交并自动等待 OCR
+  ├─ PostgreSQL TTL 评分包与续页句柄读取（MCP API v8）
+  ├─ Codex 评分建议、revision 乐观锁、evidence 校验
+  └─ 不提供最终确认、删除、配置或密钥工具
 ```
 
 ### 核心业务边界
 
-- **题目域**：PDF/DOCX 上传、题目 OCR、题目复用、替换与删除。
+- **题目域**：PDF 上传、题目 OCR、题目复用、替换与删除。
 - **批改域**：学生作业上传、失败原记录重试、作业 OCR、Agent 评分、复核和状态流转。
 - **审核域**：教师与 AI 对话、修改评分、确认最终结果。
 - **配置域**：OCR、LLM、rubric 与操作人配置。
-- **文件生命周期**：DOCX 仅在隔离临时目录中用于转换；题目 PDF 受数据库引用保护，学生 PDF 按保留期清理。
+- **运维域**：Prometheus 指标、死信任务管理（`/api/admin/dead-jobs`）。
+- **文件生命周期**：题目 PDF 受数据库引用保护，学生 PDF 按保留期清理；PDF 预览接口同时支持 `GET` 与 `HEAD`，供浏览器预检后再加载。
 
 ### 运行模型
 
 - API worker 只在事务内创建业务记录与 `background_jobs` 队列记录。
 - 单独的 `python -m app.worker` 进程原子领取任务，并以租约和心跳恢复崩溃任务。
 - 任务 worker 内部限制 OCR/LLM 并发，默认上限为 4。
-- DOCX 上传请求最多等待 120 秒完成转换；转换失败不会创建业务记录或留下临时文件。
-- OCR 请求内部仅重试短暂网络错误；最终失败后保留原因，由教师重新上传 PDF 或 DOCX。
-- 前端通过轮询题目和作业状态感知后台任务进度。
+- OCR 请求内部仅重试短暂网络错误；最终失败后保留原因，由教师重新上传 PDF。
+- 前端通过 SSE 实时推送感知后台任务进度，30s 兜底轮询仅在 SSE 断开时触发；`awaiting_codex` 仍保持低频状态刷新直到 Codex 保存建议。
 - 多个 API worker 不会放大后台执行并发；当前部署仍要求所有进程共享 PostgreSQL 与本地上传目录。
+
+## 架构升级 (P0-P5)
+
+针对前序架构评审发现的 6 个问题已完成改造，详见 [docs/architecture/upgrade-p0-p5.md](docs/architecture/upgrade-p0-p5.md)。
+
+| 优先级 | 问题 | 方案 |
+|---|---|---|
+| P0 | async 路由 + 同步 Session 反模式 | 纯同步路由改回 `def`；`chat_with_submission` 拆为读 → LLM 调用 → 写三段，LLM 期间不持有 DB 连接 |
+| P1 | 前端 2s 轮询 | 基于 PG LISTEN/NOTIFY 的 SSE 推送（`/submissions/{id}/events`），轮询降级为 30s 兜底 |
+| P2 | LLM 客户端缓存无失效 | `update_config` 成功后调用 `close_llm_clients_sync()` 清空缓存，下次调用重建 |
+| P3 | 文件存储本地耦合 | 本地部署直接使用 uploads 目录，移除远端 StorageBackend 抽象 |
+| P4 | 可观测性缺失 | Prometheus 指标（`/metrics`）+ 死信管理 API（`/api/admin/dead-jobs` 列出/重试/删除） |
+| P5 | cleanup 全表加载 | 加 `LIMIT 10000` 保护与注释说明；后续随 P3 StorageBackend 落地统一优化 |
 
 ## 后台任务失败语义
 
@@ -84,27 +107,51 @@ OCR 在内部对超时 / 限流 / 5xx 进行最多 3 次短暂重试；网络重
 
 ## 关键设计决策
 
-1. **统一 PDF 处理链**：原生 PDF 直接保存，DOCX 通过 LibreOffice 26.2.4 转换；仅持久化 PDF，并通过后端安全文件流与浏览器原生 iframe 预览。
+1. **统一 PDF 处理链**：原生 PDF 流式接收并直接持久化，通过后端安全文件流与浏览器原生 iframe 预览。
 2. **协同评分流程**：OCR → Agent 评分 → Critic 复核 → 教师 Review（AI 聊天式协作）→ 最终评分确认。
 3. **状态分离**：列表/处理中轮询使用轻量 `SubmissionStatusOut`，终态后再拉取完整 `SubmissionDetail`，避免传输 `ocr_text`/`ai_result` 等大字段。
-4. **配置入库**：LLM Key、endpoint、PaddleOCR URL/token、自定义 rubric 等全部存入数据库，不依赖 `.env`。
+4. **配置入库**：LLM Key、endpoint、PaddleOCR URL/token 与结构化 rubric 全部存入数据库，不依赖 `.env`；Agent 与 MCP 读取题目绑定的同一配置项目。
 5. **浅色极简设计系统**：以净白为底、Indigo 为主强调色，支持 `prefers-reduced-motion` 与 Skip Link 无障碍访问。
 6. **题目与作业解耦**：一个 `Question` 可关联多条 `Submission`，删除单条作业不会删除共享题目。
 7. **数据库优先删除**：数据库事务提交成功后再清理文件，避免记录存在但文件提前丢失。
 8. **题目新版暂存切换**：新版文档统一生成 PDF 后进入持久化 OCR 队列；成功后原子切换，失败时旧题目继续可用。
 9. **最终评分单一入口**：AI 对话只生成待确认建议，只有教师显式确认才写入 `reviewed`；`ChatResponse.finalize_payload` 是前端提交最终评分的唯一权威载荷，`action=finalize` 必须满足该字段非空。
 10. **测试显式建模题目关系**：测试不得自动为 `Submission` 注入默认题目；凡是创建作业记录，都必须显式创建 `Question` 并通过 `question` 或 `question_id` 关联，以避免绕过生产约束。
+11. **Codex 单一新建入口**：网页上传固定走后端 Agent；Codex 评分作业由本机 MCP 提交并在同一任务内等待 OCR，保存建议后返回网页复核链接。
+12. **MCP 服务身份与版本校验**：健康响应同时声明 `service` 和 API 版本；启动脚本拒绝复用 8000 端口，诊断工具区分错误服务、旧进程、token 和数据库问题。
+13. **本地 API 代理固定 IPv4**：Vite 将 `/api` 转发到 `127.0.0.1:8000`，避免 `localhost` 被优先解析为 IPv6 `::1` 而后端只监听 IPv4 时产生“网络连接异常”。Codex 评分记录统一显示为「Codex」，不保存未经验证的模型申报值。
+14. **报告—代码联动证据**：Codex 可提交一份报告 PDF 和按小题映射的 Python/Notebook、R、Java、C/C++ 代码组；后端只保存源码与 SHA-256。代码由当前 Codex 任务在临时目录中尝试运行，结果留在对话中；含代码作业评分前需取得教师人工一致性确认，教师仍是最终确认者。
+15. **统一 rubric 解析**：题目可信 OCR 快照优先，其次是题目绑定配置项目中的结构化 rubric，最后是内置默认；网页 Agent 与 Codex MCP 使用同一 Resolver、snapshot ID 和逐项校验。
+16. **Codex 双遍精评**：ai-marking-grader 先按 rubric 建立证据账本并逐项评分，再独立反向复核证据、部分得分、宽严一致性和重复扣分；反馈提供可执行改进动作，保存前仍只生成教师待确认建议。
+17. **MCP v8 协议收敛**：Codex 正常评分使用预检、提交、打开、人工确认与保存工具；不接受视觉比较输入、自由 rubric 文本、运行日志或代码产物。预检计划仅保留文件元数据并主动清理过期项，服务端评分句柄持久化于 PostgreSQL 并绑定文件/上下文，评分包不包含后端执行信息，评分政策只由评分包提供。题目 rubric 在 OCR 阶段由后端生成权威快照，MCP 只能引用 snapshot。
 
 ## 子文档索引
 
 | 主题 | 路径 | 说明 |
 |---|---|---|
+| 架构升级 P0-P5 | [docs/architecture/upgrade-p0-p5.md](docs/architecture/upgrade-p0-p5.md) | async 路由改造、SSE 推送、LLM 缓存失效、Prometheus 指标、cleanup 优化 |
 | 协同评分页设计 | [docs/frontend/review-page.md](docs/frontend/review-page.md) | 左右分栏布局、Indigo 浅色聊天面板、评分快照卡片、finalize 确认流程 |
+| Codex MCP 评分 | [docs/architecture/mcp-codex-grading.md](docs/architecture/mcp-codex-grading.md) | STDIO 连接、状态机、PDF+代码证据、工具契约、安全边界与排错 |
+| Codex 评分 skill | [.agents/skills/ai-marking-grader/SKILL.md](.agents/skills/ai-marking-grader/SKILL.md) | 预检、提交、打开评分包、双遍精评与教师复核；评分政策由服务端评分包提供 |
 | 数据模型 | [docs/data/schema.md](docs/data/schema.md) | 数据表职责、关系、状态和文件生命周期 |
 
 ## 快速开始
 
-- **本地开发**：配置好 `backend/.env` 后运行 `./start.sh`（自动安装依赖、迁移数据库并启动前后端，热重载）。
-- **生产部署**：运行 `./start.prod.sh`（多 worker、无 reload、前端生产构建预览），可通过 `WORKERS` 环境变量覆盖 worker 数。
+- **Codex 首次接入**：运行 `./scripts/setup-codex-mcp`，脚本注册本机 loopback MCP 并执行数据库与服务身份诊断；代码只由当前 Codex 任务在临时目录中尝试运行，后端不执行学生代码。
+- **本地开发**：配置好数据库后运行 `./start.sh`（自动安装依赖、迁移数据库、校验后端身份并启动前后端与 worker，热重载）。前端严格使用 `5173`，后端严格使用 `8000`；端口被占用时直接报错，避免误连到错误应用。
+- **生产部署**：运行 `./start.prod.sh`（多 worker、无 reload、前端生产构建预览），可通过 `WORKERS` 环境变量覆盖 worker 数。启动前确保 `5173` 和 `8000` 未被其他项目占用。
 
 详细运行、配置与排错说明见 [README.md](README.md)。
+
+## 改动域 affected-check 路由
+
+每次改动完成后，先按 `git diff --name-only` 判断涉及的改动域，再只运行下表中对应的最小检查；所有检查都必须在**最终一次改动之后**重新运行。任一入口失败、依赖或环境缺失时停止继续扩大检查范围，先修复或明确记录阻塞原因，不用其他未列出的命令替代。
+
+| 改动域 | 工作目录与现有入口 | 成功信号 | 停止边界 |
+|---|---|---|---|
+| 后端 `backend/` | `cd backend && ruff check app tests`；评分链路至少运行 `PYTHONDONTWRITEBYTECODE=1 pytest -q -p no:cacheprovider tests/test_marking.py::test_pipeline_marks_failed_immediately_on_agent_error --log-cli-level=INFO`，后端跨模块改动运行 `pytest -q` | 命令退出码为 0；pytest 输出 `passed` | Ruff 或任一相关 pytest 失败时停止，修复后从最终改动重新运行对应命令 |
+| 前端 `frontend/` | `cd frontend && npm run lint`；组件/交互改动追加 `npm run test:run`；构建或路由改动追加 `npm run build` | 各命令退出码为 0；build 完成且无 TypeScript/Vite 错误 | 任一 lint、test 或 build 失败时停止，不以 dev server 或人工点选结果替代 |
+| 数据库迁移 `backend/` | `cd backend && .venv/bin/alembic upgrade head`，随后 `.venv/bin/alembic current` | upgrade 退出码为 0；current 能输出当前迁移版本 | 数据库不可连接、迁移失败或版本未更新时停止，不继续运行依赖新 schema 的服务检查 |
+| MCP 与 Codex 接入（仓库根目录） | `./scripts/setup-codex-mcp --doctor`；配置核对运行 `codex mcp get ai-marking --json`；MCP API/STDIO 改动追加 `cd backend && pytest -q tests/test_mcp_api.py tests/test_mcp_server.py` | doctor 输出 `Codex → AI-Marking MCP 已完全就绪`；配置显示已启用且路径/工作目录正确；相关 pytest 全部通过 | doctor、配置核对或任一 MCP 测试失败时停止，不以网页成功打开或手工调用替代 |
+
+选择完最小集合后，记录实际命令、工作目录、最终修订和结果；跨域改动必须合并各涉及行，并在最后一次代码或迁移改动后重跑整组检查。

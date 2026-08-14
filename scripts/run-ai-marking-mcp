@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+BACKEND_DIR="$PROJECT_DIR/backend"
+PYTHON_BIN="${PYTHON_BIN:-$BACKEND_DIR/.venv/bin/python}"
+
+if [ ! -x "$PYTHON_BIN" ]; then
+  echo "未找到后端 Python: $PYTHON_BIN" >&2
+  exit 1
+fi
+
+cd "$BACKEND_DIR"
+exec "$PYTHON_BIN" -m app.mcp.server

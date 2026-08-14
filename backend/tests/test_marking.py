@@ -16,14 +16,20 @@ from sqlalchemy.orm import sessionmaker
 
 from app.models.background_job import BackgroundJob, BackgroundJobStatus
 from app.models.question import Question, QuestionStatus
-from app.models.submission import Submission, SubmissionStatus
+from app.models.submission import (
+    Submission,
+    SubmissionGradingMode,
+    SubmissionStatus,
+)
 from app.services import marking
 from app.services.errors import BusinessError
 
 # ---------- helpers ----------
 
 
-async def _make_submission(db_session, tmp_path, *, with_question: bool = True) -> Submission:
+async def _make_submission(
+    db_session, tmp_path, *, with_question: bool = True
+) -> Submission:
     question = None
     if with_question:
         question = Question(
@@ -66,7 +72,9 @@ def marking_session_factory(db_session):
         marking.SessionLocal = monkey
 
 
-async def _fake_run_marking_agent(ocr_text, config, on_status=None, question_text=""):
+async def _fake_run_marking_agent(
+    ocr_text, config, on_status=None, question_text="", *, review_enabled=True, cached_rubric=""
+):
     if on_status:
         # marking.py 的 on_status 现在是 async 函数,需要 await
         result = on_status(SubmissionStatus.agent_grading)
@@ -115,6 +123,110 @@ async def test_pipeline_reuses_question_ocr_and_only_ocr_student_submission(
 
     await marking.run_marking_pipeline(sub.id)
     assert paths == [str(tmp_path / "h.pdf")]
+
+
+@pytest.mark.asyncio
+async def test_pipeline_uses_question_config_profile(
+    monkeypatch, tmp_path, db_session, marking_session_factory
+):
+    """批改流水线读取题目所绑定配置项目的 OCR 参数，而非全局默认。"""
+    from app.models.config_profile import ConfigProfile
+    from app.models.question import Question, QuestionStatus
+    from app.models.submission import Submission
+    from app.services.config import upsert_config
+
+    profile = ConfigProfile(name="独立项目", is_default=False)
+    db_session.add(profile)
+    db_session.commit()
+    upsert_config(
+        db_session,
+        {
+            "paddleocr_api_url": "https://custom.ocr/jobs",
+            "paddleocr_token": "custom-token",
+        },
+        profile_id=profile.id,
+    )
+
+    question = Question(
+        name="题目",
+        original_filename="q.pdf",
+        file_path=str(tmp_path / "q.pdf"),
+        ocr_text="题目 OCR 文本",
+        status=QuestionStatus.ready,
+        config_profile_id=profile.id,
+    )
+    sub = Submission(
+        original_filename="h.pdf",
+        file_path=str(tmp_path / "h.pdf"),
+        question=question,
+        status=SubmissionStatus.pending,
+    )
+    db_session.add(sub)
+    db_session.commit()
+    db_session.refresh(sub)
+
+    seen: dict = {}
+
+    async def _fake_run(ocr_text, config, on_status=None, question_text="", *, review_enabled=True, cached_rubric=""):
+        seen["ocr_url"] = config.get("paddleocr_api_url", "")
+        seen["ocr_token"] = config.get("paddleocr_token", "")
+        return {
+            "outcome": "done",
+            "draft": {
+                "score": 80,
+                "max_score": 100,
+                "feedback": "总评",
+                "details": [
+                    {
+                        "criterion": "内容",
+                        "score": 80,
+                        "max_score": 100,
+                        "comment": "评语",
+                        "evidence": [],
+                    }
+                ],
+            },
+            "critic": {
+                "decision": "approve",
+                "confidence": 0.9,
+                "summary": "OK",
+            },
+            "trace": [],
+            "review_reason": "",
+        }
+
+    async def fake_ocr(file_path: str, api_url: str, token: str) -> str:
+        return "OCR 文本"
+
+    monkeypatch.setattr(marking, "ocr_pdf", fake_ocr)
+    monkeypatch.setattr(marking, "run_marking_agent", _fake_run)
+
+    await marking.run_marking_pipeline(sub.id)
+    assert seen["ocr_url"] == "https://custom.ocr/jobs"
+    assert seen["ocr_token"] == "custom-token"
+
+
+@pytest.mark.asyncio
+async def test_codex_pipeline_stops_after_ocr_without_backend_agent(
+    monkeypatch, tmp_path, db_session, marking_session_factory
+):
+    async def fake_ocr(file_path: str, api_url: str, token: str) -> str:
+        return "学生 OCR"
+
+    async def unexpected_agent(*_args, **_kwargs):
+        raise AssertionError("Codex 模式不能调用后端评分 Agent")
+
+    monkeypatch.setattr(marking, "ocr_pdf", fake_ocr)
+    monkeypatch.setattr(marking, "run_marking_agent", unexpected_agent)
+    sub = await _make_submission(db_session, tmp_path)
+    sub.grading_mode = SubmissionGradingMode.codex
+    db_session.commit()
+
+    await marking.run_marking_pipeline(sub.id)
+
+    db_session.refresh(sub)
+    assert sub.status == SubmissionStatus.awaiting_codex
+    assert sub.ocr_text == "学生 OCR"
 
 
 @pytest.mark.asyncio
@@ -174,6 +286,7 @@ async def test_pipeline_marks_failed_immediately_on_ocr_error_without_dead_lette
     不依赖 worker 死信路径(那是 attempts 耗尽后的兜底),保证 UI 轮询在首次
     失败即可见 failed,而非停留在 ocr_processing 直到死信。
     """
+
     async def fail_submission(file_path: str, api_url: str, token: str) -> str:
         if file_path.endswith("q.pdf"):
             return "题目"
@@ -203,7 +316,9 @@ async def test_pipeline_marks_failed_immediately_on_agent_error(
     async def ok_ocr(file_path: str, api_url: str, token: str) -> str:
         return "作业"
 
-    async def fail_agent(ocr_text, config, on_status=None, question_text=""):
+    async def fail_agent(
+        ocr_text, config, on_status=None, question_text="", *, review_enabled=True, cached_rubric=""
+    ):
         raise AgentError("LLM API 调用失败: 模拟错误")
 
     monkeypatch.setattr(marking, "ocr_pdf", ok_ocr)
@@ -299,6 +414,8 @@ async def test_status_endpoint_returns_light_fields_only(client, db_session, tmp
     expected_keys = {
         "id",
         "status",
+        "grading_mode",
+        "grading_revision",
         "original_filename",
         "score",
         "max_score",
@@ -317,9 +434,7 @@ async def test_status_endpoint_returns_light_fields_only(client, db_session, tmp
         "file_path",
         "agent_trace",
     ):
-        assert forbidden not in payload, (
-            f"/status 端点不应返回 {forbidden}"
-        )
+        assert forbidden not in payload, f"/status 端点不应返回 {forbidden}"
 
 
 @pytest.mark.asyncio
@@ -377,9 +492,7 @@ async def test_upload_persists_job_instead_of_returning_503(client, db_session):
     assert body["status"] == "pending"
     job = (
         db_session.execute(
-            select(BackgroundJob).where(
-                BackgroundJob.submission_id == body["id"]
-            )
+            select(BackgroundJob).where(BackgroundJob.submission_id == body["id"])
         )
     ).scalar_one()
     assert job.status == BackgroundJobStatus.queued
@@ -405,9 +518,7 @@ async def test_worker_marks_business_failure_without_retry(
     db_session.add(new_submission_marking_job(sub.id))
     db_session.commit()
 
-    claimed = claim_next_job(
-        db_session, worker_id="test-worker", lease_seconds=60
-    )
+    claimed = claim_next_job(db_session, worker_id="test-worker", lease_seconds=60)
 
     monkeypatch.setattr(worker, "SessionLocal", marking_session_factory)
     monkeypatch.setattr(marking, "SessionLocal", marking_session_factory)
@@ -421,11 +532,92 @@ async def test_worker_marks_business_failure_without_retry(
     # 业务失败不应重试:任务行应被删除,而非回到 queued 或 dead
     remaining = (
         db_session.execute(
-            select(BackgroundJob).where(
-                BackgroundJob.submission_id == sub.id
-            )
+            select(BackgroundJob).where(BackgroundJob.submission_id == sub.id)
         )
         .scalars()
         .all()
     )
     assert remaining == []
+
+
+# ---------- P2:流水线短会话(不长期持有数据库连接) ----------
+
+
+def _counting_session_factory(base_factory):
+    """包装 sessionmaker:返回公认可进入的上下文管理器,并跟踪活跃会话数。
+
+    用法与 ``with SessionLocal() as db:`` 一致,返回的 ``db`` 仍是真正的
+    Session,供 `marking.py` 各阶段使用。
+    """
+
+    from contextlib import contextmanager
+
+    active = {"count": 0}
+
+    @contextmanager
+    def _managed():
+        active["count"] += 1
+        try:
+            with base_factory() as session:
+                yield session
+        finally:
+            active["count"] -= 1
+
+    return _managed, active
+
+
+@pytest.mark.asyncio
+async def test_pipeline_releases_db_connection_during_ocr_and_agent(
+    monkeypatch, tmp_path, db_session, marking_session_factory
+):
+    """B3: 批改流水线在 OCR 与 Agent LLM 调用期间必须已释放数据库连接。
+
+    阶段化改造后每个阶段用短会话,OCR / Agent 期间活跃 Session 数应为 0,
+    否则 TASK_CONCURRENCY 个并发流水线会长期占满连接池。
+    """
+    managed, active = _counting_session_factory(marking_session_factory)
+    monkeypatch.setattr(marking, "SessionLocal", managed)
+
+    async def fake_ocr(file_path: str, api_url: str, token: str) -> str:
+        assert active["count"] == 0, "OCR 期间不应持有数据库连接"
+        return "OCR 文本"
+
+    async def fake_agent(
+        ocr_text, config, on_status=None, question_text="", *, review_enabled=True, cached_rubric=""
+    ):
+        assert active["count"] == 0, "Agent 调用期间不应持有数据库连接"
+        if on_status:
+            result = on_status(SubmissionStatus.agent_grading)
+            if asyncio.iscoroutine(result):
+                await result
+        return {
+            "outcome": "done",
+            "draft": {
+                "score": 80,
+                "max_score": 100,
+                "feedback": "总评",
+                "details": [
+                    {
+                        "criterion": "内容",
+                        "score": 80,
+                        "max_score": 100,
+                        "comment": "评语",
+                        "evidence": [],
+                    }
+                ],
+            },
+            "critic": {"decision": "approve", "confidence": 0.9, "summary": "OK"},
+            "trace": [],
+            "review_reason": "",
+        }
+
+    monkeypatch.setattr(marking, "ocr_pdf", fake_ocr)
+    monkeypatch.setattr(marking, "run_marking_agent", fake_agent)
+
+    sub = await _make_submission(db_session, tmp_path)
+
+    await marking.run_marking_pipeline(sub.id)
+
+    db_session.refresh(sub)
+    assert sub.status == SubmissionStatus.ready_for_review
+    assert sub.score == 80

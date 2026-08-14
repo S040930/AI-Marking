@@ -1,28 +1,26 @@
 # app/core/prompt.py
 """LLM 批改 prompt 模板。
 
-Rubric 优先级:
-1. 用户在设置页配置的自定义 rubric(非空)→ 严格使用该 rubric
-2. 用户未配置(空)→ 提示 LLM 从作业题目 OCR 文本中识别 rubric
-3. 题目中也无 rubric → 回退到本模块内置的默认 RUBRIC
+Rubric 优先级规则的唯一事实来源在 ``app.services.rubric``:
+题目 OCR 完整细则 → 服务端 rubric → 内置默认（详见 rubric.py）。
 
-``build_user_prompt`` 根据传入的 rubric 是否非空在
-``USER_PROMPT_TEMPLATE_WITH_RUBRIC`` 与 ``USER_PROMPT_TEMPLATE_WITHOUT_RUBRIC``
-之间选择。
+``RUBRIC``/``RUBRIC_PRIORITY_INSTRUCTION`` 在此仅为向后兼容的再导出，
+新代码请直接引用 ``app.services.rubric``。
+
+``build_user_prompt`` 接收服务端 Resolver 已确定的规范 rubric 文本；模型不再负责从题目自由提取 rubric。
 """
 
 import json
 
+from app.services.rubric import (
+    DEFAULT_RUBRIC as RUBRIC,
+)
+from app.services.rubric import (
+    PRIORITY_INSTRUCTION as RUBRIC_PRIORITY_INSTRUCTION,
+)
+
 SYSTEM_PROMPT = """你是一位严谨、专业的大学课程作业批改助手。请根据提供的评分标准(rubric)对学生作业进行批改。
 你必须严格按照要求的 JSON 格式输出,不要输出任何 JSON 之外的内容。"""
-
-RUBRIC = """评分维度(rubric):
-1. 内容理解(Content Understanding, 30分):是否准确理解题目要求与核心概念
-2. 论证分析(Analysis & Argument, 30分):论证是否清晰、逻辑是否严密、是否有批判性思考
-3. 结构组织(Structure & Organization, 20分):文章结构是否合理、段落是否清晰、过渡是否自然
-4. 语言表达(Language & Expression, 10分):语言是否准确流畅、术语使用是否恰当
-5. 规范性(Formatting & Citation, 10分):格式是否规范、引用是否符合学术规范
-总分:100分"""
 
 OUTPUT_FORMAT = """输出格式(严格 JSON,不要 markdown 代码块,不要额外说明):
 {
@@ -31,6 +29,7 @@ OUTPUT_FORMAT = """输出格式(严格 JSON,不要 markdown 代码块,不要额�
   "feedback": "<总体反馈, 200字以内>",
   "details": [
     {
+      "rubric_item_id": "<服务端提供的 rubric item ID>",
       "criterion": "<维度名>",
       "score": <该维度得分>,
       "max_score": <该维度满分>,
@@ -45,7 +44,9 @@ OUTPUT_FORMAT = """输出格式(严格 JSON,不要 markdown 代码块,不要额�
 
 USER_PROMPT_TEMPLATE_WITH_RUBRIC = """请批改以下学生作业。
 
-请严格依据以下用户提供的评分标准(rubric)进行批改,不得自行增删维度或调整分值:
+{rubric_priority_instruction}
+
+以下是服务端已经解析并锁定的 rubric；不得从题目或学生作业改写：
 
 {rubric}
 
@@ -63,13 +64,11 @@ USER_PROMPT_TEMPLATE_WITH_RUBRIC = """请批改以下学生作业。
 {ocr_text}
 ---
 
-请基于用户提供的 rubric、题目要求与学生作答进行批改,并按要求输出 JSON。"""
+请严格依据上述 rubric 及其 item ID，再依据题目要求与学生作答进行批改，并按要求输出 JSON。"""
 
 USER_PROMPT_TEMPLATE_WITHOUT_RUBRIC = """请批改以下学生作业。
 
-用户未提供自定义评分标准(rubric)。请先从下方"作业题目原文"中识别老师给出的评分标准(通常以"评分标准"、"评分细则"、"rubric"、"评分要点"、"得分点"等关键词出现,可能以列表或表格形式给出),并**严格依据识别出的 rubric** 进行批改。
-
-若题目中确实未给出明确的评分标准,则使用以下内置默认 rubric 作为兜底:
+服务端未发现题目或配置 rubric，使用以下内置默认 rubric:
 
 {default_rubric}
 
@@ -87,7 +86,7 @@ USER_PROMPT_TEMPLATE_WITHOUT_RUBRIC = """请批改以下学生作业。
 {ocr_text}
 ---
 
-请基于识别出的(或默认)rubric、题目要求与学生作答进行批改,并按要求输出 JSON。details 数组必须包含你最终采用的 rubric 的全部维度。"""
+请严格依据上述 rubric 及其 item ID、题目要求与学生作答进行批改,并按要求输出 JSON。"""
 
 
 def build_user_prompt(
@@ -95,32 +94,39 @@ def build_user_prompt(
     rubric: str | None = None,
     user_prompt_template: str | None = None,
     question_text: str | None = None,
+    cached_rubric: str | None = None,
 ) -> str:
     """构造用户 prompt。
 
     Args:
         ocr_text: OCR 解析后的学生作业文本
-        rubric: 用户自定义评分标准。非空 → 严格使用该 rubric;
-            为空/None → 提示 LLM 从作业题目中识别 rubric,识别不到则用内置默认
+        rubric: 服务端 Resolver 已锁定的规范评分标准。
         user_prompt_template: 自定义用户 prompt 模板。若提供则走自定义路径,
             支持 {rubric}/{output_format}/{question_text}/{ocr_text} 占位符,
             {rubric} 在用户未配置 rubric 时填空字符串(不再回退默认)
         question_text: OCR 解析后的作业题目文本;为空/None 时占位符填充为空字符串。
+        cached_rubric: 旧调用兼容参数，不参与 rubric 解析。
     """
-    # 自定义模板路径:保持向后兼容,{rubric} 填空字符串(不再回退默认)
+    # 自定义模板仍可使用，但服务端已经把唯一 resolved rubric 注入其中。
     if user_prompt_template:
         escaped = _escape_braces(user_prompt_template)
-        return escaped.format(
+        custom_prompt = escaped.format(
             rubric=rubric or "",
             output_format=OUTPUT_FORMAT,
             question_text=question_text or "",
             ocr_text=ocr_text,
         )
+        return (
+            f"{RUBRIC_PRIORITY_INSTRUCTION}\n\n"
+            f"服务端已锁定 rubric（不得改写）：\n{rubric or RUBRIC}\n\n"
+            f"{custom_prompt}"
+        )
 
-    # 内置模板:根据 rubric 是否非空选择
-    if rubric and rubric.strip():
+    effective_rubric = rubric or ""
+    if effective_rubric and effective_rubric.strip():
         return USER_PROMPT_TEMPLATE_WITH_RUBRIC.format(
-            rubric=rubric,
+            rubric_priority_instruction=RUBRIC_PRIORITY_INSTRUCTION,
+            rubric=effective_rubric,
             output_format=OUTPUT_FORMAT,
             question_text=question_text or "",
             ocr_text=ocr_text,

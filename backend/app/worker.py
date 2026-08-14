@@ -9,13 +9,16 @@ import asyncio
 import logging
 import signal
 import socket
+import time
 import uuid
 from contextlib import suppress
 from pathlib import Path
 
+from sqlalchemy import func, select
+
 from app.core.config import settings
 from app.db.session import SessionLocal, engine
-from app.models.background_job import BackgroundJobType
+from app.models.background_job import BackgroundJob, BackgroundJobType
 from app.models.question import (
     Question,
     QuestionReplacementStatus,
@@ -26,6 +29,13 @@ from app.services.agent import close_llm_clients
 from app.services.cleanup import periodic_cleanup_loop
 from app.services.errors import BusinessError
 from app.services.marking import run_marking_pipeline
+from app.services.metrics import (
+    dead_jobs,
+    lease_lost,
+    queue_depth,
+    task_duration,
+    task_retries,
+)
 from app.services.ocr import close_client as close_ocr_client
 from app.services.question_ocr import run_question_ocr
 from app.services.question_replace import run_question_replace
@@ -39,6 +49,28 @@ from app.services.queue import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _refresh_queue_depth_gauge() -> None:
+    """读取一次各 status 的任务数,刷新 Prometheus Gauge。
+
+    每次 claim 前后调用一次,既能反映排队堆积,又不至于过于频繁。
+    单次查询用 GROUP BY,3 行结果,开销 < 1ms。
+    """
+    try:
+        with SessionLocal() as db:
+            rows = (
+                db.execute(
+                    select(BackgroundJob.status, func.count())
+                    .group_by(BackgroundJob.status)
+                )
+                .all()
+            )
+    except Exception:  # noqa: BLE00 - 指标采集失败不影响主流程
+        logger.exception("刷新 queue_depth 指标失败")
+        return
+    for status_, _count in rows:
+        queue_depth.labels(status=status_.value).set(_count)
 
 
 async def _heartbeat(
@@ -62,6 +94,7 @@ async def _heartbeat(
                 continue
             if not renewed:
                 logger.warning("任务租约已丢失 [job=%s]", job.id)
+                lease_lost.inc()
                 stopped.set()
                 if owner is not None:
                     owner.cancel()
@@ -122,6 +155,8 @@ async def _run_claimed(job: ClaimedJob) -> None:
     heartbeat = asyncio.create_task(
         _heartbeat(job, heartbeat_stopped, owner), name=f"job-heartbeat-{job.id}"
     )
+    started = time.perf_counter()
+    job_type_label = job.job_type.value
     try:
         await _execute(job)
         with SessionLocal() as db:
@@ -148,8 +183,14 @@ async def _run_claimed(job: ClaimedJob) -> None:
                 max_attempts=settings.TASK_MAX_ATTEMPTS,
             )
         if is_dead:
+            dead_jobs.labels(job_type=job_type_label).inc()
             await _mark_target_failed(job, error)
+        else:
+            task_retries.labels(job_type=job_type_label).inc()
     finally:
+        task_duration.labels(job_type=job_type_label).observe(
+            time.perf_counter() - started
+        )
         heartbeat_stopped.set()
         heartbeat.cancel()
         with suppress(asyncio.CancelledError):
@@ -185,6 +226,7 @@ async def run_worker() -> None:
                     )
                 if job is None:
                     break
+                _refresh_queue_depth_gauge()
                 task = asyncio.create_task(
                     _run_claimed(job), name=f"background-job-{job.id}"
                 )

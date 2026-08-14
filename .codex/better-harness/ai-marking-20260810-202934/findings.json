@@ -1,0 +1,143 @@
+{
+  "summary": {
+    "projectName": "AI-Marking",
+    "locale": "zh-CN",
+    "modelId": "agent-work-loop-v4",
+    "reportContractVersion": 25,
+    "overview": "项目已有清晰的架构索引和可快速运行的聚焦测试，但当前大范围变更仍缺少从改动域到最小检查、再到最终状态复核的可直接消费路径。",
+    "dimensions": [
+      {
+        "id": "task-understanding",
+        "label": "任务理解",
+        "score": 62,
+        "summary": "项目索引能定位评分架构与安全边界，但部分会话仍无法恢复明确的验收边界。",
+        "findingRefs": []
+      },
+      {
+        "id": "controlled-execution",
+        "label": "可控执行",
+        "score": 56,
+        "summary": "聚焦 pytest 路径已实际运行，但完整启动、重置、隔离与权限边界仍未观察。",
+        "findingRefs": []
+      },
+      {
+        "id": "change-validation",
+        "label": "改动验证",
+        "score": 48,
+        "summary": "项目存在快速测试，近期任务也运行过检查，但没有证据把相关检查绑定到最终变更状态。",
+        "findingRefs": [
+          "final-change-check-route"
+        ]
+      },
+      {
+        "id": "reliable-delivery",
+        "label": "可靠交付",
+        "score": 35,
+        "summary": "本次证据范围内没有与当前修订绑定的验收、审批或恢复结果。",
+        "findingRefs": []
+      },
+      {
+        "id": "learning-capture",
+        "label": "经验沉淀",
+        "score": 35,
+        "summary": "已完成边界化复核，但没有足够的独立可比任务或后续窗口证明可复用改进及其效果。",
+        "findingRefs": []
+      }
+    ],
+    "aiAgentPractice": {
+      "inspectedSurfaces": [],
+      "coverageRows": [
+        {
+          "surface": "Skills",
+          "scopes": [
+            "Project"
+          ],
+          "count": 1,
+          "paths": [
+            ".agents/skills/ai-marking-grader/SKILL.md"
+          ]
+        },
+        {
+          "surface": "Custom Agents",
+          "scopes": [
+            "Project"
+          ],
+          "count": 0
+        }
+      ]
+    },
+    "assignmentSummaries": [
+      {
+        "findingId": "final-change-check-route",
+        "revision": 1,
+        "locale": "zh-CN",
+        "title": "affected-check 路由已落地并通过目标验证",
+        "body": "PROJECT.md 已把四个改动域连接到现有检查入口，并明确工作目录、成功信号、失败停止边界和最终改动后的复跑要求。指定评分服务 pytest 通过（1 passed），入口与 owner 的范围受限静态核对也通过；未将静态核对表述为完整域测试。",
+        "outputs": [
+          {
+            "action": "updated",
+            "artifact": "Document",
+            "name": "PROJECT.md",
+            "scope": "Project",
+            "path": "PROJECT.md",
+            "summary": "新增 backend、frontend、数据库迁移和 MCP 四域的 affected-check 路由，包含入口、成功信号、停止边界和最终改动后复跑要求。"
+          }
+        ]
+      }
+    ]
+  },
+  "findings": [
+    {
+      "id": "final-change-check-route",
+      "title": "最终变更无法绑定到一组可审阅的相关检查",
+      "severity": "Medium",
+      "reason": "Codex 七日窗口内有 9 个任务 Episode 发生变更、8 个出现检查，但没有一项检查被复核为与最终变更相关；同时当前工作区差异跨 95 个文件，而已检查的 PROJECT.md 没有把后端、前端、迁移与 MCP 改动域映射到各自的最小检查和预期结果。项目已有可在 0.05 秒内通过的评分失败路径 pytest，说明缺口不是缺少测试机制，而是缺少让代理从改动域选择检查并保留最终状态证据的项目级路由。",
+      "dimensionRefs": [
+        "change-validation"
+      ],
+      "aiFixPrompt": "/better-harness fix this issue\n\n在 PROJECT.md 的现有运行与验证章节中增加最小的 affected-check 路由：按后端、前端、数据库迁移和 MCP 四个改动域，链接项目中已经存在且可验证的检查入口、工作目录、预期成功信号，以及检查失败时的停止边界。不要新增并行文档或依赖，也不要写入尚未在项目中发现的命令。\n\n## Validation\n\n- 对评分服务示例运行 `PYTHONDONTWRITEBYTECODE=1 pytest -q -p no:cacheprovider tests/test_marking.py::test_pipeline_marks_failed_immediately_on_agent_error --log-cli-level=INFO`，工作目录为 `backend`，确认结果为通过\n- 核对每个新增路由都指向现有 manifest、脚本或测试 owner，并明确最终变更后需要重新运行\n- 用一个跨域变更示例从 PROJECT.md 选择最小检查集合，确认无需人工枚举项目文件",
+      "expectedArtifact": "Document",
+      "expectedOutput": [
+        "让代理从改动域直接选择已存在的最小检查，并把检查结果绑定到最终变更状态。"
+      ],
+      "actualOutputRevision": 1,
+      "actualOutput": [
+        {
+          "action": "updated",
+          "artifact": "Document",
+          "name": "PROJECT.md",
+          "scope": "Project",
+          "path": "PROJECT.md",
+          "summary": "新增 backend、frontend、数据库迁移和 MCP 四域的 affected-check 路由，包含入口、成功信号、停止边界和最终改动后复跑要求。"
+        }
+      ],
+      "assignmentSummary": {
+        "locale": "zh-CN",
+        "title": "affected-check 路由已落地并通过目标验证",
+        "body": "PROJECT.md 已把四个改动域连接到现有检查入口，并明确工作目录、成功信号、失败停止边界和最终改动后的复跑要求。指定评分服务 pytest 通过（1 passed），入口与 owner 的范围受限静态核对也通过；未将静态核对表述为完整域测试。"
+      },
+      "postFixRepairReview": {
+        "modelId": "agent-work-loop-v4",
+        "findingId": "final-change-check-route",
+        "status": "verified",
+        "summary": "affected-check 路由已落地并通过指定后端测试及范围受限静态核对",
+        "reason": "修复覆盖 backend/frontend/database migration/MCP 四域，包含工作目录、现有入口、成功信号和停止边界；唯一目标路径为 PROJECT.md。指定 pytest 退出码为 0，完整性信封 reviewed 且 findingCount=0。",
+        "confidence": "medium",
+        "evidenceRefs": [
+          {
+            "kind": "fix-validation",
+            "id": "post-fix-validation:backend-pytest"
+          },
+          {
+            "kind": "fix-validation",
+            "id": "post-fix-validation:static-route-owner-check"
+          },
+          {
+            "kind": "asset-integrity",
+            "id": "asset-integrity-refresh.json"
+          }
+        ]
+      }
+    }
+  ]
+}

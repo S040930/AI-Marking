@@ -14,6 +14,7 @@ vi.mock('@/api/questions', () => ({
       items: [
         {
           id: 7,
+          config_profile_id: 1,
           name: '期末作文',
           original_filename: 'essay.pdf',
           status: 'failed',
@@ -31,6 +32,19 @@ vi.mock('@/api/questions', () => ({
   useRetryQuestionOcr: () => ({ mutate: mocks.retry }),
   useDeleteQuestion: () => ({ mutate: mocks.remove, isPending: false }),
   useReplaceQuestion: () => ({ mutate: vi.fn(), isPending: false }),
+  useChangeQuestionConfigProfile: () => ({
+    mutate: vi.fn(),
+    isPending: false,
+  }),
+}));
+
+vi.mock('@/api/config', () => ({
+  useConfigProfiles: () => ({
+    data: [
+      { id: 1, name: '默认配置', is_default: true },
+      { id: 2, name: '初二语文', is_default: false },
+    ],
+  }),
 }));
 
 import QuestionsPage from '@/pages/QuestionsPage';
@@ -41,11 +55,11 @@ describe('QuestionsPage', () => {
   it('展示 OCR 失败原因并允许重新上传', () => {
     render(<QuestionsPage />);
     expect(screen.getByText(/OCR 服务异常/)).toBeInTheDocument();
-    const file = new File(['docx'], 'replacement.docx', {
-      type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    const file = new File(['pdf'], 'replacement.pdf', {
+      type: 'application/pdf',
     });
     const input = screen.getByLabelText('重新上传 期末作文 文件');
-    expect(input).toHaveAttribute('accept', expect.stringContaining('.docx'));
+    expect(input).toHaveAttribute('accept', expect.stringContaining('.pdf'));
     fireEvent.change(input, {
       target: { files: [file] },
     });

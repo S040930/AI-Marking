@@ -57,6 +57,10 @@ function resolveErrorMessage(error: AxiosError<ApiErrorResponse>): string {
 apiClient.interceptors.response.use(
   (response) => response,
   (error: AxiosError<ApiErrorResponse>) => {
+    // 页面卸载或切换 PDF 时主动取消的请求不是网络故障，不应弹出误导性 Toast。
+    if (axios.isCancel(error) || error.code === 'ERR_CANCELED') {
+      return Promise.reject(error);
+    }
     const message = resolveErrorMessage(error);
     // 完整 error 对象记录到控制台便于调试，toast 仅展示友好信息
     console.error('[API Error]', error);

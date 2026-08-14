@@ -14,6 +14,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
 import {
   type Question,
+  useChangeQuestionConfigProfile,
   useCreateQuestion,
   useDeleteQuestion,
   useQuestions,
@@ -21,6 +22,7 @@ import {
   useReplaceQuestion,
   useRetryQuestionOcr,
 } from '@/api/questions';
+import { useConfigProfiles } from '@/api/config';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -62,6 +64,9 @@ export default function QuestionsPage() {
   const [confirmation, setConfirmation] = useState('');
   const [acknowledgedDeletion, setAcknowledgedDeletion] = useState(false);
   const createMutation = useCreateQuestion();
+  const [uploadProfileId, setUploadProfileId] = useState<number | null>(null);
+  const switchProfileMutation = useChangeQuestionConfigProfile();
+  const { data: profiles } = useConfigProfiles();
   const renameMutation = useRenameQuestion();
   const retryMutation = useRetryQuestionOcr();
   const deleteMutation = useDeleteQuestion();
@@ -73,7 +78,7 @@ export default function QuestionsPage() {
   const uploadQuestion = (file?: File) => {
     if (!file) return;
     createMutation.mutate(
-      { file },
+      { file, configProfileId: uploadProfileId ?? undefined },
       {
         onSuccess: () => toast.success('题目已上传，正在进行 OCR 识别'),
         onError: (error) => toast.error(errorMessage(error)),
@@ -154,10 +159,31 @@ export default function QuestionsPage() {
             event.target.value = '';
           }}
         />
-        <Button onClick={() => uploadRef.current?.click()}>
-          {createMutation.isPending ? <Loader2 className="animate-spin" /> : <Plus />}
-          上传新题目
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          {profiles?.length ? (
+            <select
+              aria-label="上传题目使用的配置项目"
+              value={uploadProfileId ?? ''}
+              onChange={(event) =>
+                setUploadProfileId(
+                  event.target.value ? Number(event.target.value) : null,
+                )
+              }
+              className="h-9 rounded-md border border-input bg-background px-2.5 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            >
+              {profiles?.map((profile) => (
+                <option key={profile.id} value={profile.id}>
+                  {profile.is_default ? '★ ' : ''}
+                  {profile.name}
+                </option>
+              ))}
+            </select>
+          ) : null}
+          <Button onClick={() => uploadRef.current?.click()}>
+            {createMutation.isPending ? <Loader2 className="animate-spin" /> : <Plus />}
+            上传新题目
+          </Button>
+        </div>
       </div>
 
       <div className="relative max-w-md">
@@ -228,7 +254,7 @@ export default function QuestionsPage() {
                   </div>
                   {question.error_message && (
                     <p className="rounded-lg bg-destructive/10 p-3 text-xs text-destructive">
-                      OCR 失败：{question.error_message}。请重新选择 PDF 或 DOCX 上传。
+                      OCR 失败：{question.error_message}。请重新选择 PDF 上传。
                     </p>
                   )}
                   {question.replacement_error_message && (
@@ -236,6 +262,48 @@ export default function QuestionsPage() {
                       新版识别失败：{question.replacement_error_message}。旧版题目仍可继续使用。
                     </p>
                   )}
+                  <div className="flex items-center gap-2 border-t pt-3">
+                    <span className="text-xs text-muted-foreground">
+                      配置项目
+                    </span>
+                    {profiles?.length ? (
+                      <select
+                        aria-label={`切换 ${question.name} 的配置项目`}
+                        value={question.config_profile_id}
+                        disabled={
+                          switchProfileMutation.isPending ||
+                          question.status === 'pending' ||
+                          question.status === 'ocr_processing' ||
+                          replacementActive
+                        }
+                        onChange={(event) => {
+                          const next = Number(event.target.value);
+                          if (next === question.config_profile_id) return;
+                          switchProfileMutation.mutate(
+                            { id: question.id, configProfileId: next },
+                            {
+                              onSuccess: () =>
+                                toast.success('配置项目已更新'),
+                              onError: (error) =>
+                                toast.error(errorMessage(error)),
+                            },
+                          );
+                        }}
+                        className="h-8 rounded-md border border-input bg-background px-2 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
+                      >
+                        {profiles?.map((profile) => (
+                          <option key={profile.id} value={profile.id}>
+                            {profile.is_default ? '★ ' : ''}
+                            {profile.name}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span className="text-sm text-muted-foreground">
+                        #{question.config_profile_id}
+                      </span>
+                    )}
+                  </div>
                   <div className="flex flex-wrap gap-2 border-t pt-3">
                     <Button variant="outline" size="sm" asChild>
                       <a href={`/api/questions/${question.id}/pdf`} target="_blank">
@@ -320,7 +388,7 @@ export default function QuestionsPage() {
         <div className="rounded-2xl border border-dashed py-20 text-center">
           <BookOpen className="mx-auto mb-3 size-10 text-muted-foreground/50" />
           <p className="font-medium">还没有可显示的题目</p>
-          <p className="mt-1 text-sm text-muted-foreground">上传第一份 PDF 或 DOCX 题目开始使用</p>
+          <p className="mt-1 text-sm text-muted-foreground">上传第一份 PDF 题目开始使用</p>
         </div>
       )}
 

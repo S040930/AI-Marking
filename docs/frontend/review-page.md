@@ -69,7 +69,7 @@
 
 ## 数据流
 
-- `useSubmissionStatus` 轮询处理状态，终态后启用 `useSubmission` 拉取详情。
+- `useSubmissionStatus` 通过 SSE 获取状态并以 30s 低频兜底；`awaiting_codex` 虽仍等待 Codex，但已启用 `useSubmission` 拉取恢复页详情，其他处理中状态保持轻量。
 - `useConfig` 读取 `operator_name` 作为 `reviewer_name`。
 - `useConversations` 获取历史对话；`useChat` 发送教师消息并接收结构化响应。
 - `useFinalizeSubmission` 提交教师确认的最终评分。

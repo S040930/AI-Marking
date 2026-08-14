@@ -8,7 +8,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.models.submission import SubmissionStatus
+from app.models.submission import SubmissionGradingMode, SubmissionStatus
+from app.schemas.scoring import ScoreDetail
 
 
 class SubmissionOut(BaseModel):
@@ -20,12 +21,40 @@ class SubmissionOut(BaseModel):
     original_filename: str
     question_original_filename: str | None = None
     status: SubmissionStatus
+    grading_mode: SubmissionGradingMode = SubmissionGradingMode.backend_agent
+    grading_revision: int = 0
+    graded_at: datetime | None = None
     score: float | None = None
     max_score: float | None = None
     confidence: float | None = None
     uploaded_at: datetime
     completed_at: datetime | None = None
-    ai_suggestion: dict | None = None
+    has_code: bool = False
+
+
+class SubmissionCodeFileOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    question_number: int
+    entrypoint: bool = True
+    original_filename: str
+    file_kind: str
+    source_sha256: str
+    source_text: str | None = None
+    execution_status: str
+    execution_result: dict | None = None
+    artifacts: list[dict] | None = None
+    visual_reviews: list[dict] | None = None
+
+
+class SubmissionCodeInputFileOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    original_filename: str
+    size_bytes: int
+    sha256: str
 
 
 class SubmissionDetail(SubmissionOut):
@@ -34,6 +63,7 @@ class SubmissionDetail(SubmissionOut):
     ocr_text: str | None = None
     question_ocr_text: str | None = None
     feedback: str | None = None
+    ai_suggestion: dict | None = None
     details: list[dict] | None = None
     ai_result: dict | None = None
     agent_trace: list[dict] | None = None
@@ -41,22 +71,10 @@ class SubmissionDetail(SubmissionOut):
     reviewed_by: str | None = None
     reviewed_at: datetime | None = None
     error_message: str | None = None
-
-
-class ReviewDetail(BaseModel):
-    """教师确认的单项评分。"""
-
-    criterion: str = Field(min_length=1, max_length=200)
-    score: float = Field(ge=0)
-    max_score: float = Field(gt=0)
-    comment: str = Field(min_length=1)
-    evidence: list[str] = Field(default_factory=list)
-
-    @model_validator(mode="after")
-    def score_within_maximum(self):
-        if self.score > self.max_score:
-            raise ValueError("单项得分不能超过该项满分")
-        return self
+    code_runtime: dict | None = None
+    code_visual_assets: list[dict] | None = None
+    code_files: list[SubmissionCodeFileOut] = Field(default_factory=list)
+    code_input_files: list[SubmissionCodeInputFileOut] = Field(default_factory=list)
 
 
 class FinalizeRequest(BaseModel):
@@ -66,7 +84,7 @@ class FinalizeRequest(BaseModel):
     score: float = Field(ge=0)
     max_score: float = Field(gt=0)
     feedback: str = Field(min_length=1)
-    details: list[ReviewDetail] = Field(min_length=1)
+    details: list[ScoreDetail] = Field(min_length=1)
 
     @model_validator(mode="after")
     def totals_are_consistent(self):
@@ -112,7 +130,7 @@ class SuggestionSnapshot(BaseModel):
     max_score: float = Field(gt=0)
     confidence: float = Field(ge=0, le=1, default=0)
     feedback: str = Field(default="")
-    details: list[ReviewDetail] = Field(default_factory=list)
+    details: list[ScoreDetail] = Field(default_factory=list)
 
 
 class ChatResponse(BaseModel):
@@ -146,6 +164,8 @@ class SubmissionStatusOut(BaseModel):
 
     id: int
     status: SubmissionStatus
+    grading_mode: SubmissionGradingMode = SubmissionGradingMode.backend_agent
+    grading_revision: int = 0
     original_filename: str
     score: float | None = None
     max_score: float | None = None

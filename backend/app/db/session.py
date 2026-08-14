@@ -28,3 +28,14 @@ def get_db() -> Generator[Session, None, None]:
     """FastAPI 依赖：提供一个同步 Session 并在请求结束后关闭。"""
     with SessionLocal() as db:
         yield db
+
+
+def get_session_factory() -> sessionmaker[Session]:
+    """FastAPI 依赖：返回 Session 工厂。
+
+    供需要在请求内多次开闭 Session 的路由使用(如 P0 改造后的 chat 路由:
+    LLM 调用期间需释放连接,调用前后各开一个独立 Session)。测试时可通过
+    ``app.dependency_overrides[get_session_factory]`` 替换为 SQLite 工厂,
+    与 ``get_db`` 的 override 保持一致,避免直连生产 PostgreSQL。
+    """
+    return SessionLocal

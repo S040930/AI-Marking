@@ -11,7 +11,9 @@ from app.models.question import Question, QuestionReplacementStatus
 from app.models.submission import Submission
 from app.services.config import get_config_dict
 from app.services.errors import BusinessError
+from app.services.events import notify_question_status
 from app.services.ocr import OCRError, ocr_pdf
+from app.services.question_rubric import extract_question_rubric
 
 logger = logging.getLogger(__name__)
 
@@ -33,15 +35,20 @@ async def run_question_replace(question_id: int) -> None:
         staged_path = question.replacement_file_path
         staged_name = question.replacement_original_filename
         if not staged_path or not staged_name:
-            raise RuntimeError("题目替换任务缺少暂存 PDF")
+            raise BusinessError("题目替换任务缺少暂存 PDF")
 
         question.replacement_status = QuestionReplacementStatus.processing
         question.replacement_error_message = None
         question.updated_at = utc_now_naive()
+        # 题目主 status 不变(仍为 ready),通知里携带 replacement_status
+        # 让前端 QuestionsPage 触发刷新获取最新状态。
+        notify_question_status(
+            db, question_id, QuestionReplacementStatus.processing.value
+        )
         db.commit()
 
     with SessionLocal() as db:
-        config = get_config_dict(db)
+        config = get_config_dict(db, profile_id=question.config_profile_id)
 
     try:
         new_ocr_text = await ocr_pdf(
@@ -59,9 +66,14 @@ async def run_question_replace(question_id: int) -> None:
                 question.replacement_original_filename = None
                 question.replacement_error_message = message[:1024]
                 question.updated_at = utc_now_naive()
+                notify_question_status(
+                    db, question_id, QuestionReplacementStatus.failed.value
+                )
                 db.commit()
         _unlink_paths([staged_path])
         raise BusinessError(message) from exc
+
+    rubric_snapshot = await extract_question_rubric(new_ocr_text, config)
 
     with SessionLocal() as db:
         question = db.get(Question, question_id, with_for_update=True)
@@ -70,28 +82,42 @@ async def run_question_replace(question_id: int) -> None:
             return
         if (
             question.replacement_file_path != staged_path
-            or question.replacement_status
-            != QuestionReplacementStatus.processing
+            or question.replacement_status != QuestionReplacementStatus.processing
         ):
-            raise RuntimeError("题目替换状态在执行期间发生变化")
+            # 状态在执行期间被外部改写(如用户发起新一轮替换):旧任务确定性
+            # 失败,清理本任务的暂存 PDF 后抛 BusinessError 让 worker 直接
+            # 删除任务而不重试。不改写 question 行,保留新一轮 pending 状态。
+            _unlink_paths([staged_path])
+            raise BusinessError("题目替换状态在执行期间发生变化")
 
         submissions = (
-            db.execute(
-                select(Submission)
-                .where(Submission.question_id == question_id)
-                .with_for_update()
+            (
+                db.execute(
+                    select(Submission)
+                    .where(Submission.question_id == question_id)
+                    .with_for_update()
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         old_paths = [question.file_path, *[sub.file_path for sub in submissions]]
         for submission in submissions:
             db.delete(submission)
         question.original_filename = staged_name
         question.file_path = staged_path
         question.ocr_text = new_ocr_text
+        question.extracted_rubric = rubric_snapshot["text"] if rubric_snapshot else None
+        question.extracted_rubric_items = rubric_snapshot["items"] if rubric_snapshot else None
+        question.extracted_rubric_ocr_hash = rubric_snapshot["ocr_hash"] if rubric_snapshot else None
+        question.extracted_rubric_version = rubric_snapshot["version"] if rubric_snapshot else None
+        question.extracted_rubric_at = utc_now_naive() if rubric_snapshot else None
         question.replacement_status = None
         question.replacement_file_path = None
         question.replacement_original_filename = None
         question.replacement_error_message = None
         question.updated_at = utc_now_naive()
+        # 切换完成,主 OCR 状态变为 ready;通知用 ready 让前端刷新题目列表。
+        notify_question_status(db, question_id, "ready")
         db.commit()
         _unlink_paths(old_paths)

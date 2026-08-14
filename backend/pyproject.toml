@@ -21,6 +21,9 @@ dependencies = [
     "openai==2.44.0",
     "langgraph==1.2.7",
     "aiofiles==25.1.0",
+    "prometheus-fastapi-instrumentator==8.1.0",
+    "prometheus-client==0.22.1",
+    "mcp==2.0.0",
 ]
 
 [project.optional-dependencies]
@@ -30,6 +33,7 @@ dev = [
     "pytest==9.1.1",
     "pytest-asyncio==1.4.0",
     "pip-tools==7.5.2",
+    "mcp[cli]==2.0.0",
 ]
 
 [tool.setuptools.packages.find]

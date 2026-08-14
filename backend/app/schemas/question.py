@@ -11,6 +11,7 @@ class QuestionOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    config_profile_id: int
     name: str
     original_filename: str
     status: QuestionStatus
@@ -36,6 +37,10 @@ class PaginatedQuestions(BaseModel):
 
 class QuestionRenameRequest(BaseModel):
     name: str = Field(min_length=1, max_length=255)
+
+
+class QuestionConfigProfileRequest(BaseModel):
+    config_profile_id: int = Field(..., ge=1, description="配置项目 ID")
 
 
 class QuestionConfirmRequest(BaseModel):

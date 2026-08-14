@@ -36,6 +36,81 @@ async def _question(db_session, tmp_path, *, name="期末作文"):
     return question, path
 
 
+async def test_create_question_binds_default_config_profile(client, db_session):
+    """未指定配置项目的题目自动绑定默认项目。"""
+    from app.models.config_profile import ConfigProfile
+
+    created = await client.post(
+        "/api/questions",
+        files={"file": ("new-q.pdf", b"%PDF-1.4", "application/pdf")},
+        data={"name": "默认绑定题"},
+    )
+    assert created.status_code == 201
+    default_id = db_session.query(ConfigProfile).filter_by(is_default=True).one().id
+    assert created.json()["config_profile_id"] == default_id
+    assert (
+        db_session.get(Question, created.json()["id"]).config_profile_id == default_id
+    )
+
+
+async def test_create_question_with_explicit_config_profile(client, db_session):
+    """显式指定 config_profile_id 时题目按项目绑定。"""
+    from app.models.config_profile import ConfigProfile
+
+    profile = ConfigProfile(name="AB 项目", is_default=False)
+    db_session.add(profile)
+    db_session.commit()
+
+    created = await client.post(
+        "/api/questions",
+        files={"file": ("new-q.pdf", b"%PDF-1.4", "application/pdf")},
+        data={"name": "AB绑定题", "config_profile_id": str(profile.id)},
+    )
+    assert created.status_code == 201
+    assert created.json()["config_profile_id"] == profile.id
+
+
+async def test_switch_question_config_profile(client, db_session, tmp_path):
+    """PATCH /questions/{id}/config-profile 切换题目的配置项目。"""
+    from app.models.config_profile import ConfigProfile
+
+    profile_a = ConfigProfile(name="项目A", is_default=False)
+    db_session.add(profile_a)
+    db_session.commit()
+
+    question, _ = await _question(db_session, tmp_path)
+
+    switched = await client.patch(
+        f"/api/questions/{question.id}/config-profile",
+        json={"config_profile_id": profile_a.id},
+    )
+    assert switched.status_code == 200
+    assert switched.json()["config_profile_id"] == profile_a.id
+    assert db_session.get(Question, question.id).config_profile_id == profile_a.id
+    # 不存在的项目拒绝
+    missing = await client.patch(
+        f"/api/questions/{question.id}/config-profile",
+        json={"config_profile_id": 9999},
+    )
+    assert missing.status_code == 422
+
+
+async def test_switch_question_config_profile_blocks_during_ocr(client):
+    """OCR 处理中的题目不可切换配置项目。"""
+    creating = await client.post(
+        "/api/questions",
+        files={"file": ("q.pdf", b"%PDF-1.4", "application/pdf")},
+        data={"name": "排队题"},
+    )
+    assert creating.status_code == 201
+    qid = creating.json()["id"]
+    resp = await client.patch(
+        f"/api/questions/{qid}/config-profile",
+        json={"config_profile_id": creating.json()["config_profile_id"]},
+    )
+    assert resp.status_code == 409
+
+
 async def test_create_and_retry_question_use_one_durable_job(client, db_session):
     created = await client.post(
         "/api/questions",
@@ -47,9 +122,7 @@ async def test_create_and_retry_question_use_one_durable_job(client, db_session)
     question = db_session.get(Question, question_id)
     job = (
         db_session.execute(
-            select(BackgroundJob).where(
-                BackgroundJob.question_id == question_id
-            )
+            select(BackgroundJob).where(BackgroundJob.question_id == question_id)
         )
     ).scalar_one()
     assert job.status == BackgroundJobStatus.queued
@@ -65,12 +138,14 @@ async def test_create_and_retry_question_use_one_durable_job(client, db_session)
     assert retried.status_code == 200
 
     jobs = (
-        db_session.execute(
-            select(BackgroundJob).where(
-                BackgroundJob.question_id == question_id
+        (
+            db_session.execute(
+                select(BackgroundJob).where(BackgroundJob.question_id == question_id)
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert len(jobs) == 1
     assert jobs[0].status == BackgroundJobStatus.queued
     assert jobs[0].attempts == 0
@@ -79,7 +154,7 @@ async def test_create_and_retry_question_use_one_durable_job(client, db_session)
 
 async def test_list_search_rename_and_preview_question(client, db_session, tmp_path):
     question, _ = await _question(db_session, tmp_path)
-    question.original_filename = "essay.docx"
+    question.original_filename = "essay.pdf"
     db_session.commit()
 
     response = await client.get("/api/questions", params={"search": "期末"})
@@ -93,9 +168,12 @@ async def test_list_search_rename_and_preview_question(client, db_session, tmp_p
     assert renamed.json()["name"] == "新版作文"
 
     preview = await client.get(f"/api/questions/{question.id}/pdf")
+    preview_head = await client.head(f"/api/questions/{question.id}/pdf")
     assert preview.status_code == 200
     assert preview.headers["content-type"] == "application/pdf"
     assert 'filename="essay.pdf"' in preview.headers["content-disposition"]
+    assert preview_head.status_code == 200
+    assert preview_head.headers["content-type"] == "application/pdf"
 
 
 async def test_submission_delete_keeps_shared_question_pdf(
@@ -136,9 +214,7 @@ async def test_delete_question_cascades_terminal_records_and_files(
     )
     db_session.add(sub)
     db_session.flush()
-    db_session.add(
-        Conversation(submission_id=sub.id, role="user", content="复核")
-    )
+    db_session.add(Conversation(submission_id=sub.id, role="user", content="复核"))
     db_session.commit()
     sub_id = sub.id
 
@@ -152,10 +228,14 @@ async def test_delete_question_cascades_terminal_records_and_files(
     assert db_session.get(Question, question.id) is None
     assert db_session.get(Submission, sub_id) is None
     conversations = (
-        db_session.execute(
-            select(Conversation).where(Conversation.submission_id == sub_id)
+        (
+            db_session.execute(
+                select(Conversation).where(Conversation.submission_id == sub_id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert conversations == []
     assert not question_path.exists()
     assert not student_path.exists()
@@ -238,9 +318,7 @@ async def test_replace_question_queues_then_atomically_switches(
     assert student_path.exists()
     job = (
         db_session.execute(
-            select(BackgroundJob).where(
-                BackgroundJob.question_id == question.id
-            )
+            select(BackgroundJob).where(BackgroundJob.question_id == question.id)
         )
     ).scalar_one()
     assert job.job_type == BackgroundJobType.question_replace
@@ -350,9 +428,7 @@ async def test_replace_without_submissions_does_not_require_acknowledge(
     assert response.json()["affected_submission_count"] == 0
 
 
-async def test_replacement_freezes_question_mutations(
-    client, db_session, tmp_path
-):
+async def test_replacement_freezes_question_mutations(client, db_session, tmp_path):
     question, _ = await _question(db_session, tmp_path)
     question.replacement_status = QuestionReplacementStatus.pending
     question.replacement_file_path = str(tmp_path / "staged.pdf")

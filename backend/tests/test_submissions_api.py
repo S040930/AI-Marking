@@ -14,7 +14,7 @@ from app.models.question import (
     QuestionReplacementStatus,
     QuestionStatus,
 )
-from app.models.submission import Submission, SubmissionStatus
+from app.models.submission import Submission, SubmissionGradingMode, SubmissionStatus
 
 
 def test_database_timestamp_is_naive_utc():
@@ -36,7 +36,7 @@ def _ready_question(db_session, name: str = "测试题目") -> Question:
 
 
 async def test_upload_unsupported_document_returns_422(client):
-    """POST /api/submissions 拒绝 PDF/DOCX 之外的文件。"""
+    """POST /api/submissions 拒绝非 PDF 文件。"""
     response = await client.post(
         "/api/submissions",
         files=[
@@ -53,14 +53,14 @@ async def test_get_nonexistent_submission_returns_404(client):
     assert response.status_code == 404
 
 
-async def test_docx_source_preview_is_served_as_pdf(
+async def test_source_preview_is_served_as_pdf(
     client, db_session, tmp_path
 ):
     question_path = tmp_path / "question.pdf"
     question_path.write_bytes(b"%PDF-question")
     question = Question(
-        name="DOCX 题目",
-        original_filename="question.docx",
+        name="PDF 题目",
+        original_filename="question.pdf",
         file_path=str(question_path),
         ocr_text="题目",
         status=QuestionStatus.ready,
@@ -68,7 +68,7 @@ async def test_docx_source_preview_is_served_as_pdf(
     submission_path = tmp_path / "answer.pdf"
     submission_path.write_bytes(b"%PDF-answer")
     submission = Submission(
-        original_filename="answer.docx",
+        original_filename="answer.pdf",
         file_path=str(submission_path),
         question=question,
         status=SubmissionStatus.failed,
@@ -80,6 +80,10 @@ async def test_docx_source_preview_is_served_as_pdf(
     question_preview = await client.get(
         f"/api/submissions/{submission.id}/pdf?type=question"
     )
+    answer_head = await client.head(f"/api/submissions/{submission.id}/pdf")
+    question_head = await client.head(
+        f"/api/submissions/{submission.id}/pdf?type=question"
+    )
 
     assert answer.headers["content-type"] == "application/pdf"
     assert 'filename="answer.pdf"' in answer.headers["content-disposition"]
@@ -87,6 +91,10 @@ async def test_docx_source_preview_is_served_as_pdf(
     assert 'filename="question.pdf"' in question_preview.headers[
         "content-disposition"
     ]
+    assert answer_head.status_code == 200
+    assert answer_head.headers["content-type"] == "application/pdf"
+    assert question_head.status_code == 200
+    assert question_head.headers["content-type"] == "application/pdf"
 
 
 async def test_failed_submission_retries_in_same_record(
@@ -222,8 +230,10 @@ async def test_get_submission_list_empty(client):
     assert response.json() == {"items": [], "total": 0, "skip": 0, "limit": 10}
 
 
-async def test_get_submission_list_includes_ai_suggestion(client, db_session):
-    """列表精简查询应预加载 AI 建议，避免响应序列化触发异步懒加载。"""
+async def test_get_submission_list_excludes_large_assessment_payload(
+    client, db_session
+):
+    """历史列表只返回摘要，不携带评分建议等大 JSON。"""
     suggestion = {
         "score": 88,
         "max_score": 100,
@@ -246,7 +256,9 @@ async def test_get_submission_list_includes_ai_suggestion(client, db_session):
     )
 
     assert response.status_code == 200
-    assert response.json()["items"][0]["ai_suggestion"] == suggestion
+    item = response.json()["items"][0]
+    assert "ai_suggestion" not in item
+    assert item["has_code"] is False
 
 
 @pytest.mark.parametrize(
@@ -810,3 +822,115 @@ async def test_upload_rejects_question_not_ready(
         data={"question_id": str(question.id)},
     )
     assert response.status_code == 409
+
+
+def _ready_for_review_submission(
+    db_session, tmp_path, *, name: str = "review.pdf"
+) -> Submission:
+    """构造一个待审阅、尚未复核的 backend_agent 提交。"""
+    path = tmp_path / name
+    path.write_bytes(b"%PDF-1.4")
+    sub = Submission(
+        original_filename=name,
+        file_path=str(path),
+        question=_ready_question(db_session),
+        status=SubmissionStatus.ready_for_review,
+        grading_mode=SubmissionGradingMode.backend_agent,
+        ocr_text="学生作业 OCR",
+        ai_result={"score": 80, "max_score": 100, "feedback": "总评", "details": []},
+        ai_suggestion={
+            "score": 80,
+            "max_score": 100,
+            "confidence": 0.0,
+            "feedback": "总评",
+            "details": [],
+            "outcome": "done",
+        },
+        agent_trace=[{"node": "grade", "status": "completed", "summary": "评分完成"}],
+        confidence=0.0,
+    )
+    db_session.add(sub)
+    db_session.commit()
+    db_session.refresh(sub)
+    return sub
+
+
+async def test_review_endpoint_runs_critic_and_updates_suggestion(
+    client, db_session, tmp_path, monkeypatch
+):
+    """按需复核端点运行 critic 并回写 ai_suggestion/confidence/agent_trace。"""
+    sub = _ready_for_review_submission(db_session, tmp_path)
+
+    async def fake_critic(config, **kwargs):
+        return {
+            "decision": "approve",
+            "confidence": 0.88,
+            "issues": [],
+            "summary": "复核通过",
+            "revision_instructions": "",
+        }
+
+    monkeypatch.setattr("app.api.submissions.run_critic_pass", fake_critic)
+    response = await client.post(f"/api/submissions/{sub.id}/review")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "ready_for_review"
+    assert body["confidence"] == 0.88
+    assert body["ai_suggestion"]["critic_summary"] == "复核通过"
+    assert isinstance(body["ai_suggestion"]["critic_issues"], list)
+    assert any(ev["node"] == "critic" for ev in body["agent_trace"])
+
+
+async def test_review_endpoint_rejects_already_reviewed(
+    client, db_session, tmp_path, monkeypatch
+):
+    """agent_trace 已含 critic 节点时拒绝重复复核。"""
+    sub = _ready_for_review_submission(db_session, tmp_path)
+    sub.agent_trace = [
+        {"node": "grade", "status": "completed", "summary": "评分"},
+        {"node": "critic", "status": "completed", "summary": "复核"},
+    ]
+    db_session.commit()
+
+    async def fake_critic(config, **kwargs):
+        return {"decision": "approve", "confidence": 0.9, "issues": [], "summary": "x"}
+
+    monkeypatch.setattr("app.api.submissions.run_critic_pass", fake_critic)
+    response = await client.post(f"/api/submissions/{sub.id}/review")
+    assert response.status_code == 409
+    assert "已完成复核" in response.json()["detail"]
+
+
+async def test_review_endpoint_rejects_codex_mode(
+    client, db_session, tmp_path, monkeypatch
+):
+    """Codex 模式不通过网页按需复核。"""
+    sub = _ready_for_review_submission(db_session, tmp_path)
+    sub.grading_mode = SubmissionGradingMode.codex
+    db_session.commit()
+
+    async def fake_critic(config, **kwargs):
+        return {"decision": "approve", "confidence": 0.9, "issues": [], "summary": "x"}
+
+    monkeypatch.setattr("app.api.submissions.run_critic_pass", fake_critic)
+    response = await client.post(f"/api/submissions/{sub.id}/review")
+    assert response.status_code == 409
+    assert "Codex" in response.json()["detail"]
+
+
+async def test_review_endpoint_propagates_llm_failure(
+    client, db_session, tmp_path, monkeypatch
+):
+    """复核 LLM 异常时返回 502。"""
+    sub = _ready_for_review_submission(db_session, tmp_path)
+
+    async def fail_critic(config, **kwargs):
+        from app.services.agent import AgentError
+
+        raise AgentError("LLM API 调用失败")
+
+    monkeypatch.setattr("app.api.submissions.run_critic_pass", fail_critic)
+    response = await client.post(f"/api/submissions/{sub.id}/review")
+    assert response.status_code == 502
+    assert "AI 复核失败" in response.json()["detail"]

@@ -4,11 +4,12 @@
 
 ## 主要功能
 
-- **PDF/DOCX 上传**：题目与学生作业均支持 PDF 或 DOCX；DOCX 转换为 PDF 后进入统一 OCR 链路。
+- **PDF 上传**：题目与学生作业均通过 PDF 上传并直接进入 OCR 链路。
 - **独立题目库**：题目只需上传并 OCR 一次，后续可直接复用于多份学生作业。
-- **智能批改**：结合题目、学生作业与自定义 rubric 生成结构化评分建议。
+- **智能批改**：结合题目、学生作业与服务端结构化 rubric 生成可审计评分建议。
 - **AI 独立复核**：Critic 检查评分一致性，并给出置信度与风险提示。
 - **教师协同审核**：教师可查看原文证据、调整单项分数、与 AI 对话并确认最终评分。
+- **Codex MCP 评分**：在本机 Codex 拖入学生 PDF 后自动选题、上传、等待 OCR、读取完整上下文并保存评分建议；最终成绩仍由教师在网页确认。
 - **历史记录管理**：按处理状态查看、选择和安全删除批改记录。
 - **题目安全管理**：支持搜索、预览、重命名、OCR 重试、上传新版及级联删除。
 
@@ -20,7 +21,6 @@
 | 后端 | Python + FastAPI + SQLAlchemy 2.0 + Alembic |
 | 数据库 | PostgreSQL |
 | OCR | PaddleOCR-VL(文档解析,输出结构化 Markdown) |
-| 文档转换 | LibreOffice 26.2.4（DOCX → PDF） |
 | LLM | OpenAI 兼容协议(支持豆包/通义/DeepSeek/OpenAI/Kimi 等,默认豆包) |
 | Agent | LangGraph(受约束评分、独立复核、限次修正与人工审核) |
 
@@ -29,32 +29,6 @@
 - Python 3.12.13（见 `.python-version`）
 - Node.js 26.4.0（见 `.nvmrc`）
 - PostgreSQL >= 14
-- LibreOffice 26.2.4（必须提供 `soffice` 可执行文件）
-
-### 安装 LibreOffice 26.2.4
-
-macOS：从 [LibreOffice 26.2.4 官方下载页](https://www.libreoffice.org/download/download-libreoffice/) 下载与处理器匹配的 DMG，将应用安装到 `/Applications/LibreOffice.app`。应用会自动查找该标准路径，无需修改环境变量。
-
-Debian/Ubuntu x86-64：使用官方 26.2.4 DEB 包安装，不使用系统仓库中的浮动版本：
-
-```bash
-curl -LO https://download.documentfoundation.org/libreoffice/stable/26.2.4/deb/x86_64/LibreOffice_26.2.4_Linux_x86-64_deb.tar.gz
-tar -xzf LibreOffice_26.2.4_Linux_x86-64_deb.tar.gz
-sudo dpkg -i LibreOffice_26.2.4.1_Linux_x86-64_deb/DEBS/*.deb
-```
-
-验证版本与可执行文件：
-
-```bash
-soffice --version
-# 预期包含：LibreOffice 26.2.4
-```
-
-macOS 若未把应用命令加入 `PATH`，可直接验证：
-
-```bash
-/Applications/LibreOffice.app/Contents/MacOS/soffice --version
-```
 
 ## 快速启动
 
@@ -66,8 +40,8 @@ macOS 若未把应用命令加入 `PATH`，可直接验证：
 ./start.sh
 ```
 
-脚本会自动安装缺失依赖、执行数据库迁移，并同时启动前端和后端。按
-`Ctrl+C` 可一起关闭两个服务。
+脚本会自动安装缺失依赖、执行数据库迁移、确认 8000 端口没有旧服务，并同时
+启动前端、后端和任务 worker。按 `Ctrl+C` 可一起关闭三个进程。
 
 ### 生产启动
 
@@ -174,7 +148,17 @@ npm ci
 npm run dev
 ```
 
-默认监听 `http://localhost:5173`,开发代理将 `/api` 转发到后端。
+默认监听 `http://localhost:5173`,开发代理将 `/api` 转发到后端。项目会严格占用 `5173`；如果启动时报端口被占用，请先停止占用该端口的其他项目，不要打开它自动切换后的其他端口。
+
+如果页面出现 `加载配置失败 / 404`，先确认访问的是本项目进程：
+
+```bash
+lsof -nP -iTCP:5173 -sTCP:LISTEN
+lsof -nP -iTCP:8000 -sTCP:LISTEN
+curl http://localhost:8000/api/config
+```
+
+`/api/config` 应返回 JSON 配置；如果响应头或 OpenAPI 显示的是其他项目，请回到该项目终端按 `Ctrl+C` 停止它，再从本目录运行 `./start.sh`。
 
 ## 环境变量
 
@@ -184,13 +168,53 @@ npm run dev
 | --- | --- | --- |
 | `DATABASE_URL` | PostgreSQL 连接字符串 | `postgresql+psycopg2://postgres:postgres@localhost:5432/ai_marking` |
 | `CORS_ORIGINS` | 允许的前端跨域来源 | `["http://localhost:5173"]` |
-| `UPLOAD_DIR` | 上传文档转换后 PDF 的存储目录 | `./uploads` |
-| `UPLOAD_RETENTION_DAYS` | 已进入终态或失败的转换后 PDF 最多保留天数 | `7` |
+| `UPLOAD_DIR` | 上传 PDF 的存储目录 | `./uploads` |
+| `UPLOAD_RETENTION_DAYS` | 已进入终态或失败的 PDF 最多保留天数 | `7` |
 | `CLEANUP_INTERVAL_SECONDS` | 后台清理任务扫描间隔(秒) | `3600` |
 | `TASK_CONCURRENCY` | 独立任务 worker 最大并发数 | `4` |
 | `TASK_LEASE_SECONDS` | 任务租约秒数 | `90` |
 | `TASK_MAX_ATTEMPTS` | 非预期异常最大执行次数 | `3` |
 | `TASK_POLL_INTERVAL_SECONDS` | 空队列轮询间隔 | `1` |
+| `MCP_MAX_GRADING_CONTEXT_CHARS` | MCP 评分上下文总字符硬上限；超过后需拆分作业或缩减提交内容 | `200000` |
+## 代码执行
+
+后端不编译、执行或上传学生代码产物，也不承担学生代码的 CPU、内存、进程或磁盘资源。
+Codex 在当前教师任务中把同题源码复制到独立临时目录后尝试运行，不修改原文件、不申请提权、
+不开放网络。运行失败、超时或本机缺少语言环境时由 Codex 在对话中明确披露，但不阻止静态评分；
+运行输出只存在于当前对话，不作为服务端证据。后端仅持久化源码、SHA-256、评分建议和人工确认。
+
+## 连接 Codex MCP
+
+首次接入只需在项目根目录运行：
+
+```bash
+./scripts/setup-codex-mcp
+```
+
+脚本会检查或更新用户级 `ai-marking` MCP 配置。MCP 和 FastAPI 只绑定本机 loopback，
+不需要内部 token。日常使用先运行 `./start.sh`，然后在 Codex 新任务中拖入一份报告 PDF
+和可选的多语言代码文件并输入：
+
+```text
+使用 AI-Marking 批改这份作业
+```
+
+Codex 会先只读预检题目和代码映射；只有预检通过后才上传。上传后由同一个打开作业工具每 10 秒检查一次 OCR，最多等待 5 分钟，
+再以不透明续页令牌完整读取评分包、完成必要的人工一致性确认、双遍自检并保存建议，
+最后返回 `http://localhost:5173/result/{id}` 复核链接。每题可提交一个入口和题目要求的同题辅助源码/头文件。代码运行失败或本机缺少语言环境时由 Codex 在对话中披露，但不阻止静态评分。题目不唯一、文件缺失或映射含糊时会在上传前询问。OCR 失败时会返回
+原始错误和网页重试地址。MCP 不能确认最终成绩，
+教师必须在网页点击确认。
+
+随时可运行只读诊断：
+
+```bash
+./scripts/setup-codex-mcp --doctor
+codex mcp get ai-marking --json
+```
+
+诊断会分别检查 Codex CLI、Python/MCP 依赖、启动器、MCP 注册、8000
+端口服务身份、MCP API 版本和数据库连接。完整工具契约和安全边界见
+[docs/architecture/mcp-codex-grading.md](docs/architecture/mcp-codex-grading.md)。
 
 ## 持久化任务 worker
 
@@ -208,22 +232,27 @@ worker，但任务 worker 保持一个进程，通过 `TASK_CONCURRENCY` 控制�
 进程异常退出后，运行中任务会在租约到期后被重新领取；执行容量满时新任务
 保持 `pending` 排队，不再返回队列繁忙 503。
 
-上传支持单个最大 50 MB 的 PDF 或 DOCX。DOCX 会在 API 请求内启动独立
-LibreOffice 进程并使用隔离配置目录，最多等待 120 秒；转换结束后立即删除
-原 DOCX 和临时目录，只持久化转换后的 PDF。转换期间需要额外临时磁盘空间，
-峰值约为原 DOCX 与生成 PDF 大小之和，并占用一个 LibreOffice 进程。
-
-OCR 会在单次任务内对超时、限流和服务端错误进行最多 3 次短暂重试。仍失败
-时页面会保留错误原因；题目可重新上传 PDF/DOCX，学生作业可在原记录上使用转换后的 PDF
+上传支持单个最大 50 MB 的 PDF；Codex 代码联动最多 20 个代码文件、总计 100 MB，单文件 20 MB。代码只在当前 Codex 任务的临时目录中尝试运行，不安装学生依赖、不联网。OCR 会在单次任务内对超时、限流和服务端错误进行最多 3 次短暂重试。仍失败
+时页面会保留错误原因；题目可重新上传 PDF，学生作业可在原记录上使用已保存的 PDF
 重试或重新上传。AI 对话只生成待确认评分，教师点击确认后才写入最终结果。
 
 ## 使用流程
 
+### 使用 Codex 批改（推荐的 Codex 入口）
+
+1. 先在网页题目库准备一个 OCR 已完成的题目。
+2. 在 Codex 拖入一份报告 PDF；若作业包含代码，再同时拖入各题入口及辅助源码/头文件，输入“使用 AI-Marking 批改这份作业”。
+3. 题目不唯一或代码文件映射不清时先选择/补充；其余 OCR、Codex 本地运行尝试、人工报告—代码一致性核验、评分与保存由同一 Codex 任务完成。含代码作业评分前，Codex 会要求使用者回答“已检查且一致”，或回答“已检查且存在不一致”并用自由文字说明差异；尚未检查、含糊回答或未回答时会暂停评分。运行输出和说明仅用于当前对话，不写入作业审计记录。
+4. 打开 Codex 返回的复核链接，在网页确认最终成绩。
+
+网页“上传作业”固定使用后端自动评分，不再创建新的 Codex 作业。历史 Codex 作业
+保留状态、revision 与评分审计信息，界面统一标识为「Codex」。
+
 ### 首次批改某个题目
 
-1. 进入“题目库”上传 PDF 或 DOCX 题目。
+1. 进入“题目库”上传 PDF 题目。
 2. 等待题目 OCR 状态变为“可使用”。
-3. 进入“上传作业”，选择该题目并上传一份 PDF 或 DOCX 学生作业。
+3. 进入“上传作业”，选择该题目并上传一份 PDF 学生作业。
 4. 批改完成后，在 Review Page 查看 AI 评分详情并确认最终评分。
 
 ### 继续批改同一题目
@@ -232,13 +261,13 @@ OCR 会在单次任务内对超时、限流和服务端错误进行最多 3 次�
 
 ### 失败后重新批改
 
-失败记录可在 Review Page 使用已保存的转换后 PDF 重新入队，也可重新选择 PDF/DOCX。重试
+失败记录可在 Review Page 使用已保存的 PDF 重新入队，也可重新选择 PDF。重试
 沿用原 submission ID，并清空旧 OCR、AI 结果、审核数据和对话。若原 PDF 已
 被定期清理，必须重新上传。
 
 ### 批改其他题目
 
-在题目库上传新的 PDF 或 DOCX 题目；OCR 完成后即可选择新题目进行批改。
+在题目库上传新的 PDF 题目；OCR 完成后即可选择新题目进行批改。
 
 > 上传新版会先进入后台 OCR 队列，处理期间题目暂时冻结。新版成功后才清理
 > 关联的终态批改记录并原子切换；新版失败时旧题目继续可用。若仍有批改任务
@@ -251,7 +280,11 @@ OCR 会在单次任务内对超时、限流和服务端错误进行最多 3 次�
 - **Connection refused**：通常是 PostgreSQL 未启动或端口写错，例如误将
   `5555` 写成 `555`。
 - **Port in use**：使用 `lsof -nP -iTCP:<端口> -sTCP:LISTEN` 查看占用端口
-  的进程；已有 PostgreSQL 正常运行时可直接使用该实例。
+  的进程；`start.sh` 会拒绝复用已占用的 8000 端口，避免 MCP 误连其他服务或
+  旧 AI-Marking 进程。已有 PostgreSQL 正常运行时可直接使用该数据库实例。
+- **MCP 显示已连接但工具 404**：通常是 8000 端口指向其他应用或旧后端。运行
+  `./scripts/setup-codex-mcp --doctor`，停止诊断指出的错误进程后重新运行
+  `./start.sh` 并重启 Codex。
 - **database "ai_marking" does not exist**：先执行 `createdb` 命令创建项目
   数据库。
 - **`DuplicateObjectError: question_status already exists`**：更新到最新代码后
@@ -288,7 +321,7 @@ LLM 与 OCR 的 API Key、Endpoint、评分标准等**业务配置**通过前端
 
 - **LLM**:API Key、Base URL、Model / Endpoint ID(OpenAI 兼容协议)
 - **OCR**:PaddleOCR-VL API URL、Access Token
-- **评分标准**:自定义 rubric(留空使用内置默认)
+- **评分标准**:在配置项目中维护结构化 rubric（条目、满分、说明）；留空使用内置默认
 
 ## Agent 批改流程
 
@@ -374,5 +407,5 @@ npm run format
 npm run build
 
 # 运行测试
-npm test -- --run
+npm run test:run
 ```
