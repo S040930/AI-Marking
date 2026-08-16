@@ -51,10 +51,7 @@ export const STATUS_TEXT: Record<SubmissionStatus, string> = {
   pending: '待处理',
   ocr_processing: 'OCR识别中',
   ocr_done: 'OCR完成',
-  agent_grading: 'Agent评分中',
-  agent_reviewing: 'Agent复核中',
-  agent_revising: 'Agent修正中',
-  awaiting_codex: '等待 Codex 评分',
+  awaiting_mcp: '等待MCP评分',
   ready_for_review: '待审阅',
   reviewed: '已审阅',
   failed: '失败',
@@ -65,7 +62,7 @@ const PAGE_SIZE = 10;
 export function isDeletableStatus(status: SubmissionStatus): boolean {
   return (
     status === 'ready_for_review' ||
-    status === 'awaiting_codex' ||
+    status === 'awaiting_mcp' ||
     status === 'reviewed' ||
     status === 'failed'
   );
@@ -114,7 +111,7 @@ export function StatusBadge({ status }: { status: SubmissionStatus }) {
       </Badge>
     );
   }
-  if (status === 'awaiting_codex') {
+  if (status === 'awaiting_mcp') {
     return <Badge variant="outline">{STATUS_TEXT[status]}</Badge>;
   }
   if (isProcessing(status)) {
@@ -439,7 +436,7 @@ export default function HistoryPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>确认删除</AlertDialogTitle>
             <AlertDialogDescription>
-              即将删除 {selectedIds.size} 条批改记录,此操作不可撤销,关联的 PDF 文件和对话记录将一并清除。
+              即将删除 {selectedIds.size} 条批改记录,此操作不可撤销,关联的 PDF 文件将一并清除。
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

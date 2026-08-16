@@ -1,6 +1,7 @@
 import axios, { type AxiosError } from 'axios';
 import { QueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { notifyAuthChanged } from '@/lib/auth';
 
 export const apiClient = axios.create({
   baseURL: '/api',
@@ -64,6 +65,13 @@ apiClient.interceptors.response.use(
     const message = resolveErrorMessage(error);
     // 完整 error 对象记录到控制台便于调试，toast 仅展示友好信息
     console.error('[API Error]', error);
+
+    // 401：会话 Cookie 失效或后端开启鉴权后首次访问。通知 AuthGate
+    // 回到登录门（避免在无令牌首屏弹出误导性 toast）。
+    if (error.response?.status === 401) {
+      notifyAuthChanged();
+      return Promise.reject(error);
+    }
 
     // 通过 config.skipErrorToast 标记跳过自动 toast（mutation 由页面 onError 处理）
     if (!error.config?.skipErrorToast) {

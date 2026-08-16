@@ -13,7 +13,6 @@ from app.services.config import get_config_dict
 from app.services.errors import BusinessError
 from app.services.events import notify_question_status
 from app.services.ocr import OCRError, ocr_pdf
-from app.services.question_rubric import extract_question_rubric
 
 logger = logging.getLogger(__name__)
 
@@ -73,8 +72,8 @@ async def run_question_replace(question_id: int) -> None:
         _unlink_paths([staged_path])
         raise BusinessError(message) from exc
 
-    rubric_snapshot = await extract_question_rubric(new_ocr_text, config)
-
+    # 新版题目 OCR 后,旧的 extracted_rubric 快照随新 OCR 作废(ocr_hash 不匹配)。
+    # 首次评分时由 MCP 客户端通过 save_ai_marking_question_rubric 重新提取。
     with SessionLocal() as db:
         question = db.get(Question, question_id, with_for_update=True)
         if question is None:
@@ -107,11 +106,11 @@ async def run_question_replace(question_id: int) -> None:
         question.original_filename = staged_name
         question.file_path = staged_path
         question.ocr_text = new_ocr_text
-        question.extracted_rubric = rubric_snapshot["text"] if rubric_snapshot else None
-        question.extracted_rubric_items = rubric_snapshot["items"] if rubric_snapshot else None
-        question.extracted_rubric_ocr_hash = rubric_snapshot["ocr_hash"] if rubric_snapshot else None
-        question.extracted_rubric_version = rubric_snapshot["version"] if rubric_snapshot else None
-        question.extracted_rubric_at = utc_now_naive() if rubric_snapshot else None
+        question.extracted_rubric = None
+        question.extracted_rubric_items = None
+        question.extracted_rubric_ocr_hash = None
+        question.extracted_rubric_version = None
+        question.extracted_rubric_at = None
         question.replacement_status = None
         question.replacement_file_path = None
         question.replacement_original_filename = None

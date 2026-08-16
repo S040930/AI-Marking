@@ -1,1 +1,1 @@
-"""AI-Marking Codex MCP server package."""
+"""AI-Marking external coding-agent MCP server package."""

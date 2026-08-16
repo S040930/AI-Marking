@@ -12,11 +12,9 @@ import {
   Trash2,
   Undo2,
   AlertCircle,
-  Bot,
   ShieldCheck,
   ScanEye,
   ClipboardCheck,
-  MessageSquareText,
   FolderKanban,
   Pencil,
 } from 'lucide-react';
@@ -49,6 +47,7 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
@@ -77,49 +76,20 @@ const DEFAULT_RUBRIC_PLACEHOLDER = `请输入 JSON 结构，例如:
   "total_max_score": 100
 }`;
 
-const configSchema = z
-  .object({
-    llm_api_key: z.string().optional(),
-    llm_base_url: z.string().optional(),
-    llm_model: z.string().optional(),
-    review_llm_api_key: z.string().optional(),
-    review_llm_base_url: z.string().optional(),
-    review_llm_model: z.string().optional(),
-    paddleocr_api_url: z.string().optional(),
-    paddleocr_token: z.string().optional(),
-    rubric_definition: z.string().optional(),
-    llm_user_prompt: z.string().optional(),
-  })
-  .superRefine((data, ctx) => {
-    // 审核 LLM「全有或全无」:三字段必须同时填写或同时留空
-    const filled = [
-      data.review_llm_api_key,
-      data.review_llm_base_url,
-      data.review_llm_model,
-    ].filter(Boolean).length;
-    if (filled !== 0 && filled !== 3) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message:
-          '审核 LLM 的 API Key、Base URL、Model 必须同时填写或同时留空',
-        path: ['review_llm_api_key'],
-      });
-    }
-  });
+const configSchema = z.object({
+  paddleocr_api_url: z.string().optional(),
+  paddleocr_token: z.string().optional(),
+  rubric_definition: z.string().optional(),
+  review_enabled: z.boolean(),
+});
 
 type ConfigFormValues = z.infer<typeof configSchema>;
 
 const defaultValues: ConfigFormValues = {
-  llm_api_key: '',
-  llm_base_url: '',
-  llm_model: '',
-  review_llm_api_key: '',
-  review_llm_base_url: '',
-  review_llm_model: '',
   paddleocr_api_url: '',
   paddleocr_token: '',
   rubric_definition: '',
-  llm_user_prompt: '',
+  review_enabled: true,
 };
 
 function errorText(error: Error): string {
@@ -177,18 +147,12 @@ export default function SettingsPage() {
   useEffect(() => {
     if (data) {
       form.reset({
-        llm_api_key: data.llm_api_key,
-        llm_base_url: data.llm_base_url,
-        llm_model: data.llm_model,
-        review_llm_api_key: data.review_llm_api_key,
-        review_llm_base_url: data.review_llm_base_url,
-        review_llm_model: data.review_llm_model,
         paddleocr_api_url: data.paddleocr_api_url,
         paddleocr_token: data.paddleocr_token,
         rubric_definition: data.rubric_definition
           ? JSON.stringify(data.rubric_definition, null, 2)
           : '',
-        llm_user_prompt: data.llm_user_prompt,
+        review_enabled: data.review_enabled,
       });
     }
   }, [data, form]);
@@ -216,7 +180,7 @@ export default function SettingsPage() {
 
   const handleResetRubric = () => {
     form.setValue('rubric_definition', '', { shouldDirty: true });
-    toast.info('Rubric 已清空，保存后将使用内置默认 rubric');
+    toast.info('Rubric 已清空，保存后评分标准将由客户端从题目中提取');
   };
 
   const openDialog = (mode: 'create' | 'rename' | 'copy') => {
@@ -333,7 +297,7 @@ export default function SettingsPage() {
           系统设置
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          配置批改大模型、审核大模型、OCR 解析与评分标准，支持多套独立配置项目
+          配置 OCR 解析、评分标准与 MCP 自检开关，支持多套独立配置项目
         </p>
       </div>
 
@@ -466,65 +430,36 @@ export default function SettingsPage() {
               <CardHeader className="pb-4">
                 <div className="flex items-center gap-3">
                   <div className="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary/10 to-primary/5 text-primary ring-1 ring-primary/10">
-                    <Bot className="size-5" />
+                    <ShieldCheck className="size-5" />
                   </div>
                   <div>
-                    <CardTitle className="text-lg">LLM 大模型配置</CardTitle>
+                    <CardTitle className="text-lg">MCP 评分自检</CardTitle>
                     <CardDescription>
-                      支持 OpenAI 兼容协议服务：豆包、通义千问、DeepSeek、OpenAI、Kimi 等
+                      编程助手(Codex 等)通过本地 MCP 接口完成评分与复核
                     </CardDescription>
                   </div>
                 </div>
               </CardHeader>
-              <CardContent className="flex flex-col gap-4 pt-5">
+              <CardContent className="pt-5">
                 <FormField
                   control={form.control}
-                  name="llm_api_key"
+                  name="review_enabled"
                   render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>API Key</FormLabel>
+                    <FormItem className="flex items-start gap-3 space-y-0">
                       <FormControl>
-                        <Input
-                          type="password"
-                          placeholder="请输入 API Key"
-                          autoComplete="new-password"
-                          {...field}
+                        <Checkbox
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                          className="mt-0.5"
                         />
                       </FormControl>
-                      <FormDescription>对应服务的 API Key</FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="llm_base_url"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Base URL</FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="https://ark.cn-beijing.volces.com/api/v3"
-                          {...field}
-                        />
-                      </FormControl>
-                      <FormDescription>
-                        留空使用默认 https://ark.cn-beijing.volces.com/api/v3（豆包）
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="llm_model"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Model / Endpoint ID</FormLabel>
-                      <FormControl>
-                        <Input placeholder="doubao-pro-32k" {...field} />
-                      </FormControl>
-                      <FormDescription>留空使用默认 doubao-pro-32k</FormDescription>
+                      <div className="space-y-1 leading-none">
+                        <FormLabel>要求客户端在保存建议前完成第二遍反向自检</FormLabel>
+                        <FormDescription>
+                          评分流程要求 MCP 客户端对每条评分项做反向校验（依据原文引用与分数上限推导），
+                          双重检查通过后才能保存建议，最终成绩仍需教师在此网页确认。
+                        </FormDescription>
+                      </div>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -533,78 +468,6 @@ export default function SettingsPage() {
             </Card>
 
             <Card className="elevated-card stagger-2 animate-fade-in-up motion-reduce:animate-none overflow-hidden">
-              <CardHeader className="pb-4">
-                <div className="flex items-center gap-3">
-                  <div className="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary/10 to-primary/5 text-primary ring-1 ring-primary/10">
-                    <ShieldCheck className="size-5" />
-                  </div>
-                  <div>
-                    <CardTitle className="text-lg">审核 LLM 配置</CardTitle>
-                    <CardDescription>
-                      用于 critic 独立复核节点，与批改 LLM 独立配置
-                    </CardDescription>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-4 pt-5">
-                <FormField
-                  control={form.control}
-                  name="review_llm_api_key"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>API Key</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="password"
-                          placeholder="请输入审核 LLM 的 API Key"
-                          autoComplete="new-password"
-                          {...field}
-                        />
-                      </FormControl>
-                      <FormDescription>审核用 LLM 服务的 API Key</FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="review_llm_base_url"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Base URL</FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="https://ark.cn-beijing.volces.com/api/v3"
-                          {...field}
-                        />
-                      </FormControl>
-                      <FormDescription>
-                        留空使用默认 https://ark.cn-beijing.volces.com/api/v3（豆包）
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="review_llm_model"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Model / Endpoint ID</FormLabel>
-                      <FormControl>
-                        <Input placeholder="doubao-pro-32k" {...field} />
-                      </FormControl>
-                      <FormDescription>
-                        三字段需同时填写或同时留空；留空时复核将降级为人工审核
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </CardContent>
-            </Card>
-
-            <Card className="elevated-card stagger-3 animate-fade-in-up motion-reduce:animate-none overflow-hidden">
               <CardHeader className="pb-4">
                 <div className="flex items-center gap-3">
                   <div className="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary/10 to-primary/5 text-primary ring-1 ring-primary/10">
@@ -672,7 +535,7 @@ export default function SettingsPage() {
                     <div>
                       <CardTitle className="text-lg">评分标准(Rubric)</CardTitle>
                       <CardDescription>
-                        使用结构化评分项；留空使用内置默认 rubric
+                        配置的评分标准优先于题目提取结果；留空时由客户端从题目中提取
                       </CardDescription>
                     </div>
                   </div>
@@ -704,48 +567,6 @@ export default function SettingsPage() {
                           {...field}
                         />
                       </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </CardContent>
-            </Card>
-
-            <Card className="elevated-card stagger-4 animate-fade-in-up motion-reduce:animate-none overflow-hidden">
-              <CardHeader className="pb-4">
-                <div className="flex items-center gap-3">
-                  <div className="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary/10 to-primary/5 text-primary ring-1 ring-primary/10">
-                    <MessageSquareText className="size-5" />
-                  </div>
-                  <div>
-                    <CardTitle className="text-lg">LLM 用户提示词模板</CardTitle>
-                    <CardDescription>
-                      自定义 user 角色 prompt 模板，留空使用内置默认
-                    </CardDescription>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="pt-5">
-                <FormField
-                  control={form.control}
-                  name="llm_user_prompt"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>用户提示词模板</FormLabel>
-                      <FormControl>
-                        <Textarea
-                          rows={10}
-                          placeholder="留空使用内置默认用户提示词模板"
-                          className="font-mono text-sm"
-                          {...field}
-                        />
-                      </FormControl>
-                      <FormDescription>
-                        可用占位符：
-                        <code className="mx-1 rounded bg-muted px-1 py-0.5 text-xs">{'{rubric}'}</code>
-                        <code className="mx-1 rounded bg-muted px-1 py-0.5 text-xs">{'{output_format}'}</code>
-                        <code className="mx-1 rounded bg-muted px-1 py-0.5 text-xs">{'{ocr_text}'}</code>
-                      </FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}

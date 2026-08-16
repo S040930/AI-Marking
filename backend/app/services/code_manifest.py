@@ -13,11 +13,9 @@ from __future__ import annotations
 import json
 import re
 import unicodedata
-from pathlib import Path
 from typing import Mapping
 
 from app.services.document_storage import (
-    ENTRYPOINT_EXTENSIONS,
     validate_code_filenames,
 )
 
@@ -36,11 +34,6 @@ def auto_question_number(filename: str) -> int | None:
     """从 ``q<n>.<ext>`` 文件名推导题号,否则返回 None。"""
     match = _AUTO_Q_PATTERN.match(filename)
     return int(match.group(1)) if match else None
-
-
-def is_entrypoint_extension(filename: str) -> bool:
-    """文件名是否属于入口扩展名(可执行,而非头文件等辅助源码)。"""
-    return Path(filename).suffix.lower() in ENTRYPOINT_EXTENSIONS
 
 
 def parse_explicit_code_mappings(

@@ -4,7 +4,6 @@ import {
   FileText,
   ChevronLeft,
   CheckCircle2,
-  Bot,
   ShieldCheck,
 } from 'lucide-react';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
@@ -43,7 +42,7 @@ export default function ResultPage() {
       : undefined;
 
   // P2-L3:轻量 status 先拉,处理中只靠 status 轮询;终态后再 enable 完整详情。
-  // 避免处理中阶段拉取 ocr_text/ai_result 等大字段(此时均为 null,属浪费)。
+  // 避免处理中阶段拉取 ocr_text/assessment_suggestion 等大字段(此时均为 null,属浪费)。
   const { data: statusData } = useSubmissionStatus(numericId);
   const detailEnabled = statusData ? isTerminal(statusData.status) : false;
   const { data, isLoading: isDetailLoading } = useSubmission(
@@ -181,70 +180,34 @@ export default function ResultPage() {
         </CardContent>
       </Card>
 
-      {data.agent_trace && data.agent_trace.length > 0 && (
+      {data.assessment_suggestion?.mcp_metadata && (
         <Card className="elevated-card overflow-hidden">
           <CardHeader className="pb-4">
             <CardTitle className="flex items-center gap-2 text-base">
-              <Bot className="size-5 text-primary" />
-              Agent 执行摘要
+              <ShieldCheck className="size-5 text-primary" />
+              MCP 评分来源
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3">
-            {data.confidence !== null && (
-              <div className="rounded-lg border bg-muted/40 px-3 py-2 text-sm">
-                自动复核置信度：
-                <strong className="ml-1">{Math.round(data.confidence * 100)}%</strong>
-              </div>
+          <CardContent className="space-y-2 text-sm">
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-1">
+              <span className="text-muted-foreground">
+                revision <strong>{data.grading_revision}</strong>
+              </span>
+              {data.confidence !== null && (
+                <span className="text-muted-foreground">
+                  置信度：
+                  <strong>{Math.round(data.confidence * 100)}%</strong>
+                </span>
+              )}
+            </div>
+            {data.assessment_suggestion.mcp_metadata.client && (
+              <p className="text-muted-foreground">
+                评分客户端：{data.assessment_suggestion.mcp_metadata.client}
+                {data.assessment_suggestion.mcp_metadata.generated_at
+                  ? ` · ${dayjs(data.assessment_suggestion.mcp_metadata.generated_at).format('YYYY-MM-DD HH:mm:ss')}`
+                  : ''}
+              </p>
             )}
-            {data.agent_trace.map((event, index) => (
-              <div key={`${event.node}-${index}`} className="flex gap-3 rounded-xl border p-3">
-                <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
-                  {index + 1}
-                </div>
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold">
-                    {event.node} · 第 {event.attempt} 次
-                  </p>
-                  <p className="mt-1 text-sm text-muted-foreground">{event.summary}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    耗时 {event.duration_ms} ms
-                  </p>
-                </div>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      )}
-
-      {data.code_files?.some((codeFile) => codeFile.execution_result || codeFile.artifacts?.length || codeFile.visual_reviews?.length) && (
-        <Card className="elevated-card overflow-hidden">
-          <CardHeader className="pb-4">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <FileText className="size-5 text-primary" />
-              代码运行摘要
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {data.code_files.map((codeFile) => (
-              (codeFile.execution_result || codeFile.artifacts?.length || codeFile.visual_reviews?.length) ? <div key={codeFile.id} className="rounded-xl border p-3">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-sm font-medium">
-                    第 {codeFile.question_number} 题 · {codeFile.original_filename}
-                  </span>
-                  <Badge variant={codeFile.execution_status === 'completed' ? 'secondary' : 'destructive'}>
-                    {codeFile.execution_status === 'completed' ? '运行完成' : '运行异常'}
-                  </Badge>
-                </div>
-                {codeFile.execution_result?.exception && (
-                  <pre className="mt-2 max-h-28 overflow-auto rounded-lg bg-red-50 p-2 text-xs text-red-800">
-                    {codeFile.execution_result.exception}
-                  </pre>
-                )}
-              </div> : null
-            ))}
-            <Button variant="outline" onClick={() => navigate(`/review/${data.id}`)}>
-              查看报告与代码证据
-            </Button>
           </CardContent>
         </Card>
       )}
@@ -366,7 +329,10 @@ export default function ResultPage() {
         </CardContent>
       </Card>
 
-      <div className="flex justify-center pt-4">
+      <div className="flex justify-center gap-3 pt-4">
+        <Button variant="outline" onClick={() => navigate(`/review/${data.id}`)}>
+          查看评分工作台
+        </Button>
         <Button variant="outline" onClick={() => navigate('/history')}>
           <ChevronLeft className="size-4" />
           返回历史

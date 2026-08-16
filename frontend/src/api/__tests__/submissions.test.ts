@@ -19,22 +19,19 @@ describe('isTerminal', () => {
     expect(isTerminal('failed')).toBe(true);
   });
 
-  it('awaiting_codex 仍需等待 Codex，不是终态', () => {
-    expect(isTerminal('awaiting_codex')).toBe(false);
+  it('awaiting_mcp 仍需等待外部助手，不是终态', () => {
+    expect(isTerminal('awaiting_mcp')).toBe(false);
   });
 
-  it('awaiting_codex 可加载恢复页详情', () => {
-    expect(canLoadSubmissionDetail('awaiting_codex')).toBe(true);
+  it('awaiting_mcp 可加载恢复页详情', () => {
+    expect(canLoadSubmissionDetail('awaiting_mcp')).toBe(true);
   });
 
   const nonTerminal: SubmissionStatus[] = [
     'pending',
     'ocr_processing',
     'ocr_done',
-    'agent_grading',
-    'agent_reviewing',
-    'agent_revising',
-    'awaiting_codex',
+    'awaiting_mcp',
   ];
 
   nonTerminal.forEach((status) => {
@@ -61,9 +58,6 @@ describe('isProcessing', () => {
     'pending',
     'ocr_processing',
     'ocr_done',
-    'agent_grading',
-    'agent_reviewing',
-    'agent_revising',
   ];
 
   processing.forEach((status) => {
@@ -78,10 +72,7 @@ describe('isTerminal 与 isProcessing 互斥', () => {
     'pending',
     'ocr_processing',
     'ocr_done',
-    'agent_grading',
-    'agent_reviewing',
-    'agent_revising',
-    'awaiting_codex',
+    'awaiting_mcp',
     'ready_for_review',
     'reviewed',
     'failed',

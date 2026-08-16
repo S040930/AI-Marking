@@ -14,6 +14,7 @@ class McpWorkflowHandle(Base):
     __table_args__ = (
         Index("ix_mcp_workflow_handles_expires_at", "expires_at"),
         Index("ix_mcp_workflow_handles_submission", "submission_id"),
+        Index("ix_mcp_workflow_handles_question", "question_id"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -22,6 +23,12 @@ class McpWorkflowHandle(Base):
     submission_id: Mapped[int] = mapped_column(
         ForeignKey("submissions.id", ondelete="CASCADE"), nullable=False
     )
+    # rubric 提取句柄（kind="rubric_extraction"）绑定题目与 OCR hash，
+    # 防止 OCR 变化后复用旧提取结果；普通句柄这两列为 NULL。
+    question_id: Mapped[int | None] = mapped_column(
+        ForeignKey("questions.id", ondelete="CASCADE"), nullable=True
+    )
+    ocr_hash: Mapped[str | None] = mapped_column(String(71), nullable=True)
     context_hash: Mapped[str] = mapped_column(String(71), nullable=False)
     grading_revision: Mapped[int] = mapped_column(Integer, nullable=False)
     offset: Mapped[int | None] = mapped_column(Integer, nullable=True)

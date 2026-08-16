@@ -6,10 +6,10 @@ HTTP 层指标(request 数、延迟、状态码分布)由 ``prometheus-fastapi-i
 - 队列深度 (按 status 分桶):queued / running / dead
 - 任务执行时长与重试/死信计数
 - OCR 调用结果与熔断信号
-- LLM 各节点调用结果与时长
+- MCP 工具调用与评分建议保存计数
 - 任务租约丢失计数
 
-命名约定:``marking_*`` 表示 worker/队列相关;``ocr_*`` / ``llm_*`` 表示外部
+命名约定:``marking_*`` 表示 worker/队列相关;``ocr_*`` / ``mcp_*`` 表示外部
 服务调用。所有指标均为模块级单例,导入即注册到默认 registry。
 """
 
@@ -66,23 +66,10 @@ ocr_calls = Counter(
 )
 
 # ---------------------------------------------------------------------------
-# LLM 指标
+# MCP 指标
 # ---------------------------------------------------------------------------
 
-llm_calls = Counter(
-    "llm_calls_total",
-    "LLM 调用次数",
-    labelnames=("node", "result"),  # node: grade/critic/chat, result: success/failure
-)
-
-llm_duration = Histogram(
-    "llm_duration_seconds",
-    "LLM 调用时长",
-    labelnames=("node",),
-    buckets=(1, 5, 10, 30, 60, 120),
-)
-
-# Codex MCP 评分指标。标签保持低基数，不包含 submission、文件名或模型名。
+# 外部编程助手 MCP 评分指标。标签保持低基数，不包含 submission、文件名或模型名。
 mcp_tool_calls = Counter(
     "mcp_tool_calls_total",
     "MCP 适配器业务调用次数",
@@ -93,17 +80,17 @@ mcp_tool_duration = Histogram(
     "MCP 适配器业务调用耗时",
     labelnames=("tool",),
 )
-codex_assessment_saves = Counter(
-    "codex_assessment_saves_total",
-    "Codex 评分建议保存次数",
+mcp_assessment_saves = Counter(
+    "mcp_assessment_saves_total",
+    "外部编程助手评分建议保存次数",
     labelnames=("kind",),
 )
-codex_assessment_conflicts = Counter(
-    "codex_assessment_conflicts_total",
-    "Codex 评分建议冲突次数",
+mcp_assessment_conflicts = Counter(
+    "mcp_assessment_conflicts_total",
+    "外部编程助手评分建议冲突次数",
     labelnames=("reason",),
 )
-codex_waiting_submissions = Gauge(
-    "codex_waiting_submissions",
-    "等待 Codex 评分的提交数量",
+mcp_waiting_submissions = Gauge(
+    "mcp_waiting_submissions",
+    "等待外部编程助手评分的提交数量",
 )

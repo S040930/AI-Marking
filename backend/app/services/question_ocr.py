@@ -9,7 +9,6 @@ from app.services.config import get_config_dict
 from app.services.errors import BusinessError
 from app.services.events import notify_question_status
 from app.services.ocr import OCRError, ocr_pdf
-from app.services.question_rubric import extract_question_rubric
 
 logger = logging.getLogger(__name__)
 
@@ -46,24 +45,12 @@ async def run_question_ocr(question_id: int) -> None:
                 db.commit()
         raise BusinessError(message) from exc
 
-    rubric_snapshot = await extract_question_rubric(text, config)
-
+    # rubric 提取由 MCP 客户端在首次评分时完成（save_ai_marking_question_rubric），
+    # 服务端不再在 OCR 阶段调用 LLM 提取；此处只保存题目 OCR 文本。
     with SessionLocal() as db:
         question = db.get(Question, question_id, with_for_update=True)
         if question is not None:
             question.ocr_text = text
-            if rubric_snapshot:
-                question.extracted_rubric = rubric_snapshot["text"]
-                question.extracted_rubric_items = rubric_snapshot["items"]
-                question.extracted_rubric_ocr_hash = rubric_snapshot["ocr_hash"]
-                question.extracted_rubric_version = rubric_snapshot["version"]
-                question.extracted_rubric_at = utc_now_naive()
-            else:
-                question.extracted_rubric = None
-                question.extracted_rubric_items = None
-                question.extracted_rubric_ocr_hash = None
-                question.extracted_rubric_version = None
-                question.extracted_rubric_at = None
             question.status = QuestionStatus.ready
             question.error_message = None
             question.updated_at = utc_now_naive()

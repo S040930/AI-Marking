@@ -3,23 +3,17 @@ import { apiClient } from './client';
 
 // 配置项类型
 export interface ConfigOut {
-  llm_api_key: string;
-  llm_base_url: string;
-  llm_model: string;
-  review_llm_api_key: string;
-  review_llm_base_url: string;
-  review_llm_model: string;
   paddleocr_api_url: string;
   paddleocr_token: string;
   rubric_definition: {
     items: { criterion: string; max_score: number; details: string }[];
     total_max_score: number;
   } | null;
-  llm_user_prompt: string;
+  review_enabled: boolean;
 }
 
 export type ConfigUpdate = Partial<Omit<ConfigOut, 'rubric_definition'>> & {
-  rubric_definition?: ConfigOut['rubric_definition'];
+  rubric_definition?: ConfigOut['rubric_definition'] | null;
 };
 
 // 配置项目类型

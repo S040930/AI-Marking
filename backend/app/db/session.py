@@ -10,8 +10,10 @@ from app.core.config import settings
 engine = create_engine(
     settings.DATABASE_URL,
     pool_pre_ping=True,
-    pool_size=10,
-    max_overflow=20,
+    # 单用户本地工具:批改流水线各阶段用短会话、LLM/OCR 期间不持连接,
+    # 5+5(最多 10)远够用;留出更多 PG 配额给 SSE LISTEN 长连接。
+    pool_size=5,
+    max_overflow=5,
     pool_timeout=30,
     pool_recycle=1800,
 )

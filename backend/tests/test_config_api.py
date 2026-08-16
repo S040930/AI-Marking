@@ -6,41 +6,51 @@ async def test_get_config_returns_empty_defaults(client):
     response = await client.get("/api/config")
     assert response.status_code == 200
     data = response.json()
-    assert data["llm_api_key"] == ""
-    assert data["llm_base_url"] == ""
-    assert data["llm_model"] == ""
     assert data["paddleocr_api_url"] == ""
     assert data["paddleocr_token"] == ""
     assert data["rubric_definition"] is None
-    assert data["llm_user_prompt"] == ""
+    assert data["review_enabled"] is True
+    assert "llm_api_key" not in data
+    assert "llm_user_prompt" not in data
 
 
 async def test_put_config_updates_subset(client):
     """PUT /api/config 子集更新,其他字段保持不变。"""
-    # 先写入两个值
     await client.put(
-        "/api/config", json={"llm_api_key": "sk-001", "llm_model": "gpt-4o"}
+        "/api/config",
+        json={"paddleocr_api_url": "https://ocr.example/jobs", "paddleocr_token": "t1"},
     )
-    # 再更新其中一个
-    response = await client.put("/api/config", json={"llm_api_key": "sk-002"})
+    response = await client.put(
+        "/api/config", json={"paddleocr_token": "t2"}
+    )
     assert response.status_code == 200
     data = response.json()
-    assert data["llm_api_key"] == "sk-002"
-    assert data["llm_model"] == "gpt-4o"  # 保持不变
+    assert data["paddleocr_token"] == "t2"
+    assert data["paddleocr_api_url"] == "https://ocr.example/jobs"  # 保持不变
+
+
+async def test_put_config_updates_review_enabled(client):
+    """review_enabled 布尔开关可更新。"""
+    response = await client.put("/api/config", json={"review_enabled": False})
+    assert response.status_code == 200
+    assert response.json()["review_enabled"] is False
 
 
 async def test_put_config_rejects_unknown_key(client):
     """PUT /api/config 未知 key 返回 422(extra=forbid)。"""
     response = await client.put("/api/config", json={"unknown_key": "value"})
     assert response.status_code == 422
+    # 已删除的 LLM 配置 key 同样被拒绝
+    response = await client.put("/api/config", json={"llm_api_key": "sk-001"})
+    assert response.status_code == 422
 
 
 async def test_put_config_empty_string_clears_value(client):
     """PUT /api/config 空字符串表示清空。"""
-    await client.put("/api/config", json={"llm_api_key": "sk-001"})
-    response = await client.put("/api/config", json={"llm_api_key": ""})
+    await client.put("/api/config", json={"paddleocr_token": "sk-001"})
+    response = await client.put("/api/config", json={"paddleocr_token": ""})
     assert response.status_code == 200
-    assert response.json()["llm_api_key"] == ""
+    assert response.json()["paddleocr_token"] == ""
 
 
 # ---------------- 配置项目 CRUD ----------------
@@ -57,7 +67,7 @@ async def test_profiles_default_seeded(client):
 async def test_create_profile_and_config_is_scoped(client):
     """新建项目后,GET/PUT config 按 profile_id 隔离。"""
     # 默认项目写入值
-    await client.put("/api/config", json={"llm_api_key": "sk-default"})
+    await client.put("/api/config", json={"paddleocr_token": "sk-default"})
 
     created = await client.post("/api/config/profiles", json={"name": "项目A"})
     assert created.status_code == 201
@@ -65,18 +75,18 @@ async def test_create_profile_and_config_is_scoped(client):
 
     # 新项目为空,不影响默认项目
     resp_a = await client.get(f"/api/config?profile_id={profile_id}")
-    assert resp_a.json()["llm_api_key"] == ""
+    assert resp_a.json()["paddleocr_token"] == ""
     resp_default = await client.get("/api/config")
-    assert resp_default.json()["llm_api_key"] == "sk-default"
+    assert resp_default.json()["paddleocr_token"] == "sk-default"
 
     # 向 A 写入,默认项目保持不变
     resp_a2 = await client.put(
         f"/api/config?profile_id={profile_id}",
-        json={"llm_api_key": "sk-A", "llm_model": "model-A"},
+        json={"paddleocr_token": "sk-A"},
     )
-    assert resp_a2.json()["llm_api_key"] == "sk-A"
+    assert resp_a2.json()["paddleocr_token"] == "sk-A"
     resp_default2 = await client.get("/api/config")
-    assert resp_default2.json()["llm_api_key"] == "sk-default"
+    assert resp_default2.json()["paddleocr_token"] == "sk-default"
 
 
 async def test_create_profile_rejects_duplicate_name(client):
@@ -88,7 +98,10 @@ async def test_create_profile_rejects_duplicate_name(client):
 async def test_copy_profile_copies_config_values(client, db_session):
     """复制生成的项目携带源项目的全部配置值。"""
     rubric = {"items": [{"criterion": "内容", "max_score": 100, "details": "评分细则"}], "total_max_score": 100}
-    await client.put("/api/config", json={"llm_api_key": "sk-001", "rubric_definition": rubric})
+    await client.put(
+        "/api/config",
+        json={"paddleocr_token": "sk-001", "rubric_definition": rubric},
+    )
     created = await client.post(
         "/api/config/profiles",
         json={"name": "复制版", "copy_from_id": _default_profile_id(db_session)},
@@ -96,7 +109,7 @@ async def test_copy_profile_copies_config_values(client, db_session):
     assert created.status_code == 201
     pid = created.json()["id"]
     data = (await client.get(f"/api/config?profile_id={pid}")).json()
-    assert data["llm_api_key"] == "sk-001"
+    assert data["paddleocr_token"] == "sk-001"
     assert data["rubric_definition"]["items"][0]["criterion"] == "内容"
 
 

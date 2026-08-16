@@ -27,7 +27,7 @@ vi.mock('@/api/submissions', () => ({
           id: 1,
           original_filename: 'processing.pdf',
           question_original_filename: 'question.pdf',
-          status: 'agent_grading',
+          status: 'ocr_processing',
           score: null,
           max_score: null,
           confidence: null,

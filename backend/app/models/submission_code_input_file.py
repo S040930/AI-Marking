@@ -1,4 +1,4 @@
-"""Question-declared read-only datasets used by Codex code execution."""
+"""Question-declared read-only datasets used by external-agent code execution."""
 
 from datetime import datetime
 

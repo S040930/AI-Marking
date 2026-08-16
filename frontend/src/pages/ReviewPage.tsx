@@ -1,5 +1,4 @@
 import {
-  useEffect,
   useRef,
   useState,
   type CSSProperties,
@@ -10,14 +9,12 @@ import axios from 'axios';
 import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import dayjs from 'dayjs';
-import { Loader2, AlertCircle, FileUp, RotateCcw, Copy, Check, ShieldCheck } from 'lucide-react';
+import { Loader2, AlertCircle, FileUp, RotateCcw, Copy, Check } from 'lucide-react';
 import {
   useSubmission,
   useSubmissionStatus,
   useFinalizeSubmission,
   useRetrySubmission,
-  useReviewSubmission,
-  didReviewRun,
   canLoadSubmissionDetail,
   isProcessing,
   type SubmissionDetail,
@@ -29,49 +26,19 @@ import { DOCUMENT_INPUT_ACCEPT } from '@/lib/documentUpload';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { PdfViewer, PdfViewerPlaceholder } from '@/components/PdfViewer';
-import ReviewChatPanel from '@/components/ReviewChatPanel';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+import ManualReviewPanel from '@/components/ManualReviewPanel';
 
 const STATUS_LABEL: Record<string, string> = {
   pending: '排队等待处理',
   ocr_processing: 'OCR 识别中',
   ocr_done: 'OCR 已完成',
-  agent_grading: 'AI 评分中',
-  agent_reviewing: 'AI 复核中',
-  agent_revising: 'AI 修订中',
-  awaiting_codex: '等待 Codex 评分',
+  awaiting_mcp: '等待 MCP 评分',
   ready_for_review: '待审阅',
   reviewed: '已审阅',
   failed: '失败',
 };
 
-function normalizeAiSuggestion(data: SubmissionDetail): AiSuggestion | null {
-  if (!data.ai_suggestion) return null;
-  return {
-    score: data.ai_suggestion.score ?? 0,
-    max_score: data.ai_suggestion.max_score ?? 0,
-    confidence: data.ai_suggestion.confidence ?? 0,
-    feedback: data.ai_suggestion.feedback ?? '',
-    details: (data.ai_suggestion.details ?? []).map((d) => ({
-      criterion: d.criterion,
-      score: d.score,
-      max_score: d.max_score ?? 0,
-      comment: d.comment,
-      evidence: d.evidence,
-    })),
-  };
-}
-
-export function CodexWaitingPanel({ submissionId }: { submissionId: number }) {
+export function McpWaitingPanel({ submissionId }: { submissionId: number }) {
   const [copied, setCopied] = useState(false);
   const prompt = `请继续使用 AI-Marking 批改作业 #${submissionId}。`;
 
@@ -80,7 +47,7 @@ export function CodexWaitingPanel({ submissionId }: { submissionId: number }) {
       await navigator.clipboard.writeText(prompt);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1800);
-      toast.success('Codex 指令已复制');
+      toast.success('编程助手指令已复制');
     } catch {
       toast.error('复制失败，请手动选择指令');
     }
@@ -90,47 +57,67 @@ export function CodexWaitingPanel({ submissionId }: { submissionId: number }) {
     <div className="flex h-full items-center justify-center p-8">
       <div className="w-full max-w-lg rounded-2xl border border-primary/15 bg-white p-6 shadow-sm">
         <p className="text-xs font-semibold uppercase tracking-wider text-primary">
-          Codex 作业 #{submissionId}
+          作业 #{submissionId} · 等待 MCP 评分
         </p>
-        <h2 className="mt-2 text-xl font-semibold">等待 Codex 继续评分</h2>
+        <h2 className="mt-2 text-xl font-semibold">等待编程助手评分</h2>
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-          这条作业通常由 Codex 自动等待 OCR 并继续评分。如果原任务已关闭，可复制下面的恢复指令继续处理。
+          这条作业的 OCR 已完成，正等待 MCP 客户端（如 Codex）评分。如果原任务已关闭，可复制下面的恢复指令继续处理，或使用待办列表工具发现作业。
         </p>
         <div className="mt-5 rounded-xl bg-slate-50 p-3 text-sm leading-relaxed text-slate-700">
           {prompt}
         </div>
         <Button className="mt-4" onClick={copyPrompt}>
           {copied ? <Check /> : <Copy />}
-          {copied ? '已复制' : '复制 Codex 指令'}
+          {copied ? '已复制' : '复制编程助手指令'}
         </Button>
         <p className="mt-4 text-xs text-muted-foreground">
-          Codex 只会保存评分建议；最终成绩仍需教师回到此网页确认。
+          编程助手只会保存评分建议；最终成绩仍需教师回到此网页确认。
         </p>
       </div>
     </div>
   );
 }
 
-function CodexAuditBanner({ data }: { data: SubmissionDetail }) {
+const CLIENT_LABELS: Record<string, string> = {
+  codex: 'Codex',
+  'claude-code': 'Claude Code',
+  opencode: 'Opencode',
+};
+
+function McpAuditBanner({ data }: { data: SubmissionDetail }) {
+  const metadata = data.assessment_suggestion?.mcp_metadata;
+  const client = metadata?.client;
+  const clientLabel = client ? CLIENT_LABELS[client] ?? client : null;
+  const rubricSource = metadata?.rubric_source;
+  const rubricSourceLabel =
+    rubricSource === 'question_extracted'
+      ? '题目提取'
+      : rubricSource === 'configured'
+        ? '配置项'
+        : rubricSource === 'built_in_default'
+          ? '内置默认'
+          : null;
   return (
     <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-primary/10 bg-primary/[0.03] px-5 py-3 text-xs">
-      <Badge variant="secondary">Codex</Badge>
+      <Badge variant="secondary">{clientLabel ?? 'MCP 客户端'}</Badge>
       <span className="text-muted-foreground">revision {data.grading_revision}</span>
+      {rubricSourceLabel && (
+        <Badge variant="outline" className="text-muted-foreground">
+          rubric: {rubricSourceLabel}
+        </Badge>
+      )}
     </div>
   );
 }
 
 function CodeEvidencePanel({ data }: { data: SubmissionDetail }) {
   if (!data.code_files?.length) return null;
-  const historical = data.code_files.some(
-    (codeFile) => codeFile.execution_result || codeFile.artifacts?.length || codeFile.visual_reviews?.length,
-  );
   return (
     <div className="h-full overflow-y-auto bg-slate-50 p-5">
       <div className="mb-4 rounded-xl border border-primary/15 bg-white p-4">
         <p className="text-sm font-semibold">提交代码</p>
         <p className="mt-1 text-xs text-muted-foreground">
-          新作业由 Codex 在当前任务中运行和核验；后端只保存源码与 SHA-256。
+          新作业由编程助手在当前任务中运行和核验；后端只保存源码与 SHA-256。
         </p>
       </div>
       <div className="space-y-4">
@@ -145,30 +132,6 @@ function CodeEvidencePanel({ data }: { data: SubmissionDetail }) {
                   {codeFile.source_text || '源代码不可用'}
                 </pre>
               </details>
-              {historical && codeFile.execution_result ? (
-                <details className="mt-3 rounded-lg border border-amber-200 bg-amber-50">
-                  <summary className="cursor-pointer px-3 py-2 text-xs font-medium">查看历史后端执行记录</summary>
-                  <pre className="max-h-48 overflow-auto border-t p-3 text-xs">
-                    {JSON.stringify(codeFile.execution_result, null, 2)}
-                  </pre>
-                </details>
-              ) : null}
-              {historical && codeFile.artifacts?.length ? (
-                <div className="mt-3 space-y-1 text-xs text-muted-foreground">
-                  <p>该历史记录包含 {codeFile.artifacts.length} 个旧产物：</p>
-                  {codeFile.artifacts.map((artifact) => (
-                    <a
-                      key={artifact.artifact_id}
-                      href={`/api/submissions/${data.id}/code-assets/code:${codeFile.id}:${artifact.artifact_id}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="block text-primary underline"
-                    >
-                      {artifact.filename}
-                    </a>
-                  ))}
-                </div>
-              ) : null}
             </div>
           );
         })}
@@ -245,6 +208,24 @@ function FailedRecoveryPanel({ data }: { data: SubmissionDetail }) {
   );
 }
 
+function normalizeSuggestion(data: SubmissionDetail): AiSuggestion | null {
+  const raw = data.assessment_suggestion;
+  if (!raw) return null;
+  return {
+    score: raw.score ?? 0,
+    max_score: raw.max_score ?? 0,
+    confidence: raw.confidence ?? 0,
+    feedback: raw.feedback ?? '',
+    details: (raw.details ?? []).map((d) => ({
+      criterion: d.criterion,
+      score: d.score,
+      max_score: d.max_score ?? 0,
+      comment: d.comment,
+      evidence: d.evidence,
+    })),
+  };
+}
+
 function ReviewContent({ data }: { data: SubmissionDetail }) {
   const navigate = useNavigate();
   const splitContainerRef = useRef<HTMLElement>(null);
@@ -252,43 +233,13 @@ function ReviewContent({ data }: { data: SubmissionDetail }) {
   const [leftPercent, setLeftPercent] = useState(55);
   const [evidenceTab, setEvidenceTab] = useState<'report' | 'code'>('report');
   const [isDragging, setIsDragging] = useState(false);
-  const [reviewPromptOpen, setReviewPromptOpen] = useState(false);
   const isReadOnly = data.status === 'reviewed';
   const isFailed = data.status === 'failed';
 
   const reviewerName = 'Teacher';
 
-  const aiSuggestion = normalizeAiSuggestion(data);
+  const suggestion = normalizeSuggestion(data);
   const finalizeMutation = useFinalizeSubmission(data.id);
-  const reviewMutation = useReviewSubmission(data.id);
-
-  // 评分完成（ready_for_review）且尚未复核时，主动询问是否需要 AI 复核。
-  const needsReviewPrompt =
-    data.status === 'ready_for_review' && !didReviewRun(data);
-
-  useEffect(() => {
-    if (needsReviewPrompt) setReviewPromptOpen(true);
-  }, [needsReviewPrompt]);
-
-  const handleRunReview = () => {
-    reviewMutation.mutate(undefined, {
-      onSuccess: () => {
-        toast.success('AI 复核完成，已更新评分建议');
-        setReviewPromptOpen(false);
-      },
-      onError: (error) => {
-        const detail = axios.isAxiosError(error)
-          ? error.response?.data?.detail
-          : null;
-        toast.error(
-          typeof detail === 'string'
-            ? detail
-            : error.message || 'AI 复核失败，请稍后重试',
-        );
-        setReviewPromptOpen(false);
-      },
-    });
-  };
 
   const handleFinalize = (payload: FinalizePayload) => {
     finalizeMutation.mutate(
@@ -404,61 +355,27 @@ function ReviewContent({ data }: { data: SubmissionDetail }) {
           />
         </div>
 
-        {/* Right: AI chat panel */}
+        {/* Right: manual review panel */}
         <section className="flex min-h-0 min-w-0 flex-col bg-slate-50/90">
           {isFailed ? (
             <FailedRecoveryPanel data={data} />
-          ) : data.status === 'awaiting_codex' ? (
-            <CodexWaitingPanel submissionId={data.id} />
+          ) : data.status === 'awaiting_mcp' ? (
+            <McpWaitingPanel submissionId={data.id} />
           ) : (
             <>
-              {data.grading_mode === 'codex' && <CodexAuditBanner data={data} />}
-              <ReviewChatPanel
-                submissionId={data.id}
-                initialSuggestion={aiSuggestion}
+              <McpAuditBanner data={data} />
+              <ManualReviewPanel
+                suggestion={suggestion}
                 isReadOnly={isReadOnly}
                 reviewerName={reviewerName}
                 onFinalize={handleFinalize}
-                disableChat={data.grading_mode === 'codex'}
+                isFinalizing={finalizeMutation.isPending}
                 className="min-h-0 flex-1"
               />
             </>
           )}
         </section>
       </main>
-
-      {/* 评分完成后主动询问是否需要 AI 复核 */}
-      <AlertDialog open={reviewPromptOpen} onOpenChange={setReviewPromptOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>是否需要 AI 复核本次评分？</AlertDialogTitle>
-            <AlertDialogDescription>
-              AI 已为本次作业生成评分建议。复核会由独立的 AI 评审再次检查评分草稿，
-              核对评分标准覆盖、分数计算与证据支持，并给出修订建议。复核可能产生额外
-              的 Token 消耗，你可以在确认前选择跳过。
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={reviewMutation.isPending}>
-              暂不复核
-            </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(event) => {
-                event.preventDefault();
-                handleRunReview();
-              }}
-              disabled={reviewMutation.isPending}
-            >
-              {reviewMutation.isPending ? (
-                <Loader2 className="animate-spin" />
-              ) : (
-                <ShieldCheck />
-              )}
-              开始复核
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }
@@ -470,7 +387,7 @@ export default function ReviewPage() {
   const numericId =
     rawNumericId !== undefined && !isNaN(rawNumericId) ? rawNumericId : undefined;
 
-  // awaiting_codex 已有恢复页所需详情，但仍保持状态轮询直到 Codex 保存建议。
+  // awaiting_mcp 已有恢复页所需详情，但仍保持状态轮询直到 MCP 客户端保存建议。
   const { data: statusData } = useSubmissionStatus(numericId);
   const detailEnabled = statusData ? canLoadSubmissionDetail(statusData.status) : false;
   const { data, isLoading: isDetailLoading } = useSubmission(
@@ -508,7 +425,7 @@ export default function ReviewPage() {
   }
 
   // 处理中：展示状态文字 + 上传时间 + 返回按钮
-  if (isProcessing(statusData.status) && statusData.status !== 'awaiting_codex') {
+  if (isProcessing(statusData.status) && statusData.status !== 'awaiting_mcp') {
     return (
       <div className="mx-auto max-w-2xl">
         <div className="flex flex-col items-center justify-center gap-4 py-32">
@@ -546,6 +463,6 @@ export default function ReviewPage() {
     );
   }
 
-  // 终态（ready_for_review / reviewed / failed）：展示协同评分布局
+  // 终态（ready_for_review / reviewed / failed）：展示人工复核布局
   return <ReviewContent data={data} />;
 }

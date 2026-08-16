@@ -4,12 +4,15 @@ import { Toaster } from '@/components/ui/sonner';
 import { router } from '@/router';
 import { queryClient } from '@/api/client';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import AuthGate from '@/components/AuthGate';
 
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ErrorBoundary>
-        <RouterProvider router={router} />
+        <AuthGate>
+          <RouterProvider router={router} />
+        </AuthGate>
       </ErrorBoundary>
       <Toaster richColors position="top-center" />
     </QueryClientProvider>

@@ -10,7 +10,6 @@ from app.models.background_job import (
     BackgroundJobStatus,
     BackgroundJobType,
 )
-from app.models.conversation import Conversation
 from app.models.question import (
     Question,
     QuestionReplacementStatus,
@@ -213,8 +212,6 @@ async def test_delete_question_cascades_terminal_records_and_files(
         status=SubmissionStatus.failed,
     )
     db_session.add(sub)
-    db_session.flush()
-    db_session.add(Conversation(submission_id=sub.id, role="user", content="复核"))
     db_session.commit()
     sub_id = sub.id
 
@@ -227,16 +224,6 @@ async def test_delete_question_cascades_terminal_records_and_files(
     assert response.json() == {"deleted_submission_count": 1}
     assert db_session.get(Question, question.id) is None
     assert db_session.get(Submission, sub_id) is None
-    conversations = (
-        (
-            db_session.execute(
-                select(Conversation).where(Conversation.submission_id == sub_id)
-            )
-        )
-        .scalars()
-        .all()
-    )
-    assert conversations == []
     assert not question_path.exists()
     assert not student_path.exists()
 
@@ -249,7 +236,7 @@ async def test_delete_question_rejects_processing_submission(
         original_filename="student.pdf",
         file_path=str(tmp_path / "student.pdf"),
         question=question,
-        status=SubmissionStatus.agent_grading,
+        status=SubmissionStatus.ocr_processing,
     )
     db_session.add(sub)
     db_session.commit()

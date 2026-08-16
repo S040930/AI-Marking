@@ -1,10 +1,10 @@
 """Submission 路由:上传 PDF、列表、详情。
 
-上传时在同一事务中创建持久化任务，由独立 worker 执行 OCR → Agent。
+上传时在同一事务中创建持久化任务，由独立 worker 执行 OCR → awaiting_mcp，
+评分由 MCP 客户端完成，教师在网页确认最终成绩。
 """
 
 import logging
-import re
 import shutil
 import unicodedata
 from pathlib import Path
@@ -21,13 +21,12 @@ from fastapi import (
     status,
 )
 from fastapi.responses import FileResponse, StreamingResponse
-from sqlalchemy import delete, exists, func, select
-from sqlalchemy.orm import Session, selectinload, sessionmaker
+from sqlalchemy import exists, func, select
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import settings
 from app.core.time import utc_now_naive
-from app.db.session import get_db, get_session_factory
-from app.models.conversation import Conversation
+from app.db.session import get_db
 from app.models.question import (
     Question,
     QuestionReplacementStatus,
@@ -35,27 +34,20 @@ from app.models.question import (
 )
 from app.models.submission import (
     Submission,
-    SubmissionGradingMode,
     SubmissionStatus,
 )
 from app.models.submission_code_file import SubmissionCodeFile
 from app.schemas.submission import (
     BatchDeleteRequest,
     BatchDeleteResponse,
-    ChatRequest,
-    ChatResponse,
-    ConversationOut,
     FinalizeRequest,
     PaginatedSubmissions,
     SubmissionCreateResponse,
     SubmissionDetail,
     SubmissionOut,
     SubmissionStatusOut,
-    SuggestionSnapshot,
 )
-from app.services.agent import AgentError, chat_with_teacher, run_critic_pass
 from app.services.code_manifest import parse_code_manifest_json
-from app.services.config import get_config_dict
 from app.services.document_storage import (
     MAX_CODE_FILES,
     save_code_files,
@@ -64,20 +56,20 @@ from app.services.document_storage import (
     validate_independent_code_entries,
 )
 from app.services.events import (
+    acquire_sse_slot,
     notify_submission_status,
     submission_event_stream,
 )
 from app.services.queue import (
-    new_submission_marking_job,
-    reset_submission_marking_job,
+    new_submission_ocr_job,
+    reset_submission_ocr_job,
 )
-from app.services.rubric import resolve_rubric
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 DELETABLE_SUBMISSION_STATUSES = {
-    SubmissionStatus.awaiting_codex,
+    SubmissionStatus.awaiting_mcp,
     SubmissionStatus.ready_for_review,
     SubmissionStatus.reviewed,
     SubmissionStatus.failed,
@@ -92,23 +84,21 @@ DELETABLE_SUBMISSION_STATUSES = {
 async def create_submission(
     file: UploadFile = File(..., description="学生作业 PDF"),
     question_id: int = Form(..., description="题目库 ID"),
-    grading_mode: SubmissionGradingMode = Form(
-        SubmissionGradingMode.backend_agent,
-        description="评分模式: backend_agent 或 codex",
-    ),
     code_files: list[UploadFile] = File(
         default=[], description="可选多语言代码文件"
     ),
     code_manifest: str | None = Form(
-        default=None, description="代码文件小题映射 JSON"
-    ),
-    review_enabled: bool | None = Form(
         default=None,
-        description="是否执行 critic 自动复核;为空时沿用配置项 review_enabled",
+        max_length=50_000,
+        description="代码文件小题映射 JSON",
     ),
     db: Session = Depends(get_db),
 ):
-    """上传学生报告 PDF 及可选的多语言代码文件。"""
+    """上传学生报告 PDF 及可选的多语言代码文件。
+
+    收敛为 MCP-only 后固定使用外部编程助手评分模式：上传后只做 OCR，
+    进入 ``awaiting_mcp``，由 MCP 客户端评分。
+    """
     validate_document_upload(file)
     question = db.get(Question, question_id, with_for_update=True)
     if question is None:
@@ -122,8 +112,6 @@ async def create_submission(
         raise HTTPException(
             status_code=409, detail="题目新版正在处理中，暂不可用于批改"
         )
-    if code_files and grading_mode != SubmissionGradingMode.codex:
-        raise HTTPException(status_code=409, detail="代码文件只能通过 Codex 模式提交")
     if len(code_files) > MAX_CODE_FILES:
         raise HTTPException(status_code=413, detail=f"代码文件最多 {MAX_CODE_FILES} 个")
     code_mapping = _parse_code_manifest(
@@ -170,8 +158,6 @@ async def create_submission(
         file_path=str(saved_path),
         question_id=question.id,
         status=SubmissionStatus.pending,
-        grading_mode=grading_mode,
-        review_enabled=review_enabled,
     )
     question.last_used_at = utc_now_naive()
     db.add(submission)
@@ -190,7 +176,7 @@ async def create_submission(
                     source_text=metadata["source_text"],
                 )
             )
-        db.add(new_submission_marking_job(submission.id))
+        db.add(new_submission_ocr_job(submission.id))
         db.commit()
     except Exception:
         db.rollback()
@@ -267,14 +253,14 @@ async def retry_submission(
     if sub.code_files and any(not Path(item.file_path).exists() for item in sub.code_files):
         raise HTTPException(
             status_code=409,
-            detail="原代码文件已过期，请通过 Codex 重新提交 PDF 与全部代码文件",
+            detail="原代码文件已过期，请通过编程助手（MCP）重新提交 PDF 与全部代码文件",
         )
     if sub.code_input_files and any(
         not Path(item.file_path).exists() for item in sub.code_input_files
     ):
         raise HTTPException(
             status_code=409,
-            detail="原数据集文件已过期，请通过 Codex 重新提交 PDF、代码与数据集",
+            detail="原数据集文件已过期，请通过编程助手（MCP）重新提交 PDF、代码与数据集",
         )
 
     old_path = sub.file_path
@@ -288,17 +274,12 @@ async def retry_submission(
         "confidence",
         "feedback",
         "details",
-        "ai_result",
-        "agent_trace",
-        "ai_suggestion",
-        "review_reason",
+        "assessment_suggestion",
         "reviewed_by",
         "reviewed_at",
         "completed_at",
         "error_message",
         "graded_at",
-        "code_runtime",
-        "code_visual_assets",
     ):
         setattr(sub, field, None)
     for code_file in sub.code_files:
@@ -308,8 +289,7 @@ async def retry_submission(
         code_file.visual_reviews = None
     sub.grading_revision = 0
     sub.status = SubmissionStatus.pending
-    db.execute(delete(Conversation).where(Conversation.submission_id == submission_id))
-    reset_submission_marking_job(db, submission_id)
+    reset_submission_ocr_job(db, submission_id)
     try:
         db.commit()
         db.refresh(sub)
@@ -327,141 +307,6 @@ async def retry_submission(
         Path(settings.UPLOAD_DIR).resolve() / "code-artifacts" / str(submission_id),
         ignore_errors=True,
     )
-    return sub
-
-
-@router.post(
-    "/submissions/{submission_id}/review",
-    response_model=SubmissionDetail,
-)
-async def review_submission(
-    submission_id: int,
-    session_factory: sessionmaker = Depends(get_session_factory),
-):
-    """评分完成后按需触发一次 AI 复核（critic）。
-
-    - 仅 ``ready_for_review`` 且尚未复核（agent_trace 无 critic 节点）可触发
-    - Codex 模式请走 MCP 订正，不在此触发
-    - 复用 ``chat_with_submission`` 的连接释放模式：读快照释放连接 → LLM 调用 →
-      重新开连接加锁写入，避免复核期间长期占用数据库连接
-    """
-    # 第一段：读快照，立即释放连接
-    with session_factory() as db:
-        sub = db.execute(
-            select(Submission)
-            .where(Submission.id == submission_id)
-            .with_for_update()
-            .options(selectinload(Submission.question))
-        ).scalar_one_or_none()
-        if sub is None:
-            raise HTTPException(status_code=404, detail="提交记录不存在")
-        if sub.grading_mode == SubmissionGradingMode.codex:
-            raise HTTPException(
-                status_code=409,
-                detail="Codex 评分记录请在 Codex 中通过 MCP 复核",
-            )
-        if sub.status != SubmissionStatus.ready_for_review:
-            raise HTTPException(
-                status_code=409,
-                detail="作业尚未准备好进行复核",
-            )
-        if any(
-            (event or {}).get("node") == "critic"
-            for event in (sub.agent_trace or [])
-        ):
-            raise HTTPException(status_code=409, detail="该作业已完成复核")
-        ocr_text = sub.ocr_text or ""
-        question_text = sub.question_ocr_text or ""
-        draft = sub.ai_result or {}
-        config = get_config_dict(db, profile_id=sub.question.config_profile_id)
-        resolved_rubric = resolve_rubric(sub.question, config)
-        sub.status = SubmissionStatus.agent_reviewing
-        notify_submission_status(db, submission_id, SubmissionStatus.agent_reviewing.value)
-        db.commit()
-
-    # 第二段：LLM 复核调用，期间不持有任何 DB 连接
-    try:
-        critic_dict = await run_critic_pass(
-            config,
-            ocr_text=ocr_text,
-            question_text=question_text,
-            resolved_rubric=resolved_rubric,
-            draft=draft,
-        )
-    except AgentError as exc:
-        with session_factory() as db:
-            failed = db.get(Submission, submission_id, with_for_update=True)
-            if failed and failed.status == SubmissionStatus.agent_reviewing:
-                failed.status = SubmissionStatus.ready_for_review
-                db.commit()
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"AI 复核失败: {exc}",
-        ) from exc
-    except Exception as exc:  # noqa: BLE001
-        with session_factory() as db:
-            failed = db.get(Submission, submission_id, with_for_update=True)
-            if failed and failed.status == SubmissionStatus.agent_reviewing:
-                failed.status = SubmissionStatus.ready_for_review
-                db.commit()
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"AI 复核失败: {exc}",
-        ) from exc
-
-    # 第三段：开新 Session，加锁重新校验状态后写入复核结果
-    with session_factory() as db:
-        sub = db.get(
-            Submission,
-            submission_id,
-            with_for_update=True,
-            options=[
-                selectinload(Submission.question),
-                selectinload(Submission.code_files),
-                selectinload(Submission.code_input_files),
-            ],
-        )
-        if sub is None:
-            raise HTTPException(status_code=404, detail="提交记录不存在")
-        if sub.status == SubmissionStatus.reviewed:
-            raise HTTPException(status_code=409, detail="该作业已审阅，不可再复核")
-        # 处理中（含并发复核）时拒绝，避免覆盖状态机
-        if sub.status != SubmissionStatus.agent_reviewing:
-            raise HTTPException(
-                status_code=409,
-                detail="作业状态已变更，无法写入复核结果",
-            )
-
-        suggestion = dict(sub.ai_suggestion or {})
-        suggestion["confidence"] = float(critic_dict["confidence"])
-        suggestion["critic_summary"] = critic_dict.get("summary") or ""
-        suggestion["critic_issues"] = critic_dict.get("issues") or []
-        if critic_dict.get("decision") == "review_required":
-            suggestion["outcome"] = "review_required"
-            suggestion["review_reason"] = critic_dict.get("summary") or ""
-
-        trace = list(sub.agent_trace or [])
-        trace.append(
-            {
-                "node": "critic",
-                "status": "completed",
-                "attempt": 1,
-                "summary": critic_dict.get("summary") or "",
-                "timestamp": utc_now_naive().isoformat(),
-                "duration_ms": 0,
-            }
-        )
-
-        sub.ai_suggestion = suggestion
-        sub.agent_trace = trace
-        sub.confidence = float(critic_dict["confidence"])
-        sub.review_reason = suggestion.get("review_reason") or None
-        sub.status = SubmissionStatus.ready_for_review
-        notify_submission_status(
-            db, submission_id, SubmissionStatus.ready_for_review.value
-        )
-        db.commit()
-        db.refresh(sub)
     return sub
 
 
@@ -672,6 +517,7 @@ async def submission_events(submission_id: int):
     - 前端 ``useSubmissionEvents`` hook 消费此端点,收到事件后 invalidate
       status query;30s 兜底轮询在 SSE 断开时仍能恢复
     """
+    await acquire_sse_slot()
     return StreamingResponse(
         submission_event_stream(submission_id),
         media_type="text/event-stream",
@@ -682,54 +528,6 @@ async def submission_events(submission_id: int):
             "X-Accel-Buffering": "no",
         },
     )
-
-
-@router.get("/submissions/{submission_id}/code-assets/{asset_id:path}")
-def get_code_asset(
-    submission_id: int,
-    asset_id: str,
-    db: Session = Depends(get_db),
-):
-    """安全返回代码运行或报告渲染图片供教师复核。"""
-    sub = db.get(Submission, submission_id, options=[selectinload(Submission.code_files)])
-    if sub is None:
-        raise HTTPException(status_code=404, detail="提交记录不存在")
-    root = Path(settings.UPLOAD_DIR).resolve() / "code-artifacts" / str(submission_id)
-    if asset_id.startswith("report:"):
-        asset_name = asset_id.removeprefix("report:")
-        asset = next(
-            (item for item in sub.code_visual_assets or [] if item.get("asset_id") == asset_id),
-            None,
-        )
-        if asset is None:
-            raise HTTPException(status_code=404, detail="代码资产不存在")
-        path = root / "report" / asset_name
-        mime = asset.get("mime_type", "image/png")
-    else:
-        match = re.fullmatch(r"code:(\d+):([A-Za-z0-9_.-]+)", asset_id)
-        if match is None:
-            raise HTTPException(status_code=404, detail="代码资产不存在")
-        code_file = next(
-            (item for item in sub.code_files if item.id == int(match.group(1))), None
-        )
-        if code_file is None:
-            raise HTTPException(status_code=404, detail="代码资产不存在")
-        artifact_id = match.group(2)
-        artifact = next(
-            (item for item in code_file.artifacts or [] if item.get("artifact_id") == artifact_id),
-            None,
-        )
-        if artifact is None or artifact.get("kind") not in {"png", "jpg", "jpeg"}:
-            raise HTTPException(status_code=404, detail="代码资产不存在")
-        path = root / f"q{code_file.question_number}" / artifact_id
-        mime = f"image/{artifact['kind']}"
-    try:
-        path.resolve().relative_to(root)
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail="代码资产不存在") from exc
-    if not path.is_file():
-        raise HTTPException(status_code=404, detail="代码资产已清理")
-    return FileResponse(path, media_type=mime)
 
 
 @router.api_route(
@@ -751,7 +549,7 @@ def get_submission_pdf(
     if sub is None:
         raise HTTPException(status_code=404, detail="提交记录不存在")
     if sub.status not in (
-        SubmissionStatus.awaiting_codex,
+        SubmissionStatus.awaiting_mcp,
         SubmissionStatus.ready_for_review,
         SubmissionStatus.reviewed,
         SubmissionStatus.failed,
@@ -781,189 +579,6 @@ def get_submission_pdf(
         filename=f"{Path(original_filename).stem}.pdf",
         content_disposition_type="inline",
     )
-
-
-@router.post(
-    "/submissions/{submission_id}/chat",
-    response_model=ChatResponse,
-)
-async def chat_with_submission(
-    submission_id: int,
-    payload: ChatRequest,
-    session_factory: sessionmaker = Depends(get_session_factory),
-):
-    """教师就指定作业与 AI 对话。
-
-    - 校验状态为 ready_for_review 或 reviewed
-    - 持久化教师消息到 conversations 表
-    - 调用 LLM 生成结构化回复(含评分快照与 finalize 意图)
-    - 当 AI 判断教师意图为 finalize 时,仅返回待确认评分
-    - 持久化 AI 回复文本到 conversations 表
-
-    P0 改造:拆分 DB Session 作用域,LLM 调用 30-60s 期间不持有 DB 连接,
-    避免并发聊天耗尽连接池。第三段加 ``with_for_update`` 防止并发 finalize。
-
-    使用 ``session_factory`` 依赖(而非直接 ``SessionLocal()``)以便测试
-    override 为 SQLite 工厂,与 ``get_db`` 的 override 保持一致。
-    """
-    # 第一段:读数据,立即释放连接
-    with session_factory() as db:
-        sub = db.get(Submission, submission_id)
-        if sub is None:
-            raise HTTPException(status_code=404, detail="提交记录不存在")
-        if sub.grading_mode == SubmissionGradingMode.codex:
-            raise HTTPException(
-                status_code=409,
-                detail="Codex 评分记录请在 Codex 中通过 MCP 修订",
-            )
-        if sub.status not in (
-            SubmissionStatus.ready_for_review,
-            SubmissionStatus.reviewed,
-        ):
-            raise HTTPException(
-                status_code=409,
-                detail="作业尚未准备好进行对话",
-            )
-        history_stmt = (
-            select(Conversation)
-            .where(Conversation.submission_id == submission_id)
-            .order_by(Conversation.created_at.asc())
-        )
-        history = db.execute(history_stmt).scalars().all()
-        config = get_config_dict(db, profile_id=sub.question.config_profile_id)
-        # 拷贝纯数据,不持有 ORM 对象
-        ocr_text = sub.ocr_text or ""
-        question_text = sub.question_ocr_text or ""
-        ai_suggestion = sub.ai_suggestion or {}
-        history_dicts = [{"role": h.role, "content": h.content} for h in history]
-
-    # 第二段:LLM 调用,期间不持有任何 DB 连接
-    try:
-        chat_result = await chat_with_teacher(
-            teacher_message=payload.message,
-            ocr_text=ocr_text,
-            question_text=question_text,
-            ai_suggestion=ai_suggestion,
-            history=history_dicts,
-            config=config,
-        )
-    except AgentError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"AI 回复失败: {exc}",
-        ) from exc
-
-    reply = chat_result["reply"]
-    intent = chat_result["intent"]
-    suggestion_raw = chat_result.get("suggestion", {})
-    reviewer_name = chat_result.get("reviewer_name", "") or (
-        payload.reviewer_name or ""
-    )
-
-    # 尝试解析评分快照。普通回复允许没有快照;finalize 意图必须有合法快照,
-    # 否则不能返回 action=finalize,避免前端拿到无效的待确认评分。
-    try:
-        suggestion = SuggestionSnapshot.model_validate(suggestion_raw)
-    except Exception:
-        suggestion = None
-
-    # 第三段:开新 Session,加锁重新校验状态后写入
-    with session_factory() as db:
-        sub = db.get(Submission, submission_id, with_for_update=True)
-        if sub is None:
-            raise HTTPException(status_code=404, detail="提交记录不存在")
-        if sub.status not in (
-            SubmissionStatus.ready_for_review,
-            SubmissionStatus.reviewed,
-        ):
-            raise HTTPException(
-                status_code=409,
-                detail="作业状态已变更,无法写入对话",
-            )
-
-        # 已审阅状态下不再重复 finalize,意图降级为普通回复;
-        # 此时该 assistant 消息不应再携带建议快照,避免"已回复"却存留 finalize 建议的语义不一致。
-        finalized_intent_downgraded = (
-            intent == "finalize" and sub.status == SubmissionStatus.reviewed
-        )
-        if finalized_intent_downgraded:
-            intent = "reply"
-
-        finalize_payload = None
-        if intent == "finalize":
-            if suggestion is None:
-                raise HTTPException(
-                    status_code=422,
-                    detail="AI 提取的最终评分格式非法,无法生成待确认评分",
-                )
-            # 优先使用教师提供的姓名,其次使用 AI 从消息中提取的姓名
-            final_reviewer = payload.reviewer_name or reviewer_name
-            if not final_reviewer:
-                raise HTTPException(
-                    status_code=422,
-                    detail="提交最终评分需要提供审核教师姓名",
-                )
-            try:
-                finalize_payload = FinalizeRequest(
-                    reviewer_name=final_reviewer,
-                    score=suggestion.score,
-                    max_score=suggestion.max_score,
-                    feedback=suggestion.feedback,
-                    details=suggestion.details,
-                )
-            except Exception as exc:
-                raise HTTPException(
-                    status_code=422,
-                    detail=f"AI 提取的最终评分格式非法: {exc}",
-                ) from exc
-
-        # 全部校验通过后才一次性持久化教师消息与 AI 回复,避免 LLM 失败或
-        # finalize 校验不通过时残留半截对话(只有 user 消息没有 assistant 回复)。
-        user_msg = Conversation(
-            submission_id=submission_id,
-            role="user",
-            content=payload.message,
-        )
-        assistant_msg = Conversation(
-            submission_id=submission_id,
-            role="assistant",
-            content=reply,
-            suggestion=None if finalized_intent_downgraded else suggestion_raw,
-        )
-        db.add(user_msg)
-        db.add(assistant_msg)
-        db.commit()
-        db.refresh(assistant_msg)
-
-    return ChatResponse(
-        reply=reply,
-        message_id=assistant_msg.id,
-        action=intent,
-        suggestion=suggestion,
-        finalize_payload=finalize_payload,
-    )
-
-
-@router.get(
-    "/submissions/{submission_id}/conversations",
-    response_model=list[ConversationOut],
-)
-def list_conversations(
-    submission_id: int,
-    db: Session = Depends(get_db),
-):
-    """返回指定作业的教师-AI 对话历史(按时间升序)。"""
-    sub = db.get(Submission, submission_id)
-    if sub is None:
-        raise HTTPException(status_code=404, detail="提交记录不存在")
-
-    stmt = (
-        select(Conversation)
-        .where(Conversation.submission_id == submission_id)
-        .order_by(Conversation.created_at.asc())
-    )
-    items = db.execute(stmt).scalars().all()
-    return [ConversationOut.model_validate(item) for item in items]
 
 
 @router.post(

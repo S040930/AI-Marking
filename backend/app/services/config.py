@@ -19,18 +19,13 @@ from app.models.system_config import SystemConfig
 
 # 可配置项白名单,供 API 校验。各 key 的语义说明见 schemas/system_config.py
 # 中 ConfigUpdate 各字段的 description。
+# 收敛为 MCP-only 后不再有 LLM/Agent 相关配置项;OCR、结构化 rubric 与
+# MCP 双遍自检开关(固定必需)保留。
 CONFIG_KEYS: frozenset[str] = frozenset(
     {
-        "llm_api_key",
-        "llm_base_url",
-        "llm_model",
-        "review_llm_api_key",
-        "review_llm_base_url",
-        "review_llm_model",
         "paddleocr_api_url",
         "paddleocr_token",
         "rubric_definition",
-        "llm_user_prompt",
         "review_enabled",
     }
 )
@@ -291,6 +286,9 @@ def upsert_config(
             continue
         if key == "rubric_definition" and not isinstance(value, str):
             value = json.dumps(value, ensure_ascii=False, sort_keys=True)
+        elif not isinstance(value, str):
+            # SystemConfig.value 是 Text 列,布尔等非字符串配置统一转字符串
+            value = str(value).lower()
         if key in existing:
             existing[key].value = value
             existing[key].updated_at = now

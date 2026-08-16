@@ -56,9 +56,9 @@ def new_question_replace_job(question_id: int) -> BackgroundJob:
     )
 
 
-def new_submission_marking_job(submission_id: int) -> BackgroundJob:
+def new_submission_ocr_job(submission_id: int) -> BackgroundJob:
     return BackgroundJob(
-        job_type=BackgroundJobType.submission_marking,
+        job_type=BackgroundJobType.submission_ocr,
         submission_id=submission_id,
         status=BackgroundJobStatus.queued,
     )
@@ -108,7 +108,7 @@ def reset_question_replace_job(db: Session, question_id: int) -> None:
     job.last_error = None
 
 
-def reset_submission_marking_job(db: Session, submission_id: int) -> None:
+def reset_submission_ocr_job(db: Session, submission_id: int) -> None:
     """失败作业在原记录上重新入队。"""
     job = (
         db.execute(
@@ -118,9 +118,9 @@ def reset_submission_marking_job(db: Session, submission_id: int) -> None:
         )
     ).scalar_one_or_none()
     if job is None:
-        db.add(new_submission_marking_job(submission_id))
+        db.add(new_submission_ocr_job(submission_id))
         return
-    job.job_type = BackgroundJobType.submission_marking
+    job.job_type = BackgroundJobType.submission_ocr
     job.status = BackgroundJobStatus.queued
     job.attempts = 0
     job.available_at = utc_now_naive()

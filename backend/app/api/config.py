@@ -23,7 +23,6 @@ from app.schemas.system_config import (
     ConfigProfileRename,
     ConfigUpdate,
 )
-from app.services.agent import close_llm_clients_sync
 from app.services.config import (
     ConfigError,
     create_profile,
@@ -40,19 +39,6 @@ from app.services.rubric import normalize_definition
 router = APIRouter()
 
 
-REVIEW_LLM_KEYS = ("review_llm_api_key", "review_llm_base_url", "review_llm_model")
-
-# LLM 相关配置 key,任一变更后需清空客户端缓存以避免陈旧连接复用
-_LLM_CONFIG_KEYS = (
-    "llm_api_key",
-    "llm_base_url",
-    "llm_model",
-    "review_llm_api_key",
-    "review_llm_base_url",
-    "review_llm_model",
-)
-
-
 def _to_config_out(config: dict[str, str]) -> ConfigOut:
     """将配置字典转为 ConfigOut,缺失字段填空字符串。"""
     rubric_definition = None
@@ -62,16 +48,11 @@ def _to_config_out(config: dict[str, str]) -> ConfigOut:
         except (TypeError, ValueError):
             rubric_definition = None
     return ConfigOut(
-        llm_api_key=config.get("llm_api_key", "") or "",
-        llm_base_url=config.get("llm_base_url", "") or "",
-        llm_model=config.get("llm_model", "") or "",
-        review_llm_api_key=config.get("review_llm_api_key", "") or "",
-        review_llm_base_url=config.get("review_llm_base_url", "") or "",
-        review_llm_model=config.get("review_llm_model", "") or "",
         paddleocr_api_url=config.get("paddleocr_api_url", "") or "",
         paddleocr_token=config.get("paddleocr_token", "") or "",
         rubric_definition=rubric_definition,
-        llm_user_prompt=config.get("llm_user_prompt", "") or "",
+        review_enabled=(config.get("review_enabled", "true") or "true").lower()
+        == "true",
     )
 
 
@@ -126,18 +107,6 @@ def update_config(
         except (TypeError, ValueError, json.JSONDecodeError) as exc:
             raise HTTPException(status_code=422, detail=f"结构化 rubric 无效: {exc}") from exc
 
-    # 审核 LLM「全有或全无」校验:若提交了任一 review_llm_* 字段,
-    # 则三字段在合并现有值后必须同时非空或同时为空
-    if any(k in updates for k in REVIEW_LLM_KEYS):
-        current = get_config_dict(db, profile_id=profile_id)
-        merged = {**{k: current.get(k, "") for k in REVIEW_LLM_KEYS}, **updates}
-        filled = [k for k in REVIEW_LLM_KEYS if merged[k]]
-        if 0 < len(filled) < 3:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="审核 LLM 的 API Key、Base URL、Model 必须同时填写或同时留空",
-            )
-
     if not updates:
         # 无更新,直接返回当前配置
         return _to_config_out(get_config_dict(db, profile_id=profile_id))
@@ -146,10 +115,6 @@ def update_config(
         new_config = upsert_config(db, updates, profile_id=profile_id)
     except ConfigError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-
-    # LLM 相关配置变更后清空客户端缓存,下次调用重建连接
-    if any(k in updates for k in _LLM_CONFIG_KEYS):
-        close_llm_clients_sync()
 
     return _to_config_out(new_config)
 

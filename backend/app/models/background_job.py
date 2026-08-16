@@ -23,7 +23,7 @@ from app.db.base import Base
 class BackgroundJobType(str, enum.Enum):
     question_ocr = "question_ocr"
     question_replace = "question_replace"
-    submission_marking = "submission_marking"
+    submission_ocr = "submission_ocr"
 
 
 class BackgroundJobStatus(str, enum.Enum):

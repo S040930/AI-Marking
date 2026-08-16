@@ -7,10 +7,7 @@ export type SubmissionStatus =
   | 'pending'
   | 'ocr_processing'
   | 'ocr_done'
-  | 'agent_grading'
-  | 'agent_reviewing'
-  | 'agent_revising'
-  | 'awaiting_codex'
+  | 'awaiting_mcp'
   | 'ready_for_review'
   | 'reviewed'
   | 'failed';
@@ -29,10 +26,11 @@ export interface AiSuggestion {
   feedback: string;
   details: AiSuggestionDetail[];
   confidence: number;
-  outcome?: string;
-  review_reason?: string | null;
-  critic_summary?: string;
-  critic_issues?: string[];
+  mcp_metadata?: {
+    client?: string;
+    generated_at?: string;
+    [key: string]: unknown;
+  };
 }
 
 export interface SubmissionOut {
@@ -40,7 +38,7 @@ export interface SubmissionOut {
   original_filename: string;
   question_original_filename: string | null;
   status: SubmissionStatus;
-  grading_mode: 'backend_agent' | 'codex';
+  grading_mode: 'external_agent';
   grading_revision: number;
   graded_at: string | null;
   score: number | null;
@@ -91,35 +89,15 @@ export interface DetailItem {
   evidence?: string[];
 }
 
-interface AgentTraceEvent {
-  node: string;
-  status: string;
-  attempt: number;
-  summary: string;
-  timestamp: string;
-  duration_ms: number;
-}
-
 export interface SubmissionDetail extends SubmissionOut {
   ocr_text: string | null;
   question_ocr_text: string | null;
   feedback: string | null;
-  ai_suggestion: AiSuggestion | null;
+  assessment_suggestion: AiSuggestion | null;
   details: DetailItem[] | null;
-  ai_result: Record<string, unknown> | null;
-  agent_trace: AgentTraceEvent[] | null;
-  review_reason: string | null;
   reviewed_by: string | null;
   reviewed_at: string | null;
   error_message: string | null;
-  code_runtime: Record<string, unknown> | null;
-  code_visual_assets: Array<{
-    asset_id: string;
-    filename: string;
-    mime_type: string;
-    page: number | null;
-    sha256: string;
-  }> | null;
   code_files: SubmissionCodeFile[];
   code_input_files: SubmissionCodeInputFile[];
 }
@@ -129,7 +107,7 @@ export interface SubmissionDetail extends SubmissionOut {
 export interface SubmissionStatusOut {
   id: number;
   status: SubmissionStatus;
-  grading_mode: 'backend_agent' | 'codex';
+  grading_mode: 'external_agent';
   grading_revision: number;
   original_filename: string;
   score: number | null;
@@ -152,7 +130,7 @@ export interface PaginatedSubmissions {
   limit: number;
 }
 
-// 终态判断：awaiting_codex 仍需要等待 Codex 保存建议，不能停止状态刷新。
+// 终态判断：awaiting_mcp 仍需要等待 MCP 客户端保存建议，不能停止状态刷新。
 const TERMINAL_STATUSES: SubmissionStatus[] = [
   'ready_for_review',
   'reviewed',
@@ -168,11 +146,11 @@ export function isProcessing(status: SubmissionStatus): boolean {
 }
 
 /**
- * awaiting_codex 已经有可展示的作业详情，但仍等待 Codex 写入建议。
+ * awaiting_mcp 已经有可展示的作业详情，但仍等待 MCP 客户端写入建议。
  * 其他处理中状态的大字段尚未准备好，避免提前拉取完整详情。
  */
 export function canLoadSubmissionDetail(status: SubmissionStatus): boolean {
-  return status === 'awaiting_codex' || isTerminal(status);
+  return status === 'awaiting_mcp' || isTerminal(status);
 }
 
 // hooks
@@ -216,7 +194,7 @@ export function useSubmissionsCount() {
 }
 
 /**
- * 完整详情查询。仅在 ``enabled=true`` 时拉取(含 ocr_text/ai_result 大字段)。
+ * 完整详情查询。仅在 ``enabled=true`` 时拉取(含 ocr_text/assessment_suggestion 大字段)。
  *
  * P2-L3:调用方应根据轻量 status 判断是否终态,处理中传 ``enabled=false``
  * 避免拉取大字段(此时大字段为 null,属于浪费)。终态后再 enable 拉取。
@@ -228,7 +206,7 @@ export function useSubmission(
 ) {
   return useQuery<SubmissionDetail>({
     // 状态变化时切换详情 key，避免 fallback 轮询更新 status 后仍复用
-    // awaiting_codex 的旧建议；同时保留 ['submission', id] 前缀供 SSE 失效缓存。
+    // 旧状态的建议；同时保留 ['submission', id] 前缀供 SSE 失效缓存。
     queryKey: ['submission', id, status ?? 'detail'],
     queryFn: () =>
       apiClient.get<SubmissionDetail>(`/submissions/${id}`).then((r) => r.data),
@@ -313,8 +291,6 @@ export function useSubmissionStatus(id: number | undefined) {
 export interface UploadSubmissionPayload {
   file: File;
   questionId: number;
-  gradingMode?: 'backend_agent' | 'codex';
-  reviewEnabled?: boolean;
   codeFiles?: File[];
   codeManifest?: Array<{ filename: string; question_number: number }>;
 }
@@ -322,21 +298,10 @@ export interface UploadSubmissionPayload {
 export function useUploadSubmission() {
   const queryClient = useQueryClient();
   return useMutation<SubmissionCreateResponse, Error, UploadSubmissionPayload>({
-    mutationFn: ({
-      file,
-      questionId,
-      gradingMode = 'backend_agent',
-      reviewEnabled = false,
-      codeFiles = [],
-      codeManifest,
-    }) => {
+    mutationFn: ({ file, questionId, codeFiles = [], codeManifest }) => {
       const formData = new FormData();
       formData.append('file', file);
       formData.append('question_id', String(questionId));
-      formData.append('grading_mode', gradingMode);
-      // 默认关闭自动复核：评分完成后由 ReviewPage 主动询问是否复核，
-      // 实现「评分与复核独立、用户自行选择」。
-      formData.append('review_enabled', String(reviewEnabled));
       codeFiles.forEach((codeFile) => formData.append('code_files', codeFile));
       if (codeManifest) formData.append('code_manifest', JSON.stringify(codeManifest));
       return apiClient
@@ -350,38 +315,6 @@ export function useUploadSubmission() {
     onSuccess: () => {
       // 上传成功后失效总数缓存,下次进入历史页重新拉取
       queryClient.invalidateQueries({ queryKey: ['submissions-count'] });
-    },
-  });
-}
-
-/**
- * 判断该提交是否已运行过 AI 复核（critic 节点）。
- * 用于 ReviewPage 决定是否展示「是否需要复核」询问。
- */
-export function didReviewRun(data: Pick<SubmissionDetail, 'agent_trace' | 'ai_suggestion'>): boolean {
-  const trace = data.agent_trace ?? [];
-  if (trace.some((event) => event.node === 'critic')) return true;
-  const summary = (data.ai_suggestion?.critic_summary ?? '').trim();
-  if (summary) return true;
-  return false;
-}
-
-/**
- * 评分完成后按需触发一次 AI 复核（critic）。
- * 成功后刷新完整详情与轻量状态，供 ReviewPage 展示复核摘要。
- */
-export function useReviewSubmission(submissionId: number) {
-  const queryClient = useQueryClient();
-  return useMutation<SubmissionDetail, Error, void>({
-    mutationFn: () =>
-      apiClient
-        .post<SubmissionDetail>(`/submissions/${submissionId}/review`, undefined, {
-          skipErrorToast: true,
-        })
-        .then((r) => r.data),
-    onSuccess: (data) => {
-      queryClient.setQueryData(['submission', submissionId], data);
-      queryClient.invalidateQueries({ queryKey: ['submission-status', submissionId] });
     },
   });
 }
@@ -413,36 +346,6 @@ export function useRetrySubmission(submissionId: number) {
   });
 }
 
-export interface ConversationMessage {
-  id: number;
-  submission_id: number;
-  role: 'user' | 'assistant';
-  content: string;
-  suggestion: AiSuggestion | null;
-  created_at: string;
-}
-
-export interface SuggestionSnapshot {
-  score: number;
-  max_score: number;
-  confidence: number;
-  feedback: string;
-  details: AiSuggestionDetail[];
-}
-
-export interface ChatPayload {
-  message: string;
-  reviewer_name?: string;
-}
-
-export interface ChatResponse {
-  reply: string;
-  message_id: number;
-  action: 'reply' | 'finalize';
-  suggestion: SuggestionSnapshot | null;
-  finalize_payload: FinalizePayload | null;
-}
-
 export interface FinalizePayload {
   reviewer_name: string;
   score: number;
@@ -455,73 +358,6 @@ export interface FinalizePayload {
     comment: string;
     evidence: string[];
   }>;
-}
-
-export function useConversations(submissionId: number | undefined) {
-  return useQuery<ConversationMessage[]>({
-    queryKey: ['conversations', submissionId],
-    queryFn: () =>
-      apiClient
-        .get<ConversationMessage[]>(`/submissions/${submissionId}/conversations`)
-        .then((r) => r.data),
-    enabled: submissionId !== undefined && !isNaN(submissionId),
-    refetchInterval: false,
-  });
-}
-
-export function useChat(submissionId: number) {
-  const queryClient = useQueryClient();
-  return useMutation<
-    ChatResponse,
-    Error,
-    ChatPayload,
-    { previous: ConversationMessage[] | undefined }
-  >({
-    mutationFn: (payload) =>
-      apiClient
-        .post<ChatResponse>(`/submissions/${submissionId}/chat`, payload, {
-          skipErrorToast: true,
-        })
-        .then((r) => r.data),
-    onMutate: async (payload) => {
-      // 乐观更新:先在 UI 显示教师消息,成功后再由 onSuccess 刷新完整列表
-      await queryClient.cancelQueries({
-        queryKey: ['conversations', submissionId],
-      });
-      const previous = queryClient.getQueryData<ConversationMessage[]>([
-        'conversations',
-        submissionId,
-      ]);
-      const optimistic: ConversationMessage = {
-        id: Date.now(),
-        submission_id: submissionId,
-        role: 'user',
-        content: payload.message,
-        suggestion: null,
-        created_at: new Date().toISOString(),
-      };
-      queryClient.setQueryData<ConversationMessage[]>(
-        ['conversations', submissionId],
-        (old) => [...(old ?? []), optimistic],
-      );
-      return { previous };
-    },
-    onError: (_error, _vars, context) => {
-      // 回滚乐观更新,由调用方 onError 自行 toast
-      if (context?.previous) {
-        queryClient.setQueryData(
-          ['conversations', submissionId],
-          context.previous,
-        );
-      }
-    },
-    onSuccess: () => {
-      // AI 回复后刷新对话列表(替换乐观消息为服务端真实数据)
-      queryClient.invalidateQueries({
-        queryKey: ['conversations', submissionId],
-      });
-    },
-  });
 }
 
 export function useFinalizeSubmission(submissionId: number) {

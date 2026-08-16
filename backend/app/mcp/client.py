@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 
 import httpx
 
-from app.core.config import AI_MARKING_SERVICE, MCP_API_VERSION
+from app.core.config import AI_MARKING_SERVICE, MCP_API_VERSION, settings
 from app.mcp.errors import McpApiError
 
 API_BASE_URL = os.environ.get("AI_MARKING_API_URL", "http://127.0.0.1:8000").rstrip("/")
@@ -25,7 +25,8 @@ _require_loopback("AI_MARKING_WEB_URL", WEB_BASE_URL)
 
 
 def review_url(submission_id: int) -> str:
-    return f"{WEB_BASE_URL}/result/{submission_id}"
+    # 评审工作台页面;处理中状态会由该页自动等待/轮询。
+    return f"{WEB_BASE_URL}/review/{submission_id}"
 
 
 class ApiClient:
@@ -33,10 +34,14 @@ class ApiClient:
         self._client: httpx.AsyncClient | None = None
 
     async def __aenter__(self) -> "ApiClient":
+        headers: dict[str, str] = {}
+        # 与网页前端共用同一访问令牌；令牌为空时后端鉴权关闭，无需附带。
+        if settings.ACCESS_TOKEN:
+            headers["Authorization"] = f"Bearer {settings.ACCESS_TOKEN}"
         self._client = httpx.AsyncClient(
             base_url=API_BASE_URL,
             timeout=httpx.Timeout(60.0, connect=5.0),
-            headers={},
+            headers=headers,
         )
         return self
 
@@ -53,7 +58,7 @@ class ApiClient:
         except httpx.ConnectError as exc:
             raise McpApiError(
                 "无法连接 AI-Marking FastAPI。请先在项目目录运行 ./start.sh；"
-                "若 8000 端口已被占用，请运行 ./scripts/setup-codex-mcp --doctor。"
+                "若 8000 端口已被占用，请运行 ./scripts/setup-mcp --doctor。"
             ) from exc
         except httpx.TimeoutException as exc:
             raise McpApiError(
@@ -76,26 +81,9 @@ class ApiClient:
             if version != MCP_API_VERSION:
                 raise McpApiError(
                     f"AI-Marking MCP API 版本不兼容（需要 {MCP_API_VERSION}，当前 {version or '未知'}）。"
-                    "请重启 ./start.sh 和 Codex。"
+                    "请重启 ./start.sh 和编程助手。"
                 )
         return payload
-
-    async def request_bytes(self, method: str, path: str, **kwargs: object) -> tuple[bytes, str]:
-        if self._client is None:
-            raise RuntimeError("MCP HTTP client 未初始化")
-        try:
-            response = await self._client.request(method, path, **kwargs)
-        except httpx.ConnectError as exc:
-            raise McpApiError(
-                "无法连接 AI-Marking FastAPI。请先在项目目录运行 ./start.sh。"
-            ) from exc
-        except httpx.TimeoutException as exc:
-            raise McpApiError("AI-Marking 图片资产读取超时。请检查后端状态。") from exc
-        except httpx.HTTPError as exc:
-            raise McpApiError(f"AI-Marking HTTP 请求失败: {exc}") from exc
-        if response.is_error:
-            raise McpApiError(await self._diagnose_error(response))
-        return response.content, response.headers.get("content-type", "application/octet-stream")
 
     async def _diagnose_error(self, response: httpx.Response) -> str:
         detail: Any
@@ -107,6 +95,11 @@ class ApiClient:
         except ValueError:
             detail = response.text
 
+        if response.status_code == 401:
+            return (
+                "AI-Marking 拒绝了访问令牌。请检查 backend/.env 中的 ACCESS_TOKEN"
+                "与网页登录使用的令牌是否一致，并重启后端与编程助手。"
+            )
         if response.status_code == 503:
             detail_text = str(detail)
             if "数据库" in detail_text:
@@ -122,7 +115,7 @@ class ApiClient:
                 )
             return (
                 "当前 AI-Marking 后端缺少所需 MCP 接口，可能仍是旧进程。"
-                "请重启 ./start.sh 和 Codex。"
+                "请重启 ./start.sh 和编程助手。"
             )
         return f"AI-Marking API 返回 HTTP {response.status_code}: {detail}"
 

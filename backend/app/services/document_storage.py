@@ -19,20 +19,9 @@ CODE_EXTENSIONS = {
     ".h", ".hh", ".hpp", ".hxx",
 }
 ENTRYPOINT_EXTENSIONS = {".py", ".ipynb", ".r", ".java", ".c", ".cc", ".cpp", ".cxx"}
-# Runtime inputs are ordinary files named by the assignment.  They may be
-# text or binary (CSV/JSON/TXT/XLSX/etc.); executable/source extensions remain
-# forbidden so an input cannot silently become another program.
-CODE_INPUT_EXTENSIONS: set[str] = set()
-FORBIDDEN_INPUT_EXTENSIONS = CODE_EXTENSIONS | {
-    ".app", ".bin", ".com", ".dll", ".dylib", ".exe", ".jar", ".o", ".so",
-    ".sh", ".bash", ".zsh", ".bat", ".cmd", ".ps1", ".pl", ".rb", ".go", ".rs", ".swift", ".kt", ".m", ".mm",
-}
 MAX_CODE_FILES = 20
 MAX_CODE_TOTAL_BYTES = 100 * 1024 * 1024
 MAX_CODE_FILE_BYTES = 20 * 1024 * 1024
-MAX_CODE_INPUT_FILES = 5
-MAX_CODE_INPUT_TOTAL_BYTES = 100 * 1024 * 1024
-MAX_CODE_INPUT_FILE_BYTES = 50 * 1024 * 1024
 _CHUNK_SIZE = 1024 * 1024
 
 
@@ -131,48 +120,6 @@ def validate_code_filenames(filenames: list[str]) -> list[str]:
         key = unicodedata.normalize("NFKC", safe).casefold()
         if key in seen:
             raise HTTPException(status_code=422, detail="代码文件名不能重复")
-        seen.add(key)
-        normalized.append(safe)
-    return normalized
-
-
-def _safe_code_input_filename(filename: str | None) -> str:
-    """Validate a question-declared runtime dataset filename.
-
-    The input is a question-declared ordinary file. It is copied into
-    the same read-only execution directory as the entry point and never
-    treated as executable source or an arbitrary path.
-    """
-    raw = filename or ""
-    if not raw:
-        raise HTTPException(status_code=422, detail="数据文件必须是无目录的文件名")
-    # NFKC first: homoglyphs like U+2215 (∕) normalize to "/" and must be
-    # rejected as separators rather than smuggled into a nested path.
-    normalized = unicodedata.normalize("NFKC", raw)
-    if Path(normalized).name != normalized or "/" in normalized or "\\" in normalized:
-        raise HTTPException(status_code=422, detail="数据文件必须是无目录的文件名")
-    suffix = Path(normalized).suffix.lower()
-    if suffix in FORBIDDEN_INPUT_EXTENSIONS:
-        raise HTTPException(status_code=422, detail="运行输入不能是源码或可执行文件")
-    if not normalized.strip() or normalized.startswith("."):
-        raise HTTPException(status_code=422, detail="数据文件名无效")
-    return normalized
-
-
-def validate_code_input_filenames(filenames: list[str]) -> list[str]:
-    if not filenames:
-        raise HTTPException(status_code=422, detail="数据文件列表不能为空")
-    if len(filenames) > MAX_CODE_INPUT_FILES:
-        raise HTTPException(
-            status_code=413, detail=f"数据文件最多 {MAX_CODE_INPUT_FILES} 个"
-        )
-    normalized: list[str] = []
-    seen: set[str] = set()
-    for filename in filenames:
-        safe = _safe_code_input_filename(filename)
-        key = safe.casefold()
-        if key in seen:
-            raise HTTPException(status_code=422, detail="数据文件名不能重复")
         seen.add(key)
         normalized.append(safe)
     return normalized
@@ -310,53 +257,6 @@ async def save_code_files(
                     "path": str(destination),
                     "source_text": source_text,
                     "source_sha256": hashlib.sha256(data).hexdigest(),
-                }
-            )
-        return result
-    except Exception:
-        shutil.rmtree(storage_dir, ignore_errors=True)
-        raise
-    finally:
-        for upload_file in upload_files:
-            await upload_file.close()
-
-
-async def save_code_input_files(
-    upload_files: list[UploadFile], upload_dir: Path
-) -> list[dict]:
-    """Persist question-declared ordinary inputs for the restricted code runner."""
-    filenames = validate_code_input_filenames([item.filename or "" for item in upload_files])
-    storage_dir = upload_dir / "code-inputs" / uuid.uuid4().hex
-    storage_dir.mkdir(parents=True, exist_ok=True)
-    written = 0
-    result: list[dict] = []
-    try:
-        for upload_file, filename in zip(upload_files, filenames, strict=True):
-            destination = storage_dir / filename
-            chunks: list[bytes] = []
-            size = 0
-            async for chunk in _read_upload_chunks(upload_file):
-                size += len(chunk)
-                written += len(chunk)
-                if (
-                    size > MAX_CODE_INPUT_FILE_BYTES
-                    or written > MAX_CODE_INPUT_TOTAL_BYTES
-                ):
-                    raise HTTPException(status_code=413, detail="数据文件超过大小限制")
-                chunks.append(chunk)
-            data = b"".join(chunks)
-            if not data:
-                raise HTTPException(status_code=422, detail="数据文件不能为空")
-            if data.startswith(b"#!") or data[:4] in {b"\x7fELF", b"\xca\xfe\xba\xbe", b"\xfe\xed\xfa\xce", b"\xce\xfa\xed\xfe"}:
-                raise HTTPException(status_code=422, detail=f"{filename} 不能是可执行文件")
-            destination.write_bytes(data)
-            destination.chmod(0o400)
-            result.append(
-                {
-                    "filename": filename,
-                    "path": str(destination),
-                    "size": len(data),
-                    "sha256": hashlib.sha256(data).hexdigest(),
                 }
             )
         return result

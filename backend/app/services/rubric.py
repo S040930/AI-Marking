@@ -1,6 +1,6 @@
 """服务端 rubric 的唯一事实来源。
 
-Agent、网页复核和 Codex MCP 都必须从本模块取得同一份不可变 rubric。
+Agent、网页复核和外部编程助手 MCP 都必须从本模块取得同一份不可变 rubric。
 调用方只能引用服务端生成的 snapshot，不能上传自由文本来改变评分项。
 """
 
@@ -232,32 +232,3 @@ def validate_assessment_details(details: list[Any], resolved: ResolvedRubric) ->
         seen.add(item_id)
     if seen != set(expected):
         raise ValueError("评分项未完整覆盖当前 rubric")
-
-
-# Compatibility names retained for internal callers while they migrate to the resolver.
-@dataclass(frozen=True)
-class RubricResolution:
-    text: str
-    source: str
-    configured: str | None
-    snapshot_id: str = ""
-    definition: RubricDefinition | None = None
-
-
-def effective_rubric(config: dict, cached_rubric: str | None = None) -> RubricResolution:
-    """Legacy adapter; new code must call :func:`resolve_rubric`."""
-    raw = config.get("rubric_definition")
-    if raw:
-        try:
-            definition = _canonical_definition(raw)
-            return RubricResolution(canonical_text(definition), "configured", canonical_text(definition), definition=definition)
-        except (TypeError, ValueError, json.JSONDecodeError):
-            pass
-    return RubricResolution(DEFAULT_RUBRIC, "built_in_default", None, definition=DEFAULT_DEFINITION)
-
-
-def validate_declared_rubric(resolution: RubricResolution, declared_source: str, declared_rubric: str) -> None:
-    if declared_source != resolution.source:
-        raise ValueError("申报的 rubric 来源与服务端解析结果不一致")
-    if declared_rubric != resolution.text:
-        raise ValueError("申报的 rubric 内容不匹配")

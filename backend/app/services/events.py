@@ -6,7 +6,7 @@
 - ``submission_event_stream`` / ``question_event_stream`` 是 async generator,
   供 ``StreamingResponse`` 直接消费;每条 ``yield`` 输出符合 SSE 规范的事件块。
 - LISTEN 使用独立 psycopg2 连接(非 SQLAlchemy 池),AUTOCOMMIT 隔离级别,
-  避免 LISTEN 长连接占用业务连接池的 ``pool_size=10`` 配额。
+  避免 LISTEN 长连接占用业务连接池的 ``pool_size=5`` 配额。
 - 启动时先推一次当前状态,避免客户端在两次状态切换之间打开 SSE 错过事件。
 - 每 15s 注释行 keepalive,避免 nginx/uvicorn 误判空闲断连。
 """
@@ -20,6 +20,7 @@ import time
 from collections.abc import AsyncIterator
 
 import psycopg2
+from fastapi import HTTPException
 from psycopg2 import extensions as pg_ext
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -37,6 +38,30 @@ _KEEPALIVE_INTERVAL_SECONDS = 15.0
 # LISTEN 轮询间隔。PostgreSQL NOTIFY 不会主动唤醒阻塞的 psycopg2 连接,
 # 需要 poll() 拉取;500ms 在批改场景延迟可接受,且单连接 CPU 占用极低。
 _POLL_INTERVAL_SECONDS = 0.5
+
+# 每个 LISTEN 连接占用一条独立 psycopg2 连接,防止本地资源被大量
+# SSE 客户端耗尽;达到上限时路由直接返回 503,不排队等待。
+# 上限可用环境变量 MAX_SSE_CLIENTS 调整(须远小于 PG max_connections)。
+_MAX_SSE_CLIENTS = settings.MAX_SSE_CLIENTS
+_sse_slots = asyncio.Semaphore(_MAX_SSE_CLIENTS)
+
+
+async def acquire_sse_slot() -> None:
+    """原子非阻塞获取一个 SSE 客户端槽位。
+
+    槽位满时立即抛出 503，由调用方路由转换为 HTTP 响应；槽位在
+    ``*_event_stream`` 的 ``finally`` 中释放。
+
+    不使用 ``asyncio.wait_for(acquire(), timeout=0)``：CPython 中该写法
+    在信号量可用时也可能立即抛 ``TimeoutError``。信号量未锁定且无等待者时
+    ``acquire()`` 同步完成、不挂起事件循环，因此「先查 locked 再 acquire」
+    之间不存在可被其他协程插入的挂起点，整段保持原子。
+    """
+    if _sse_slots.locked():
+        raise HTTPException(
+            status_code=503, detail="实时事件连接数已达上限，请稍后重试"
+        )
+    await _sse_slots.acquire()
 
 
 def _is_postgres(db: Session) -> bool:
@@ -189,6 +214,7 @@ async def submission_event_stream(submission_id: int) -> AsyncIterator[str]:
         ):
             yield chunk
     finally:
+        _sse_slots.release()
         conn.close()
 
 
@@ -214,4 +240,5 @@ async def question_event_stream(question_id: int) -> AsyncIterator[str]:
         ):
             yield chunk
     finally:
+        _sse_slots.release()
         conn.close()

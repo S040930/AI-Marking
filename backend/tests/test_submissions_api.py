@@ -1,4 +1,4 @@
-"""Submission 接口测试:上传校验、列表、详情。"""
+"""Submission 接口测试:上传校验、列表、详情、删除与最终确认。"""
 
 import logging
 from pathlib import Path
@@ -8,13 +8,12 @@ from sqlalchemy import select, text
 
 from app.core.time import utc_now_naive
 from app.models.background_job import BackgroundJob, BackgroundJobStatus
-from app.models.conversation import Conversation
 from app.models.question import (
     Question,
     QuestionReplacementStatus,
     QuestionStatus,
 )
-from app.models.submission import Submission, SubmissionGradingMode, SubmissionStatus
+from app.models.submission import Submission, SubmissionStatus
 
 
 def test_database_timestamp_is_naive_utc():
@@ -111,15 +110,10 @@ async def test_failed_submission_retries_in_same_record(
         score=10,
         max_score=20,
         feedback="旧反馈",
-        ai_result={"score": 10},
-        ai_suggestion={"score": 10},
+        assessment_suggestion={"score": 10},
         error_message="OCR 失败",
     )
     db_session.add(sub)
-    db_session.flush()
-    db_session.add(
-        Conversation(submission_id=sub.id, role="user", content="旧对话")
-    )
     db_session.commit()
 
     response = await client.post(f"/api/submissions/{sub.id}/retry")
@@ -128,15 +122,9 @@ async def test_failed_submission_retries_in_same_record(
     db_session.refresh(sub)
     assert sub.ocr_text is None
     assert sub.score is None
-    assert sub.ai_result is None
+    assert sub.assessment_suggestion is None
     assert sub.error_message is None
     assert path.exists()
-    conversations = (
-        db_session.execute(
-            select(Conversation).where(Conversation.submission_id == sub.id)
-        )
-    ).scalars().all()
-    assert conversations == []
     job = (
         db_session.execute(
             select(BackgroundJob).where(
@@ -240,13 +228,14 @@ async def test_get_submission_list_excludes_large_assessment_payload(
         "confidence": 0.9,
         "feedback": "整体良好",
         "details": [],
+        "mcp_metadata": {"client": "codex"},
     }
     sub = Submission(
         original_filename="suggestion.pdf",
         file_path="/tmp/suggestion.pdf",
         question=_ready_question(db_session),
         status=SubmissionStatus.ready_for_review,
-        ai_suggestion=suggestion,
+        assessment_suggestion=suggestion,
     )
     db_session.add(sub)
     db_session.commit()
@@ -257,13 +246,15 @@ async def test_get_submission_list_excludes_large_assessment_payload(
 
     assert response.status_code == 200
     item = response.json()["items"][0]
-    assert "ai_suggestion" not in item
+    assert "assessment_suggestion" not in item
+    assert "details" not in item
     assert item["has_code"] is False
 
 
 @pytest.mark.parametrize(
     "deletable_status",
     [
+        SubmissionStatus.awaiting_mcp,
         SubmissionStatus.ready_for_review,
         SubmissionStatus.reviewed,
         SubmissionStatus.failed,
@@ -272,7 +263,7 @@ async def test_get_submission_list_excludes_large_assessment_payload(
 async def test_batch_delete_accepts_terminal_statuses(
     client, db_session, deletable_status
 ):
-    """三个终态均允许删除。"""
+    """四个可删除终态均允许删除。"""
     sub = Submission(
         original_filename="terminal.pdf",
         file_path="/tmp/nonexistent-terminal.pdf",
@@ -298,9 +289,6 @@ async def test_batch_delete_accepts_terminal_statuses(
         SubmissionStatus.pending,
         SubmissionStatus.ocr_processing,
         SubmissionStatus.ocr_done,
-        SubmissionStatus.agent_grading,
-        SubmissionStatus.agent_reviewing,
-        SubmissionStatus.agent_revising,
     ],
 )
 async def test_batch_delete_rejects_processing_status(
@@ -328,10 +316,10 @@ async def test_batch_delete_rejects_processing_status(
     assert db_session.get(Submission, sub.id) is not None
 
 
-async def test_batch_delete_removes_database_conversations_and_pdfs(
+async def test_batch_delete_removes_database_record_and_pdf(
     client, db_session, tmp_path
 ):
-    """删除成功后清理主记录、关联对话和学生 PDF，共享题目保留。"""
+    """删除成功后清理主记录和学生 PDF，共享题目保留。"""
     db_session.execute(text("PRAGMA foreign_keys=ON"))
     submission_pdf = tmp_path / "submission.pdf"
     question_pdf = tmp_path / "question.pdf"
@@ -353,13 +341,6 @@ async def test_batch_delete_removes_database_conversations_and_pdfs(
         status=SubmissionStatus.reviewed,
     )
     db_session.add(sub)
-    db_session.flush()
-    conversation = Conversation(
-        submission_id=sub.id,
-        role="user",
-        content="请复核",
-    )
-    db_session.add(conversation)
     db_session.commit()
     sub_id = sub.id
 
@@ -369,12 +350,6 @@ async def test_batch_delete_removes_database_conversations_and_pdfs(
 
     assert response.status_code == 200
     assert db_session.get(Submission, sub_id) is None
-    conversations = (
-        db_session.execute(
-            select(Conversation).where(Conversation.submission_id == sub_id)
-        )
-    ).scalars().all()
-    assert conversations == []
     assert not submission_pdf.exists()
     assert question_pdf.exists()
 
@@ -395,7 +370,7 @@ async def test_batch_delete_is_atomic_when_request_contains_processing_record(
         original_filename="processing.pdf",
         file_path=str(tmp_path / "processing.pdf"),
         question=_ready_question(db_session, "处理中题目"),
-        status=SubmissionStatus.agent_grading,
+        status=SubmissionStatus.ocr_processing,
     )
     db_session.add_all([terminal, processing])
     db_session.commit()
@@ -543,7 +518,13 @@ async def test_teacher_can_finalize_submission(client, db_session):
         max_score=100,
         feedback="AI 反馈",
         details=[],
-        ai_result={"score": 70, "max_score": 100},
+        assessment_suggestion={
+            "score": 70,
+            "max_score": 100,
+            "feedback": "AI 建议",
+            "details": [],
+            "confidence": 0.9,
+        },
     )
     db_session.add(sub)
     db_session.commit()
@@ -573,174 +554,6 @@ async def test_teacher_can_finalize_submission(client, db_session):
     assert data["status"] == "reviewed"
     assert data["score"] == 85
     assert data["reviewed_by"] == "Dr Chen"
-    assert data["ai_result"]["score"] == 70
-
-
-async def test_chat_finalize_intent_waits_for_teacher_confirmation(
-    client, db_session, monkeypatch
-):
-    sub = Submission(
-        original_filename="chat-review.pdf",
-        file_path="/tmp/chat-review.pdf",
-        question=_ready_question(db_session),
-        status=SubmissionStatus.ready_for_review,
-        ocr_text="学生答案",
-        ai_suggestion={
-            "score": 70,
-            "max_score": 100,
-            "feedback": "初始反馈",
-            "details": [],
-            "confidence": 0.8,
-        },
-    )
-    db_session.add(sub)
-    db_session.commit()
-
-    async def fake_chat(**kwargs):
-        return {
-            "reply": "请确认最终评分。",
-            "intent": "finalize",
-            "reviewer_name": "Dr Chen",
-            "suggestion": {
-                "score": 85,
-                "max_score": 100,
-                "confidence": 0.9,
-                "feedback": "最终反馈",
-                "details": [
-                    {
-                        "criterion": "内容",
-                        "score": 85,
-                        "max_score": 100,
-                        "comment": "内容完整",
-                        "evidence": [],
-                    }
-                ],
-            },
-        }
-
-    monkeypatch.setattr(
-        "app.api.submissions.chat_with_teacher", fake_chat
-    )
-    response = await client.post(
-        f"/api/submissions/{sub.id}/chat",
-        json={"message": "确认这个评分", "reviewer_name": "Dr Chen"},
-    )
-    assert response.status_code == 200
-    assert response.json()["action"] == "finalize"
-    assert response.json()["finalize_payload"]["score"] == 85
-    db_session.refresh(sub)
-    assert sub.status == SubmissionStatus.ready_for_review
-    assert sub.score is None
-
-    confirmed = await client.post(
-        f"/api/submissions/{sub.id}/finalize",
-        json=response.json()["finalize_payload"],
-    )
-    assert confirmed.status_code == 200
-    assert confirmed.json()["status"] == "reviewed"
-
-
-async def test_chat_finalize_rejects_invalid_suggestion_without_persisting(
-    client, db_session, monkeypatch
-):
-    """finalize 意图必须有完整待确认 payload；无效快照不得写入半截对话。"""
-    sub = Submission(
-        original_filename="chat-invalid.pdf",
-        file_path="/tmp/chat-invalid.pdf",
-        question=_ready_question(db_session),
-        status=SubmissionStatus.ready_for_review,
-        ocr_text="学生答案",
-        ai_suggestion={
-            "score": 70,
-            "max_score": 100,
-            "feedback": "初始反馈",
-            "details": [],
-            "confidence": 0.8,
-        },
-    )
-    db_session.add(sub)
-    db_session.commit()
-
-    async def fake_chat(**kwargs):
-        return {
-            "reply": "请确认最终评分。",
-            "intent": "finalize",
-            "reviewer_name": "Dr Chen",
-            "suggestion": {"score": 85},
-        }
-
-    monkeypatch.setattr(
-        "app.api.submissions.chat_with_teacher", fake_chat
-    )
-    response = await client.post(
-        f"/api/submissions/{sub.id}/chat",
-        json={"message": "确认这个评分", "reviewer_name": "Dr Chen"},
-    )
-
-    assert response.status_code == 422
-    assert "最终评分格式非法" in response.json()["detail"]
-    messages = (
-        db_session.execute(
-            select(Conversation).where(Conversation.submission_id == sub.id)
-        )
-    ).scalars().all()
-    assert messages == []
-
-
-async def test_chat_finalize_intent_downgraded_when_already_reviewed(
-    client, db_session, monkeypatch
-):
-    """B5: 已 reviewed 状态下 AI 返回 finalize 意图时降级为 reply,
-    且持久化的 assistant 消息不应再携带建议快照。"""
-    sub = Submission(
-        original_filename="chat-reviewed.pdf",
-        file_path="/tmp/chat-reviewed.pdf",
-        question=_ready_question(db_session),
-        status=SubmissionStatus.reviewed,
-        ocr_text="学生答案",
-        score=80,
-        max_score=100,
-        reviewed_by="Dr Chen",
-    )
-    db_session.add(sub)
-    db_session.commit()
-
-    suggestion_raw = {
-        "score": 85,
-        "max_score": 100,
-        "confidence": 0.9,
-        "feedback": "最终反馈",
-        "details": [
-            {"criterion": "内容", "score": 85, "max_score": 100, "comment": "..."}
-        ],
-    }
-
-    async def fake_chat(**kwargs):
-        return {
-            "reply": "已审阅完毕,无需再次确认。",
-            "intent": "finalize",
-            "reviewer_name": "Dr Chen",
-            "suggestion": suggestion_raw,
-        }
-
-    monkeypatch.setattr("app.api.submissions.chat_with_teacher", fake_chat)
-    response = await client.post(
-        f"/api/submissions/{sub.id}/chat",
-        json={"message": "确认这个评分", "reviewer_name": "Dr Chen"},
-    )
-    assert response.status_code == 200
-    body = response.json()
-    assert body["action"] == "reply"
-    assert body["finalize_payload"] is None
-
-    msgs = (
-        db_session.execute(
-            select(Conversation).where(Conversation.submission_id == sub.id)
-        )
-    ).scalars().all()
-    assistant_msgs = [m for m in msgs if m.role == "assistant"]
-    assert len(assistant_msgs) == 1
-    assert assistant_msgs[0].suggestion is None
 
 
 async def test_finalize_rejects_already_reviewed(client, db_session):
@@ -774,6 +587,40 @@ async def test_finalize_rejects_already_reviewed(client, db_session):
         },
     )
     assert response.status_code == 409
+
+
+async def test_finalize_rejects_inconsistent_totals(client, db_session):
+    """最终评分明细得分之和必须等于总分,否则 422。"""
+    sub = Submission(
+        original_filename="inconsistent.pdf",
+        file_path="/tmp/inconsistent.pdf",
+        question=_ready_question(db_session),
+        status=SubmissionStatus.ready_for_review,
+    )
+    db_session.add(sub)
+    db_session.commit()
+
+    response = await client.post(
+        f"/api/submissions/{sub.id}/finalize",
+        json={
+            "reviewer_name": "Dr Chen",
+            "score": 90,
+            "max_score": 100,
+            "feedback": "反馈",
+            "details": [
+                {
+                    "criterion": "内容",
+                    "score": 85,
+                    "max_score": 100,
+                    "comment": "内容完整",
+                    "evidence": [],
+                }
+            ],
+        },
+    )
+    assert response.status_code == 422
+    db_session.refresh(sub)
+    assert sub.status == SubmissionStatus.ready_for_review
 
 
 async def test_submission_requires_question_id(tmp_path):
@@ -822,115 +669,3 @@ async def test_upload_rejects_question_not_ready(
         data={"question_id": str(question.id)},
     )
     assert response.status_code == 409
-
-
-def _ready_for_review_submission(
-    db_session, tmp_path, *, name: str = "review.pdf"
-) -> Submission:
-    """构造一个待审阅、尚未复核的 backend_agent 提交。"""
-    path = tmp_path / name
-    path.write_bytes(b"%PDF-1.4")
-    sub = Submission(
-        original_filename=name,
-        file_path=str(path),
-        question=_ready_question(db_session),
-        status=SubmissionStatus.ready_for_review,
-        grading_mode=SubmissionGradingMode.backend_agent,
-        ocr_text="学生作业 OCR",
-        ai_result={"score": 80, "max_score": 100, "feedback": "总评", "details": []},
-        ai_suggestion={
-            "score": 80,
-            "max_score": 100,
-            "confidence": 0.0,
-            "feedback": "总评",
-            "details": [],
-            "outcome": "done",
-        },
-        agent_trace=[{"node": "grade", "status": "completed", "summary": "评分完成"}],
-        confidence=0.0,
-    )
-    db_session.add(sub)
-    db_session.commit()
-    db_session.refresh(sub)
-    return sub
-
-
-async def test_review_endpoint_runs_critic_and_updates_suggestion(
-    client, db_session, tmp_path, monkeypatch
-):
-    """按需复核端点运行 critic 并回写 ai_suggestion/confidence/agent_trace。"""
-    sub = _ready_for_review_submission(db_session, tmp_path)
-
-    async def fake_critic(config, **kwargs):
-        return {
-            "decision": "approve",
-            "confidence": 0.88,
-            "issues": [],
-            "summary": "复核通过",
-            "revision_instructions": "",
-        }
-
-    monkeypatch.setattr("app.api.submissions.run_critic_pass", fake_critic)
-    response = await client.post(f"/api/submissions/{sub.id}/review")
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["status"] == "ready_for_review"
-    assert body["confidence"] == 0.88
-    assert body["ai_suggestion"]["critic_summary"] == "复核通过"
-    assert isinstance(body["ai_suggestion"]["critic_issues"], list)
-    assert any(ev["node"] == "critic" for ev in body["agent_trace"])
-
-
-async def test_review_endpoint_rejects_already_reviewed(
-    client, db_session, tmp_path, monkeypatch
-):
-    """agent_trace 已含 critic 节点时拒绝重复复核。"""
-    sub = _ready_for_review_submission(db_session, tmp_path)
-    sub.agent_trace = [
-        {"node": "grade", "status": "completed", "summary": "评分"},
-        {"node": "critic", "status": "completed", "summary": "复核"},
-    ]
-    db_session.commit()
-
-    async def fake_critic(config, **kwargs):
-        return {"decision": "approve", "confidence": 0.9, "issues": [], "summary": "x"}
-
-    monkeypatch.setattr("app.api.submissions.run_critic_pass", fake_critic)
-    response = await client.post(f"/api/submissions/{sub.id}/review")
-    assert response.status_code == 409
-    assert "已完成复核" in response.json()["detail"]
-
-
-async def test_review_endpoint_rejects_codex_mode(
-    client, db_session, tmp_path, monkeypatch
-):
-    """Codex 模式不通过网页按需复核。"""
-    sub = _ready_for_review_submission(db_session, tmp_path)
-    sub.grading_mode = SubmissionGradingMode.codex
-    db_session.commit()
-
-    async def fake_critic(config, **kwargs):
-        return {"decision": "approve", "confidence": 0.9, "issues": [], "summary": "x"}
-
-    monkeypatch.setattr("app.api.submissions.run_critic_pass", fake_critic)
-    response = await client.post(f"/api/submissions/{sub.id}/review")
-    assert response.status_code == 409
-    assert "Codex" in response.json()["detail"]
-
-
-async def test_review_endpoint_propagates_llm_failure(
-    client, db_session, tmp_path, monkeypatch
-):
-    """复核 LLM 异常时返回 502。"""
-    sub = _ready_for_review_submission(db_session, tmp_path)
-
-    async def fail_critic(config, **kwargs):
-        from app.services.agent import AgentError
-
-        raise AgentError("LLM API 调用失败")
-
-    monkeypatch.setattr("app.api.submissions.run_critic_pass", fail_critic)
-    response = await client.post(f"/api/submissions/{sub.id}/review")
-    assert response.status_code == 502
-    assert "AI 复核失败" in response.json()["detail"]

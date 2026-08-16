@@ -14,7 +14,6 @@ class Base(DeclarativeBase):
 from app.models import (  # noqa: E402, F401
     background_job,
     config_profile,
-    conversation,
     mcp_assessment_receipt,
     question,
     submission,

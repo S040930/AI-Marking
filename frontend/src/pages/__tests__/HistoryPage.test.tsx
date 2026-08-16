@@ -23,9 +23,7 @@ describe('StatusBadge', () => {
     'pending',
     'ocr_processing',
     'ocr_done',
-    'agent_grading',
-    'agent_reviewing',
-    'agent_revising',
+    'awaiting_mcp',
   ];
 
   processingStatuses.forEach((status) => {
@@ -64,9 +62,7 @@ describe('STATUS_TEXT 完整性', () => {
     'pending',
     'ocr_processing',
     'ocr_done',
-    'agent_grading',
-    'agent_reviewing',
-    'agent_revising',
+    'awaiting_mcp',
     'ready_for_review',
     'reviewed',
     'failed',
@@ -82,6 +78,7 @@ describe('STATUS_TEXT 完整性', () => {
 
 describe('isDeletableStatus', () => {
   const deletable: SubmissionStatus[] = [
+    'awaiting_mcp',
     'ready_for_review',
     'reviewed',
     'failed',
@@ -90,9 +87,6 @@ describe('isDeletableStatus', () => {
     'pending',
     'ocr_processing',
     'ocr_done',
-    'agent_grading',
-    'agent_reviewing',
-    'agent_revising',
   ];
 
   deletable.forEach((status) => {

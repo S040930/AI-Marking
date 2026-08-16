@@ -306,7 +306,7 @@ export default function QuestionsPage() {
                   </div>
                   <div className="flex flex-wrap gap-2 border-t pt-3">
                     <Button variant="outline" size="sm" asChild>
-                      <a href={`/api/questions/${question.id}/pdf`} target="_blank">
+                      <a href={`/api/questions/${question.id}/pdf`} target="_blank" rel="noopener noreferrer">
                         <Eye />查看
                       </a>
                     </Button>

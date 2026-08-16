@@ -107,7 +107,7 @@ def _serialize(question: Question, submission_count: int, *, detail: bool = Fals
 @router.post("/questions", response_model=QuestionOut, status_code=201)
 async def create_question(
     file: UploadFile = File(...),
-    name: str | None = Form(default=None),
+    name: str | None = Form(default=None, max_length=255),
     config_profile_id: int | None = Form(default=None),
     db: Session = Depends(get_db),
 ):
@@ -334,7 +334,7 @@ def _unlink_after_commit(paths: list[str]) -> None:
 async def replace_question(
     question_id: int,
     file: UploadFile = File(...),
-    confirmation_name: str = Form(...),
+    confirmation_name: str = Form(..., max_length=255),
     acknowledge_deletion: bool = Form(False),
     db: Session = Depends(get_db),
 ):

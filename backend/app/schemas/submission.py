@@ -4,7 +4,6 @@
 """
 
 from datetime import datetime
-from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -21,7 +20,7 @@ class SubmissionOut(BaseModel):
     original_filename: str
     question_original_filename: str | None = None
     status: SubmissionStatus
-    grading_mode: SubmissionGradingMode = SubmissionGradingMode.backend_agent
+    grading_mode: SubmissionGradingMode = SubmissionGradingMode.external_agent
     grading_revision: int = 0
     graded_at: datetime | None = None
     score: float | None = None
@@ -63,16 +62,11 @@ class SubmissionDetail(SubmissionOut):
     ocr_text: str | None = None
     question_ocr_text: str | None = None
     feedback: str | None = None
-    ai_suggestion: dict | None = None
+    assessment_suggestion: dict | None = None
     details: list[dict] | None = None
-    ai_result: dict | None = None
-    agent_trace: list[dict] | None = None
-    review_reason: str | None = None
     reviewed_by: str | None = None
     reviewed_at: datetime | None = None
     error_message: str | None = None
-    code_runtime: dict | None = None
-    code_visual_assets: list[dict] | None = None
     code_files: list[SubmissionCodeFileOut] = Field(default_factory=list)
     code_input_files: list[SubmissionCodeInputFileOut] = Field(default_factory=list)
 
@@ -99,50 +93,6 @@ class FinalizeRequest(BaseModel):
         return self
 
 
-class ConversationOut(BaseModel):
-    """教师-AI 对话消息。"""
-
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    submission_id: int
-    role: str
-    content: str
-    suggestion: dict | None = None
-    created_at: datetime
-
-
-class ChatRequest(BaseModel):
-    """教师发送的聊天消息。"""
-
-    message: str = Field(min_length=1, max_length=2000)
-    reviewer_name: str | None = Field(
-        default=None,
-        max_length=100,
-        description="教师姓名,仅在 AI 判断需要 finalize 时使用",
-    )
-
-
-class SuggestionSnapshot(BaseModel):
-    """聊天过程中 AI 返回的评分快照。"""
-
-    score: float = Field(ge=0)
-    max_score: float = Field(gt=0)
-    confidence: float = Field(ge=0, le=1, default=0)
-    feedback: str = Field(default="")
-    details: list[ScoreDetail] = Field(default_factory=list)
-
-
-class ChatResponse(BaseModel):
-    """Chat 接口返回:AI 回复、消息 ID、评分快照与 finalize 信息。"""
-
-    reply: str
-    message_id: int
-    action: Literal["reply", "finalize"] = "reply"
-    suggestion: SuggestionSnapshot | None = None
-    finalize_payload: FinalizeRequest | None = None
-
-
 class SubmissionCreateResponse(BaseModel):
     """上传成功后返回最小信息。"""
 
@@ -153,18 +103,18 @@ class SubmissionCreateResponse(BaseModel):
 
 
 class SubmissionStatusOut(BaseModel):
-    """轻量状态:前端轮询用,不包含 ``ocr_text``/``ai_result`` 等大字段。
+    """轻量状态:前端轮询用,不包含 ``ocr_text``/``assessment_suggestion`` 等大字段。
 
     字段集合刻意比 ``SubmissionOut`` 更小,只保留前端在"处理中"阶段需要
     显示的状态/分数/错误信息 + 文件名/上传时间(用于 processing UI),
-    大字段(``ocr_text``/``ai_result``/``details`` 等)在终态后再单独请求。
+    大字段(``ocr_text``/``details`` 等)在终态后再单独请求。
     """
 
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     status: SubmissionStatus
-    grading_mode: SubmissionGradingMode = SubmissionGradingMode.backend_agent
+    grading_mode: SubmissionGradingMode = SubmissionGradingMode.external_agent
     grading_revision: int = 0
     original_filename: str
     score: float | None = None

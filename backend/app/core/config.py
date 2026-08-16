@@ -15,12 +15,14 @@ _BACKEND_DIR = Path(__file__).resolve().parents[2]
 
 AI_MARKING_SERVICE = "ai-marking"
 BACKEND_API_VERSION = "1"
-MCP_API_VERSION = "8"
+MCP_API_VERSION = "10"
 
 
 class Settings(BaseSettings):
     """应用配置类(仅保留应用级配置)。"""
 
+    # ⚠️ 默认值是本地开发口令，仅在本机 PostgreSQL 上使用；
+    # 生产/共享环境必须在 .env 中改为强口令。
     DATABASE_URL: str = (
         "postgresql+psycopg2://postgres:postgres@localhost:5432/ai_marking"
     )
@@ -41,10 +43,20 @@ class Settings(BaseSettings):
     TASK_MAX_ATTEMPTS: int = 3
     TASK_POLL_INTERVAL_SECONDS: float = 1.0
 
-    # Deprecated compatibility setting; loopback MCP no longer authenticates
-    # requests with a shared token.
-    MCP_INTERNAL_TOKEN: str = ""
+    # 外部编程助手 MCP 评分上下文总长度上限。
     MCP_MAX_GRADING_CONTEXT_CHARS: int = 200_000
+
+    # 全站访问令牌。为空表示鉴权关闭，保持向后兼容；设置后所有 /api 路由
+    # （除 /api/health、/api/mcp/health、/api/auth/login、/api/auth/logout 外）
+    # 必须携带令牌。来源：浏览器会话 Cookie（登录页提交一次后自动携带）、
+    # Authorization: Bearer / X-Access-Token（MCP/CLI/脚本）。可用
+    # ``python -c "import secrets; print(secrets.token_urlsafe(32))"`` 生成。
+    ACCESS_TOKEN: str = ""
+
+    # SSE 实时事件连接上限。每条连接占用一条独立 PG LISTEN 连接，
+    # 须远小于 PG max_connections 减去业务连接池与安全余量；
+    # 单机本地工具实际峰值仅个位数连接。达到上限时新连接直接 503。
+    MAX_SSE_CLIENTS: int = 16
 
     model_config = SettingsConfigDict(
         env_file=_BACKEND_DIR / ".env",

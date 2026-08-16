@@ -25,7 +25,6 @@ from app.models.question import (
     QuestionStatus,
 )
 from app.models.submission import Submission, SubmissionStatus
-from app.services.agent import close_llm_clients
 from app.services.cleanup import periodic_cleanup_loop
 from app.services.errors import BusinessError
 from app.services.marking import run_marking_pipeline
@@ -117,11 +116,22 @@ async def _mark_target_failed(job: ClaimedJob, error: str) -> None:
                 target.replacement_file_path = None
                 target.replacement_original_filename = None
                 target.replacement_error_message = error[:1024]
-        elif job.job_type == BackgroundJobType.submission_marking and job.submission_id:
+        elif job.job_type == BackgroundJobType.submission_ocr and job.submission_id:
             target = db.get(Submission, job.submission_id)
             if target:
-                target.status = SubmissionStatus.failed
-                target.error_message = error[:1024]
+                # 守卫:提交已进入教师侧终态(ready_for_review / reviewed)时
+                # 不覆盖为 failed,避免重跑/死信路径抹掉已确认成绩。
+                if target.status in (
+                    SubmissionStatus.ready_for_review,
+                    SubmissionStatus.reviewed,
+                ):
+                    logger.warning(
+                        "跳过 failed 标记 [submission=%s]: 已处于教师侧终态",
+                        job.submission_id,
+                    )
+                else:
+                    target.status = SubmissionStatus.failed
+                    target.error_message = error[:1024]
         db.commit()
     if staged_path:
         try:
@@ -141,7 +151,7 @@ async def _execute(job: ClaimedJob) -> None:
         await run_question_replace(job.question_id)
         return
     if (
-        job.job_type == BackgroundJobType.submission_marking
+        job.job_type == BackgroundJobType.submission_ocr
         and job.submission_id is not None
     ):
         await run_marking_pipeline(job.submission_id)
@@ -254,7 +264,6 @@ async def run_worker() -> None:
         if count:
             logger.info("已重新排队 %s 个未完成任务", count)
         await close_ocr_client()
-        await close_llm_clients()
         engine.dispose()
 
 

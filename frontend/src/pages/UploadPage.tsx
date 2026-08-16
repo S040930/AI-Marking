@@ -77,8 +77,8 @@ export default function UploadPage() {
       { file, questionId: selectedQuestionId },
       {
         onSuccess: (data) => {
-          toast.success('上传成功，正在批改');
-          navigate(`/result/${data.id}`);
+          toast.success('上传成功，等待 MCP 客户端评分');
+          navigate(`/review/${data.id}`);
         },
         onError: (err) => {
           let message = err.message || '上传失败';
@@ -99,7 +99,7 @@ export default function UploadPage() {
           上传作业
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          从题目库选择评分依据，再上传一份 PDF 学生作业。
+          上传学生 PDF 后，编程助手将通过本地 MCP 接口完成评分，最终成绩由你在网页确认。
         </p>
       </div>
 

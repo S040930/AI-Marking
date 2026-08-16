@@ -1,15 +1,14 @@
 # AI 作业批改系统 (SURF-2026-0031)
 
-基于 AI Agent 的作业批改辅助系统,集成 PaddleOCR-VL 文档解析与大语言模型(LLM)实现自动化作业批改与反馈生成。
+基于 OCR 与编程助手 MCP 的作业批改辅助系统。系统集成 PaddleOCR-VL 文档解析；
+评分由本机编程助手（Codex 等）通过 MCP 完成并保存可审计建议，教师最终在网页确认。
 
 ## 主要功能
 
 - **PDF 上传**：题目与学生作业均通过 PDF 上传并直接进入 OCR 链路。
 - **独立题目库**：题目只需上传并 OCR 一次，后续可直接复用于多份学生作业。
-- **智能批改**：结合题目、学生作业与服务端结构化 rubric 生成可审计评分建议。
-- **AI 独立复核**：Critic 检查评分一致性，并给出置信度与风险提示。
-- **教师协同审核**：教师可查看原文证据、调整单项分数、与 AI 对话并确认最终评分。
-- **Codex MCP 评分**：在本机 Codex 拖入学生 PDF 后自动选题、上传、等待 OCR、读取完整上下文并保存评分建议；最终成绩仍由教师在网页确认。
+- **编程助手 MCP 评分**：在本机编程助手（Codex、Claude Code、Opencode 等）拖入学生 PDF 后自动选题、上传、等待 OCR、读取完整上下文并保存评分建议；最终成绩仍由教师在网页确认。
+- **人工复核与确认**：教师可查看原文证据、表单式调整单项分数与反馈并确认最终评分。
 - **历史记录管理**：按处理状态查看、选择和安全删除批改记录。
 - **题目安全管理**：支持搜索、预览、重命名、OCR 重试、上传新版及级联删除。
 
@@ -21,8 +20,7 @@
 | 后端 | Python + FastAPI + SQLAlchemy 2.0 + Alembic |
 | 数据库 | PostgreSQL |
 | OCR | PaddleOCR-VL(文档解析,输出结构化 Markdown) |
-| LLM | OpenAI 兼容协议(支持豆包/通义/DeepSeek/OpenAI/Kimi 等,默认豆包) |
-| Agent | LangGraph(受约束评分、独立复核、限次修正与人工审核) |
+| 评分 | 本机编程助手 MCP（Codex / Claude Code / Opencode，评分在客户端完成） |
 
 ## 环境要求
 
@@ -127,6 +125,9 @@ cd backend
 # 安装精确锁定的依赖(含开发工具)
 pip install --require-hashes -r requirements-dev.txt
 
+# 校验 MCP 运行时与后端契约一致(必须为 2.0.0)
+python -c 'import importlib.metadata; assert importlib.metadata.version("mcp") == "2.0.0"'
+
 # 配置环境变量
 cp .env.example .env
 # 编辑 .env 填写数据库连接等
@@ -138,7 +139,8 @@ alembic upgrade head
 uvicorn app.main:app --reload
 ```
 
-默认监听 `http://localhost:8000`,Swagger 文档位于 `http://localhost:8000/docs`。
+默认监听 `http://localhost:8000`。出于安全考虑已禁用 Swagger 文档
+(`/docs`、`/openapi.json` 关闭,避免绕过访问令牌暴露 API 全貌)。
 
 ### 3. 前端
 
@@ -179,46 +181,47 @@ curl http://localhost:8000/api/config
 ## 代码执行
 
 后端不编译、执行或上传学生代码产物，也不承担学生代码的 CPU、内存、进程或磁盘资源。
-Codex 在当前教师任务中把同题源码复制到独立临时目录后尝试运行，不修改原文件、不申请提权、
-不开放网络。运行失败、超时或本机缺少语言环境时由 Codex 在对话中明确披露，但不阻止静态评分；
+编程助手在当前教师任务中把同题源码复制到独立临时目录后尝试运行，不修改原文件、不申请提权、
+不开放网络。运行失败、超时或本机缺少语言环境时由编程助手在对话中明确披露，但不阻止静态评分；
 运行输出只存在于当前对话，不作为服务端证据。后端仅持久化源码、SHA-256、评分建议和人工确认。
 
-## 连接 Codex MCP
+## 连接编程助手 MCP
 
-首次接入只需在项目根目录运行：
+首次接入只需在项目根目录运行（按所用客户端选择一个）：
 
 ```bash
-./scripts/setup-codex-mcp
+./scripts/setup-mcp --client codex      # Codex CLI
+./scripts/setup-mcp --client claude     # Claude Code
+./scripts/setup-mcp --client opencode   # Opencode
 ```
 
-脚本会检查或更新用户级 `ai-marking` MCP 配置。MCP 和 FastAPI 只绑定本机 loopback，
-不需要内部 token。日常使用先运行 `./start.sh`，然后在 Codex 新任务中拖入一份报告 PDF
+脚本会检查或更新用户级 `ai-marking` MCP 配置，并把客户端标识写入启动参数，后端据此记录评分来源。MCP 和 FastAPI 只绑定本机 loopback，
+不需要内部 token。日常使用先运行 `./start.sh`，然后在编程助手新任务中拖入一份报告 PDF
 和可选的多语言代码文件并输入：
 
 ```text
 使用 AI-Marking 批改这份作业
 ```
 
-Codex 会先只读预检题目和代码映射；只有预检通过后才上传。上传后由同一个打开作业工具每 10 秒检查一次 OCR，最多等待 5 分钟，
+编程助手会先只读预检题目和代码映射；只有预检通过后才上传。上传后由同一个打开作业工具每 10 秒检查一次 OCR，最多等待 5 分钟，
 再以不透明续页令牌完整读取评分包、完成必要的人工一致性确认、双遍自检并保存建议，
-最后返回 `http://localhost:5173/result/{id}` 复核链接。每题可提交一个入口和题目要求的同题辅助源码/头文件。代码运行失败或本机缺少语言环境时由 Codex 在对话中披露，但不阻止静态评分。题目不唯一、文件缺失或映射含糊时会在上传前询问。OCR 失败时会返回
+最后返回 `http://localhost:5173/review/{id}` 复核链接。若题目还没有可信 rubric，评分包会返回 `needs_rubric`，编程助手先从题目 OCR 提取评分标准并调用保存工具，再由服务端确定性校验后重新打开。每题可提交一个入口和题目要求的同题辅助源码/头文件。代码运行失败或本机缺少语言环境时由编程助手在对话中披露，但不阻止静态评分。题目不唯一、文件缺失或映射含糊时会在上传前询问。OCR 失败时会返回
 原始错误和网页重试地址。MCP 不能确认最终成绩，
 教师必须在网页点击确认。
 
 随时可运行只读诊断：
 
 ```bash
-./scripts/setup-codex-mcp --doctor
-codex mcp get ai-marking --json
+./scripts/setup-mcp --client codex --doctor
 ```
 
-诊断会分别检查 Codex CLI、Python/MCP 依赖、启动器、MCP 注册、8000
+诊断会分别检查所选客户端 CLI、Python/MCP 依赖、启动器、MCP 注册、8000
 端口服务身份、MCP API 版本和数据库连接。完整工具契约和安全边界见
-[docs/architecture/mcp-codex-grading.md](docs/architecture/mcp-codex-grading.md)。
+[docs/architecture/mcp-grading.md](docs/architecture/mcp-grading.md)。
 
 ## 持久化任务 worker
 
-首次题目 OCR、题目新版 OCR 和作业批改不在 FastAPI 请求进程中执行。上传接口在同一数据库事务
+首次题目 OCR、题目新版 OCR 和作业 OCR 不在 FastAPI 请求进程中执行。上传接口在同一数据库事务
 内创建业务记录和 `background_jobs` 任务，独立 worker 再从 PostgreSQL 原子
 领取任务：
 
@@ -232,28 +235,27 @@ worker，但任务 worker 保持一个进程，通过 `TASK_CONCURRENCY` 控制�
 进程异常退出后，运行中任务会在租约到期后被重新领取；执行容量满时新任务
 保持 `pending` 排队，不再返回队列繁忙 503。
 
-上传支持单个最大 50 MB 的 PDF；Codex 代码联动最多 20 个代码文件、总计 100 MB，单文件 20 MB。代码只在当前 Codex 任务的临时目录中尝试运行，不安装学生依赖、不联网。OCR 会在单次任务内对超时、限流和服务端错误进行最多 3 次短暂重试。仍失败
+上传支持单个最大 50 MB 的 PDF；编程助手代码联动最多 20 个代码文件、总计 100 MB，单文件 20 MB。代码只在当前编程助手任务的临时目录中尝试运行，不安装学生依赖、不联网。OCR 会在单次任务内对超时、限流和服务端错误进行最多 3 次短暂重试。仍失败
 时页面会保留错误原因；题目可重新上传 PDF，学生作业可在原记录上使用已保存的 PDF
-重试或重新上传。AI 对话只生成待确认评分，教师点击确认后才写入最终结果。
+重试或重新上传。编程助手只保存待确认评分，教师点击确认后才写入最终结果。
 
 ## 使用流程
 
-### 使用 Codex 批改（推荐的 Codex 入口）
+### 使用编程助手批改（推荐的助手入口）
 
 1. 先在网页题目库准备一个 OCR 已完成的题目。
-2. 在 Codex 拖入一份报告 PDF；若作业包含代码，再同时拖入各题入口及辅助源码/头文件，输入“使用 AI-Marking 批改这份作业”。
-3. 题目不唯一或代码文件映射不清时先选择/补充；其余 OCR、Codex 本地运行尝试、人工报告—代码一致性核验、评分与保存由同一 Codex 任务完成。含代码作业评分前，Codex 会要求使用者回答“已检查且一致”，或回答“已检查且存在不一致”并用自由文字说明差异；尚未检查、含糊回答或未回答时会暂停评分。运行输出和说明仅用于当前对话，不写入作业审计记录。
-4. 打开 Codex 返回的复核链接，在网页确认最终成绩。
+2. 在编程助手（Codex、Claude Code、Opencode 等）拖入一份报告 PDF；若作业包含代码，再同时拖入各题入口及辅助源码/头文件，输入“使用 AI-Marking 批改这份作业”。
+3. 题目不唯一或代码文件映射不清时先选择/补充；其余 OCR、本地运行尝试、人工报告—代码一致性核验、评分与保存由同一助手任务完成。含代码作业评分前，编程助手会要求使用者回答“已检查且一致”，或回答“已检查且存在不一致”并用自由文字说明差异；尚未检查、含糊回答或未回答时会暂停评分。运行输出和说明仅用于当前对话，不写入作业审计记录。
+4. 打开编程助手返回的复核链接，在网页确认最终成绩。
 
-网页“上传作业”固定使用后端自动评分，不再创建新的 Codex 作业。历史 Codex 作业
-保留状态、revision 与评分审计信息，界面统一标识为「Codex」。
+网页上传同样只进入 OCR 与 MCP 评分链路，评分来源按客户端显示（如「Codex」「Claude Code」）。
 
 ### 首次批改某个题目
 
 1. 进入“题目库”上传 PDF 题目。
 2. 等待题目 OCR 状态变为“可使用”。
 3. 进入“上传作业”，选择该题目并上传一份 PDF 学生作业。
-4. 批改完成后，在 Review Page 查看 AI 评分详情并确认最终评分。
+4. 评分建议保存后，在 Review Page 查看评分详情并确认最终评分。
 
 ### 继续批改同一题目
 
@@ -262,7 +264,7 @@ worker，但任务 worker 保持一个进程，通过 `TASK_CONCURRENCY` 控制�
 ### 失败后重新批改
 
 失败记录可在 Review Page 使用已保存的 PDF 重新入队，也可重新选择 PDF。重试
-沿用原 submission ID，并清空旧 OCR、AI 结果、审核数据和对话。若原 PDF 已
+沿用原 submission ID，并清空旧 OCR 与评分建议。若原 PDF 已
 被定期清理，必须重新上传。
 
 ### 批改其他题目
@@ -283,8 +285,8 @@ worker，但任务 worker 保持一个进程，通过 `TASK_CONCURRENCY` 控制�
   的进程；`start.sh` 会拒绝复用已占用的 8000 端口，避免 MCP 误连其他服务或
   旧 AI-Marking 进程。已有 PostgreSQL 正常运行时可直接使用该数据库实例。
 - **MCP 显示已连接但工具 404**：通常是 8000 端口指向其他应用或旧后端。运行
-  `./scripts/setup-codex-mcp --doctor`，停止诊断指出的错误进程后重新运行
-  `./start.sh` 并重启 Codex。
+  `./scripts/setup-mcp --client <codex|claude|opencode> --doctor`，停止诊断指出的错误进程后重新运行
+  `./start.sh` 并重启编程助手。
 - **database "ai_marking" does not exist**：先执行 `createdb` 命令创建项目
   数据库。
 - **`DuplicateObjectError: question_status already exists`**：更新到最新代码后
@@ -304,10 +306,10 @@ cd backend
 当前最新迁移包含独立题目库。旧迁移文件必须保留，用于新环境建库、升级和
 回滚。
 
-如需清空题目、作业和对话数据，同时保留系统配置、表结构及迁移版本：
+如需清空题目与作业数据，同时保留系统配置、表结构及迁移版本：
 
 ```sql
-TRUNCATE TABLE conversations, submissions, questions
+TRUNCATE TABLE submissions, questions
 RESTART IDENTITY CASCADE;
 ```
 
@@ -315,30 +317,30 @@ RESTART IDENTITY CASCADE;
 
 ## API 配置说明
 
-LLM 与 OCR 的 API Key、Endpoint、评分标准等**业务配置**通过前端设置页面(`/settings`)管理,存储在数据库中,无需修改 `.env` 或重启服务。
+OCR 与评分标准等**业务配置**通过前端设置页面(`/settings`)管理,存储在数据库中,无需修改 `.env` 或重启服务。
 
 配置项包括:
 
-- **LLM**:API Key、Base URL、Model / Endpoint ID(OpenAI 兼容协议)
 - **OCR**:PaddleOCR-VL API URL、Access Token
-- **评分标准**:在配置项目中维护结构化 rubric（条目、满分、说明）；留空使用内置默认
+- **评分标准**:在配置项目中维护结构化 rubric（条目、满分、说明）；配置优先于题目提取，题目提取优先于内置默认
+- **MCP 自检开关**:是否要求编程助手在保存建议前完成第二遍反向自检（默认开启）
 
-## Agent 批改流程
+## 批改流程
 
-题目入库时先独立完成一次 OCR。后续每份学生作业使用缓存的题目文本，避免
-重复调用题目 OCR。作业批改使用受约束的 LangGraph 状态图：
+题目入库时先独立完成一次 OCR。每份学生作业使用缓存的题目文本，避免
+重复调用题目 OCR。作业 OCR 完成后进入 `awaiting_mcp`，由本机编程助手通过
+MCP 打开评分包：
 
 ```text
 题目库 OCR（仅首次）
         ↓
-学生作业 OCR → 评分 Agent → 结构与分数校验 → Critic 复核
-                                               ├─ 通过 → 教师审核
-                                               ├─ 修正 → 重新评分（最多一次）
-                                               └─ 不确定 → 教师审核
+学生作业 OCR → awaiting_mcp → MCP 评分（客户端双遍自检）→ ready_for_review
+                                                                   ↓
+                                            教师在网页人工复核并确认最终成绩
 ```
 
-结果页展示不含隐藏推理的执行摘要、复核置信度与风险原因。进入人工审核的
-记录可由教师编辑分数和反馈后确认，系统同时保留原始 AI 评分用于审计。
+后端不调用任何 LLM。编程助手保存的是待确认建议；教师确认后写入最终结果，
+系统保留建议与最终成绩用于审计。
 
 ## 前端设计
 

@@ -7,6 +7,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import os
 import secrets
 import time
 from contextlib import asynccontextmanager
@@ -18,7 +19,7 @@ from mcp.types import ToolAnnotations
 
 from app.mcp.client import ApiClient, review_url
 from app.mcp.errors import McpApiError
-from app.schemas.mcp import McpSimpleAssessmentRequest, McpVisualConfirmationRequest
+from app.schemas.mcp import McpAssessmentRequest, McpVisualConfirmationRequest
 from app.services.code_manifest import (
     auto_question_number,
     parse_explicit_code_mappings,
@@ -51,6 +52,12 @@ async def _call(method: str, path: str, **kwargs: object) -> dict | list:
         return await client.request(method, path, **kwargs)
 
 
+def _client() -> str | None:
+    """当前 MCP 宿主客户端标识,由启动脚本以 argv 注入环境变量。"""
+    value = os.environ.get("AI_MARKING_MCP_CLIENT", "").strip()
+    return value[:64] if value else None
+
+
 @asynccontextmanager
 async def mcp_lifespan(_server: MCPServer) -> AsyncIterator[dict[str, ApiClient]]:
     global _active_client
@@ -65,14 +72,16 @@ async def mcp_lifespan(_server: MCPServer) -> AsyncIterator[dict[str, ApiClient]
 mcp = MCPServer(
     "ai-marking",
     instructions=(
-        "AI-Marking 只用于教师明确要求的 Codex 批改或修订。"
+        "AI-Marking 只用于教师明确要求的编程助手批改或修订。"
         "新作业依次调用 prepare_ai_marking_submission、"
         "submit_prepared_ai_marking_submission、open_ai_marking_assignment。"
+        "也可用 list_pending_ai_marking_assignments 发现等待评分的作业。"
         "打开作业返回的 grading_policy 是唯一评分规则；读取至 context_complete=true 后再评分。"
+        "若打开返回 needs_rubric=true,先调用 save_ai_marking_question_rubric 提取保存题目 rubric,再重新打开作业。"
         "代码可使用 Python、R、Java、C、C++；每题必须标记一个入口，辅助源码随题提交。"
-        "Codex 必须在提交前于当前任务中尝试运行每个代码入口；运行结果只留在当前对话，不上传后端。"
+        "编程助手必须在提交前于当前任务中尝试运行每个代码入口；运行结果只留在当前对话，不上传后端。"
         "若作业含代码，评分前必须取得使用者对运行表现与报告一致性的人工确认；未确认时暂停。"
-        "Codex 不生成运行日志、视觉比较或复核证据，只保存建议，最终成绩由教师在网页确认。"
+        "编程助手不生成运行日志、视觉比较或复核证据，只保存建议，最终成绩由教师在网页确认。"
     ),
     lifespan=mcp_lifespan,
 )
@@ -136,7 +145,7 @@ def _reject_cross_file_imports(files: list[dict]) -> None:
         try:
             tree = ast.parse(source)
         except SyntaxError:
-            continue  # Syntax errors remain student execution evidence.
+            continue  # Syntax errors are reported in the submitted source context.
         for node in ast.walk(tree):
             names: list[str] = []
             if isinstance(node, ast.Import):
@@ -300,7 +309,6 @@ async def submit_prepared_ai_marking_submission(submission_plan: str) -> dict:
                 files=multipart,
                 data={
                     "question_id": str(plan["question_id"]),
-                    "grading_mode": "codex",
                     "code_manifest": json.dumps(plan["code_manifest"], ensure_ascii=False),
                 },
             )
@@ -315,10 +323,37 @@ async def submit_prepared_ai_marking_submission(submission_plan: str) -> dict:
 
 
 @mcp.tool(annotations=ToolAnnotations(read_only_hint=True, destructive_hint=False))
+async def list_pending_ai_marking_assignments(
+    cursor: str | None = None, limit: int = 20
+) -> dict:
+    """列出等待 MCP 评分的作业(按上传时间与 ID 升序,最多 100 条)。
+
+    返回 ``items``(submission_id、题目名、文件名、上传时间)与可选的
+    ``next_cursor``。用 ``limit`` 控制每页数量(1–100),用 ``next_cursor``
+    读取下一页;配合 ``open_ai_marking_assignment`` 逐个打开作业评分。
+    """
+    if limit < 1 or limit > 100:
+        raise McpApiError("limit 必须在 1–100 之间")
+    result = await _call(
+        "GET",
+        "/api/mcp/pending-assignments",
+        params={"cursor": cursor or "", "limit": limit},
+    )
+    if not isinstance(result, dict):
+        raise McpApiError("AI-Marking 待办列表接口返回了无效响应")
+    return result
+
+
+@mcp.tool(annotations=ToolAnnotations(read_only_hint=True, destructive_hint=False))
 async def open_ai_marking_assignment(
     submission_id: int, continuation_token: str | None = None
 ) -> dict:
-    """等待最多五分钟并分页打开可评分作业；用 continuation_token 读取下一页。"""
+    """等待最多五分钟并分页打开可评分作业；用 continuation_token 读取下一页。
+
+    若返回 ``needs_rubric=true``,表示该题目还没有可信 rubric,评分包携带
+    题目 OCR 与 ``rubric_handle``;此时先调用
+    ``save_ai_marking_question_rubric`` 提取并保存 rubric,再重新打开作业。
+    """
     if continuation_token:
         result = await _call(
             "GET",
@@ -334,7 +369,12 @@ async def open_ai_marking_assignment(
         result = await _call("GET", f"/api/mcp/submissions/{submission_id}/package")
         if not isinstance(result, dict):
             raise McpApiError("AI-Marking 评分包接口返回了无效响应")
-        if result.get("status") in {"awaiting_codex", "ready_for_review", "reviewed", "failed"}:
+        if result.get("needs_rubric") or result.get("status") in {
+            "awaiting_mcp",
+            "ready_for_review",
+            "reviewed",
+            "failed",
+        }:
             return {**result, "review_url": review_url(submission_id)}
         remaining = deadline - time.monotonic()
         if remaining <= 0:
@@ -352,18 +392,56 @@ async def open_ai_marking_assignment(
         read_only_hint=False, destructive_hint=False, idempotent_hint=True
     )
 )
+async def save_ai_marking_question_rubric(
+    question_id: int,
+    handle: str,
+    status: Literal["complete", "absent_or_ambiguous"],
+    items: list[dict] | None = None,
+    total_max_score: float | None = None,
+) -> dict:
+    """保存从题目 OCR 提取的 rubric(open 返回 needs_rubric 时调用)。
+
+    ``question_id`` 与 ``handle`` 来自 ``open_ai_marking_assignment`` 的
+    needs_rubric 响应。``status=complete`` 时逐项提交 ``criterion`` /
+    ``max_score`` / ``details`` 与必须包含该项满分的 OCR 原文
+    ``source_quote``;服务端确定性校验通过后写入题目权威快照。
+    ``status=absent_or_ambiguous`` 表示题目没有明确 rubric,服务端会改走
+    配置 rubric 或内置默认。保存后须重新调用 ``open_ai_marking_assignment``
+    以新 rubric 快照评分。
+    """
+    result = await _call(
+        "PUT",
+        f"/api/mcp/questions/{question_id}/rubric",
+        json={
+            "handle": handle,
+            "status": status,
+            "items": items or [],
+            "total_max_score": total_max_score,
+        },
+    )
+    if not isinstance(result, dict):
+        raise McpApiError("AI-Marking 保存 rubric 接口返回了无效响应")
+    return result
+
+
+@mcp.tool(
+    annotations=ToolAnnotations(
+        read_only_hint=False, destructive_hint=False, idempotent_hint=True
+    )
+)
 async def save_ai_marking_assessment(
     submission_id: int,
     grading_handle: str,
-    assessment: McpSimpleAssessmentRequest,
+    assessment: McpAssessmentRequest,
 ) -> dict:
-    """保存 Codex 建议；request_id 与 rubric snapshot 必须来自当前评分包。"""
+    """保存外部编程助手建议；request_id 与 rubric snapshot 必须来自当前评分包。"""
     result = await _call(
         "PUT",
         f"/api/mcp/submissions/{submission_id}/assessment-v2",
         json={
             "grading_handle": grading_handle,
             "assessment": assessment.model_dump(mode="json"),
+            "client": _client(),
         },
     )
     if not isinstance(result, dict):
@@ -382,7 +460,7 @@ async def confirm_ai_marking_visual_review(
     verdict: Literal["consistent", "mismatch"],
     note: str | None = None,
 ) -> dict:
-    """记录 Codex 本地运行表现与报告描述的一致性人工核验，含代码作业必须在保存前调用。"""
+    """记录本地运行表现与报告描述的一致性人工核验，含代码作业必须在保存前调用。"""
     confirmation = McpVisualConfirmationRequest(
         grading_handle=grading_handle, verdict=verdict, note=note
     )
@@ -401,12 +479,13 @@ def grade_assignment(submission_id: int) -> str:
     """Generate the compact workflow for a newly uploaded or existing assignment."""
     return f"""使用 AI-Marking 批改或修订作业 #{submission_id}：
 1. 调用 open_ai_marking_assignment({submission_id})；若仍在处理，自动再次调用同一工具。
-2. 使用 continuation_token 重复打开，直到 context_complete=true；遵守评分包中的 grading_policy。
-3. 若作业含代码，先向使用者提问 Codex 本地运行表现与报告描述是否一致：仅“已检查且一致”，或“已检查且存在不一致”并要求自由文字说明；尚未检查、含糊或未回答时暂停。
-4. 收到有效回答后，必须先调用 confirm_ai_marking_visual_review(submission_id, grading_handle, verdict, note)，再评分。
-5. 存在不一致时只使用使用者明确说明的差异，不推断其他差异，不生成任何视觉比较或复核证据。
-6. 若评分包 grading_policy.review_required 为 true，完成第一遍后进行第二遍独立复核，并在 self_check 中标记 second_pass_completed=true；最后调用 save_ai_marking_assessment，使用最后返回的 grading_handle。
-7. 返回 review_url；不要确认最终成绩，教师必须在网页确认。"""
+2. 若返回 needs_rubric=true：从 question_ocr_text 提取题目 rubric，调用 save_ai_marking_question_rubric(question_id, handle, status, items, total_max_score) 保存（逐项 source_quote 必须是 OCR 原文且包含该项满分）；然后重新调用 open_ai_marking_assignment({submission_id})。
+3. 使用 continuation_token 重复打开，直到 context_complete=true；遵守评分包中的 grading_policy。
+4. 若作业含代码，先向使用者提问本地运行表现与报告描述是否一致：仅“已检查且一致”，或“已检查且存在不一致”并要求自由文字说明；尚未检查、含糊或未回答时暂停。
+5. 收到有效回答后，必须先调用 confirm_ai_marking_visual_review(submission_id, grading_handle, verdict, note)，再评分。
+6. 存在不一致时只使用使用者明确说明的差异，不推断其他差异，不生成任何视觉比较或复核证据。
+7. 若评分包 grading_policy.review_required 为 true，完成第一遍后进行第二遍独立复核，并在 self_check 中标记 second_pass_completed=true；最后调用 save_ai_marking_assessment，使用最后返回的 grading_handle。
+8. 返回 review_url；不要确认最终成绩，教师必须在网页确认。"""
 
 
 def main() -> None:
