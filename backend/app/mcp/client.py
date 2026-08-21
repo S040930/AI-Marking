@@ -58,7 +58,7 @@ class ApiClient:
         except httpx.ConnectError as exc:
             raise McpApiError(
                 "无法连接 AI-Marking FastAPI。请先在项目目录运行 ./start.sh；"
-                "若 8000 端口已被占用，请运行 ./scripts/setup-mcp --doctor。"
+                "若 8000 端口已被占用，请停止占用该端口的旧服务后重试。"
             ) from exc
         except httpx.TimeoutException as exc:
             raise McpApiError(

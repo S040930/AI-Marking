@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+APPLY=0
+if [[ "${1:-}" == "--apply" ]]; then
+  APPLY=1
+elif [[ "${1:-}" != "" ]]; then
+  printf '用法：%s [--apply]\n' "$0" >&2
+  exit 2
+fi
+
+TARGETS=(
+  "$ROOT_DIR/backend/.venv"
+  "$ROOT_DIR/frontend/node_modules"
+  "$ROOT_DIR/frontend/dist"
+  "$ROOT_DIR/frontend/.vite"
+  "$ROOT_DIR/backend/.pytest_cache"
+  "$ROOT_DIR/backend/.ruff_cache"
+  "$ROOT_DIR/.ruff_cache"
+  "$ROOT_DIR/backend/ai_marking_backend.egg-info"
+)
+
+safe_target() {
+  local path="$1"
+  [[ "$path" == "$ROOT_DIR/"* ]] || return 1
+  [[ "$path" != "$ROOT_DIR" ]] || return 1
+  [[ -e "$path" || -L "$path" ]] || return 1
+  local resolved
+  resolved="$(realpath "$path")"
+  [[ "$resolved" == "$ROOT_DIR/"* ]] || return 1
+  [[ "$resolved" != "$ROOT_DIR" ]] || return 1
+}
+
+total_kib=0
+for target in "${TARGETS[@]}"; do
+  if [[ -e "$target" || -L "$target" ]]; then
+    size_kib="$(du -sk "$target" | awk '{print $1}')"
+    total_kib=$((total_kib + size_kib))
+    printf '%8s KiB  %s\n' "$size_kib" "${target#"$ROOT_DIR/"}"
+  fi
+done
+
+printf '预计回收：%s KiB (%.1f MiB)\n' "$total_kib" "$(awk -v n="$total_kib" 'BEGIN {print n/1024}')"
+if (( APPLY == 0 )); then
+  printf '这是 dry-run；确认后运行：%s --apply\n' "$0"
+  exit 0
+fi
+
+for target in "${TARGETS[@]}"; do
+  if [[ -e "$target" || -L "$target" ]]; then
+    safe_target "$target" || {
+      printf '拒绝清理不安全路径：%s\n' "$target" >&2
+      exit 1
+    }
+    rm -rf -- "$target"
+  fi
+done
+printf '本机缓存和可重建依赖已清理。业务 uploads、数据库、.env 和 .git 未触碰。\n'

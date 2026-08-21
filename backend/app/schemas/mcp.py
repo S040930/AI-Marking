@@ -169,7 +169,7 @@ class McpAssessmentRequest(BaseModel):
 class McpSaveAssessmentRequest(BaseModel):
     grading_handle: str = Field(min_length=20, max_length=2000)
     assessment: McpAssessmentRequest
-    # 由 MCP server 进程注入的客户端标识(codex/claude-code/opencode 等),
+    # 由 MCP server 进程注入的可选客户端标识,
     # 不出现在评分包 schema 中,LLM 不可见;仅用于教师端展示评分来源。
     client: str | None = Field(
         default=None, max_length=64, pattern=r"^[a-z0-9][a-z0-9._-]*$"
@@ -196,3 +196,41 @@ class McpVisualConfirmationResponse(BaseModel):
     verdict: Literal["consistent", "mismatch"]
     note: str | None = None
     confirmed_at: str
+
+
+class McpReviewItem(BaseModel):
+    """复核者对单个评分项的结论。"""
+
+    model_config = ConfigDict(extra="forbid")
+    rubric_item_id: str = Field(min_length=5, max_length=100)
+    verdict: Literal["agree", "disagree"]
+    comment: str = Field(min_length=1, max_length=4_000)
+    # 争议项可给出复核者建议分(0 到该项满分),由服务端按 rubric 校验上限
+    suggested_score: float | None = Field(default=None, ge=0)
+
+
+class McpSaveReviewRequest(BaseModel):
+    """独立复核任务提交的对当前评分建议的复核结论。
+
+    ``grading_handle`` 来自对 ``ready_for_review`` 作业调用
+    ``open_ai_marking_assignment`` 后的评分包;服务端校验建议版本
+    (grading_revision)未变化后写入 ``submissions.assessment_review``。
+    ``items`` 必须逐项引用当前 rubric 的全部 item,与评分建议相同。
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    grading_handle: str = Field(min_length=20, max_length=2000)
+    verdict: Literal["agree", "partial", "disagree"]
+    summary: str = Field(min_length=1, max_length=20_000)
+    confidence: float = Field(ge=0, le=1, default=0)
+    items: list[McpReviewItem] = Field(min_length=1, max_length=100)
+    client: str | None = Field(
+        default=None, max_length=64, pattern=r"^[a-z0-9][a-z0-9._-]*$"
+    )
+
+
+class McpSaveReviewResponse(BaseModel):
+    submission_id: int
+    status: SubmissionStatus
+    reviewed_revision: int
+    verdict: Literal["agree", "partial", "disagree"]

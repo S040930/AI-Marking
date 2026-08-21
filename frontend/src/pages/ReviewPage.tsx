@@ -5,28 +5,30 @@ import {
   type KeyboardEvent,
   type PointerEvent,
 } from 'react';
-import axios from 'axios';
 import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import dayjs from 'dayjs';
-import { Loader2, AlertCircle, FileUp, RotateCcw, Copy, Check } from 'lucide-react';
+import { Loader2, AlertCircle, ChevronLeft } from 'lucide-react';
 import {
   useSubmission,
   useSubmissionStatus,
   useFinalizeSubmission,
-  useRetrySubmission,
   canLoadSubmissionDetail,
   isProcessing,
   type SubmissionDetail,
-  type AiSuggestion,
   type FinalizePayload,
 } from '@/api/submissions';
 import { Button } from '@/components/ui/button';
-import { DOCUMENT_INPUT_ACCEPT } from '@/lib/documentUpload';
 import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { PdfViewer, PdfViewerPlaceholder } from '@/components/PdfViewer';
 import ManualReviewPanel from '@/components/ManualReviewPanel';
+import { McpWaitingPanel } from '@/components/review/McpWaitingPanel';
+import { McpAuditBanner } from '@/components/review/McpAuditBanner';
+import { AssessmentReviewCard } from '@/components/review/AssessmentReviewCard';
+import { CodeEvidencePanel } from '@/components/review/CodeEvidencePanel';
+import { FailedRecoveryPanel } from '@/components/review/FailedRecoveryPanel';
+import { normalizeSuggestion } from '@/components/review/normalizeSuggestion';
+import { useLanguage } from '@/i18n';
 
 const STATUS_LABEL: Record<string, string> = {
   pending: '排队等待处理',
@@ -38,196 +40,9 @@ const STATUS_LABEL: Record<string, string> = {
   failed: '失败',
 };
 
-export function McpWaitingPanel({ submissionId }: { submissionId: number }) {
-  const [copied, setCopied] = useState(false);
-  const prompt = `请继续使用 AI-Marking 批改作业 #${submissionId}。`;
-
-  const copyPrompt = async () => {
-    try {
-      await navigator.clipboard.writeText(prompt);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1800);
-      toast.success('编程助手指令已复制');
-    } catch {
-      toast.error('复制失败，请手动选择指令');
-    }
-  };
-
-  return (
-    <div className="flex h-full items-center justify-center p-8">
-      <div className="w-full max-w-lg rounded-2xl border border-primary/15 bg-white p-6 shadow-sm">
-        <p className="text-xs font-semibold uppercase tracking-wider text-primary">
-          作业 #{submissionId} · 等待 MCP 评分
-        </p>
-        <h2 className="mt-2 text-xl font-semibold">等待编程助手评分</h2>
-        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-          这条作业的 OCR 已完成，正等待 MCP 客户端（如 Codex）评分。如果原任务已关闭，可复制下面的恢复指令继续处理，或使用待办列表工具发现作业。
-        </p>
-        <div className="mt-5 rounded-xl bg-slate-50 p-3 text-sm leading-relaxed text-slate-700">
-          {prompt}
-        </div>
-        <Button className="mt-4" onClick={copyPrompt}>
-          {copied ? <Check /> : <Copy />}
-          {copied ? '已复制' : '复制编程助手指令'}
-        </Button>
-        <p className="mt-4 text-xs text-muted-foreground">
-          编程助手只会保存评分建议；最终成绩仍需教师回到此网页确认。
-        </p>
-      </div>
-    </div>
-  );
-}
-
-const CLIENT_LABELS: Record<string, string> = {
-  codex: 'Codex',
-  'claude-code': 'Claude Code',
-  opencode: 'Opencode',
-};
-
-function McpAuditBanner({ data }: { data: SubmissionDetail }) {
-  const metadata = data.assessment_suggestion?.mcp_metadata;
-  const client = metadata?.client;
-  const clientLabel = client ? CLIENT_LABELS[client] ?? client : null;
-  const rubricSource = metadata?.rubric_source;
-  const rubricSourceLabel =
-    rubricSource === 'question_extracted'
-      ? '题目提取'
-      : rubricSource === 'configured'
-        ? '配置项'
-        : rubricSource === 'built_in_default'
-          ? '内置默认'
-          : null;
-  return (
-    <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-primary/10 bg-primary/[0.03] px-5 py-3 text-xs">
-      <Badge variant="secondary">{clientLabel ?? 'MCP 客户端'}</Badge>
-      <span className="text-muted-foreground">revision {data.grading_revision}</span>
-      {rubricSourceLabel && (
-        <Badge variant="outline" className="text-muted-foreground">
-          rubric: {rubricSourceLabel}
-        </Badge>
-      )}
-    </div>
-  );
-}
-
-function CodeEvidencePanel({ data }: { data: SubmissionDetail }) {
-  if (!data.code_files?.length) return null;
-  return (
-    <div className="h-full overflow-y-auto bg-slate-50 p-5">
-      <div className="mb-4 rounded-xl border border-primary/15 bg-white p-4">
-        <p className="text-sm font-semibold">提交代码</p>
-        <p className="mt-1 text-xs text-muted-foreground">
-          新作业由编程助手在当前任务中运行和核验；后端只保存源码与 SHA-256。
-        </p>
-      </div>
-      <div className="space-y-4">
-        {data.code_files.map((codeFile) => {
-          return (
-            <div key={codeFile.id} className="rounded-xl border bg-white p-4 shadow-sm">
-              <p className="text-sm font-semibold">第 {codeFile.question_number} 题 · {codeFile.original_filename}</p>
-              <p className="mt-1 text-xs text-muted-foreground">SHA-256：{codeFile.source_sha256}</p>
-              <details className="mt-3 rounded-lg border bg-slate-50">
-                <summary className="cursor-pointer px-3 py-2 text-xs font-medium">查看提交源代码</summary>
-                <pre className="max-h-80 overflow-auto border-t p-3 text-xs leading-relaxed">
-                  {codeFile.source_text || '源代码不可用'}
-                </pre>
-              </details>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function FailedRecoveryPanel({ data }: { data: SubmissionDetail }) {
-  const uploadRef = useRef<HTMLInputElement>(null);
-  const retryMutation = useRetrySubmission(data.id);
-
-  const retry = (file?: File) => {
-    retryMutation.mutate(file, {
-      onSuccess: () => toast.success('已重新进入批改队列'),
-      onError: (error) => {
-        const detail = axios.isAxiosError(error)
-          ? error.response?.data?.detail
-          : null;
-        toast.error(
-          typeof detail === 'string'
-            ? detail
-            : error.message || '重新批改失败',
-        );
-      },
-    });
-  };
-
-  return (
-    <div className="flex h-full items-center justify-center p-8">
-      <div className="w-full max-w-md rounded-2xl border border-destructive/20 bg-white p-6 shadow-sm">
-        <AlertCircle className="mb-4 size-8 text-destructive" />
-        <h2 className="text-lg font-semibold">本次批改失败</h2>
-        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-          {data.error_message || '批改过程中发生未知错误'}
-        </p>
-        <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
-          可以使用原文件重新批改；如果文件内容有问题，请重新选择 PDF 学生作业。
-        </p>
-        <input
-          ref={uploadRef}
-          type="file"
-          accept={DOCUMENT_INPUT_ACCEPT}
-          className="hidden"
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            if (file) retry(file);
-            event.target.value = '';
-          }}
-        />
-        <div className="mt-5 flex flex-wrap gap-3">
-          <Button
-            disabled={retryMutation.isPending}
-            onClick={() => retry()}
-          >
-            {retryMutation.isPending ? (
-              <Loader2 className="animate-spin" />
-            ) : (
-              <RotateCcw />
-            )}
-            使用原文件重试
-          </Button>
-          <Button
-            variant="outline"
-            disabled={retryMutation.isPending}
-            onClick={() => uploadRef.current?.click()}
-          >
-            <FileUp />
-            重新上传作业
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function normalizeSuggestion(data: SubmissionDetail): AiSuggestion | null {
-  const raw = data.assessment_suggestion;
-  if (!raw) return null;
-  return {
-    score: raw.score ?? 0,
-    max_score: raw.max_score ?? 0,
-    confidence: raw.confidence ?? 0,
-    feedback: raw.feedback ?? '',
-    details: (raw.details ?? []).map((d) => ({
-      criterion: d.criterion,
-      score: d.score,
-      max_score: d.max_score ?? 0,
-      comment: d.comment,
-      evidence: d.evidence,
-    })),
-  };
-}
-
 function ReviewContent({ data }: { data: SubmissionDetail }) {
   const navigate = useNavigate();
+  const { t } = useLanguage();
   const splitContainerRef = useRef<HTMLElement>(null);
   const draggingRef = useRef(false);
   const [leftPercent, setLeftPercent] = useState(55);
@@ -246,10 +61,10 @@ function ReviewContent({ data }: { data: SubmissionDetail }) {
       { ...payload, reviewer_name: reviewerName },
       {
         onSuccess: () => {
-          toast.success('评分已提交');
+          toast.success(t('评分已提交'));
           navigate(`/result/${data.id}`);
         },
-        onError: () => toast.error('提交失败，请稍后重试'),
+        onError: () => toast.error(t('提交失败，请稍后重试')),
       },
     );
   };
@@ -292,6 +107,19 @@ function ReviewContent({ data }: { data: SubmissionDetail }) {
 
   return (
     <div className="-m-8 flex h-[calc(100dvh-4rem)] flex-col overflow-hidden bg-slate-100/80">
+      <div className="flex h-12 shrink-0 items-center gap-3 border-b border-slate-300/80 bg-white px-4">
+        <Button
+          variant="ghost"
+          onClick={() => navigate('/history')}
+          className="-ml-2 text-muted-foreground hover:text-foreground"
+        >
+          <ChevronLeft />
+          {t('返回历史')}
+        </Button>
+        <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+          {data.original_filename}
+        </span>
+      </div>
       <main
         ref={splitContainerRef}
         className={`grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[var(--review-columns)] ${
@@ -308,10 +136,10 @@ function ReviewContent({ data }: { data: SubmissionDetail }) {
           {data.code_files?.length > 0 && (
             <div className="flex gap-1 border-b border-slate-300/80 bg-white px-5 pt-3">
               <Button size="sm" variant={evidenceTab === 'report' ? 'secondary' : 'ghost'} onClick={() => setEvidenceTab('report')}>
-                报告
+                {t('报告')}
               </Button>
               <Button size="sm" variant={evidenceTab === 'code' ? 'secondary' : 'ghost'} onClick={() => setEvidenceTab('code')}>
-                代码证据
+                {t('代码证据')}
               </Button>
             </div>
           )}
@@ -331,7 +159,7 @@ function ReviewContent({ data }: { data: SubmissionDetail }) {
 
         <div
           role="separator"
-          aria-label="调整作业与评分面板宽度"
+          aria-label={t('调整作业与评分面板宽度')}
           aria-orientation="vertical"
           aria-valuemin={35}
           aria-valuemax={70}
@@ -364,6 +192,7 @@ function ReviewContent({ data }: { data: SubmissionDetail }) {
           ) : (
             <>
               <McpAuditBanner data={data} />
+              <AssessmentReviewCard data={data} />
               <ManualReviewPanel
                 suggestion={suggestion}
                 isReadOnly={isReadOnly}
@@ -381,6 +210,7 @@ function ReviewContent({ data }: { data: SubmissionDetail }) {
 }
 
 export default function ReviewPage() {
+  const { t } = useLanguage();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const rawNumericId = id !== undefined ? Number(id) : undefined;
@@ -399,15 +229,20 @@ export default function ReviewPage() {
   if (numericId === undefined) {
     return (
       <div className="mx-auto max-w-2xl">
+        <Button
+          variant="ghost"
+          onClick={() => navigate('/history')}
+          className="-ml-2 mb-4 text-muted-foreground hover:text-foreground"
+        >
+          <ChevronLeft />
+          {t('返回历史')}
+        </Button>
         <Card className="elevated-card border-0">
           <CardContent className="flex flex-col items-center gap-4 py-16">
             <div className="flex size-14 items-center justify-center rounded-full bg-muted">
               <AlertCircle className="size-7 text-muted-foreground" />
             </div>
-            <p className="text-muted-foreground">无效的记录 ID</p>
-            <Button variant="outline" onClick={() => navigate('/history')}>
-              返回历史记录
-            </Button>
+            <p className="text-muted-foreground">{t('无效的记录 ID')}</p>
           </CardContent>
         </Card>
       </div>
@@ -419,7 +254,7 @@ export default function ReviewPage() {
     return (
       <div className="flex flex-col items-center justify-center gap-3 py-32">
         <Loader2 className="size-8 animate-spin text-primary" />
-        <p className="text-sm text-muted-foreground">加载中...</p>
+        <p className="text-sm text-muted-foreground">{t('加载中...')}</p>
       </div>
     );
   }
@@ -428,20 +263,25 @@ export default function ReviewPage() {
   if (isProcessing(statusData.status) && statusData.status !== 'awaiting_mcp') {
     return (
       <div className="mx-auto max-w-2xl">
+        <Button
+          variant="ghost"
+          onClick={() => navigate('/history')}
+          className="-ml-2 mb-4 text-muted-foreground hover:text-foreground"
+        >
+          <ChevronLeft />
+          {t('返回历史')}
+        </Button>
         <div className="flex flex-col items-center justify-center gap-4 py-32">
           <Loader2 className="size-10 animate-spin text-primary" />
           <div className="text-center">
             <p className="text-base font-medium text-foreground">
-              {STATUS_LABEL[statusData.status] ?? statusData.status}
+              {t(STATUS_LABEL[statusData.status] ?? statusData.status)}
             </p>
             <p className="mt-1 text-sm text-muted-foreground">
-              上传时间：
+              {t('上传时间：')}
               {dayjs(statusData.uploaded_at).format('YYYY-MM-DD HH:mm:ss')}
             </p>
           </div>
-          <Button variant="outline" onClick={() => navigate('/history')}>
-            返回历史
-          </Button>
         </div>
       </div>
     );

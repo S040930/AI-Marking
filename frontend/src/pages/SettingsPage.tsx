@@ -1,23 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
 import { toast } from 'sonner';
-import {
-  Copy,
-  Loader2,
-  Plus,
-  Save,
-  Star,
-  Trash2,
-  Undo2,
-  AlertCircle,
-  ShieldCheck,
-  ScanEye,
-  ClipboardCheck,
-  FolderKanban,
-  Pencil,
-} from 'lucide-react';
+import { Loader2, AlertCircle } from 'lucide-react';
+
 import {
   type ConfigOut,
   useConfig,
@@ -28,29 +14,7 @@ import {
   useSetDefaultConfigProfile,
   useUpdateConfig,
 } from '@/api/config';
-import {
-  Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
-import {
-  Form,
-  FormControl,
-  FormDescription,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from '@/components/ui/form';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Button } from '@/components/ui/button';
-import { Separator } from '@/components/ui/separator';
-import { Badge } from '@/components/ui/badge';
+import { Card, CardContent } from '@/components/ui/card';
 import {
   Alert,
   AlertDescription,
@@ -66,51 +30,24 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-
-const DEFAULT_RUBRIC_PLACEHOLDER = `请输入 JSON 结构，例如:
-{
-  "items": [
-    {"criterion": "内容理解", "max_score": 60, "details": "准确理解题目要求"},
-    {"criterion": "论证分析", "max_score": 40, "details": "论证清晰且有证据"}
-  ],
-  "total_max_score": 100
-}`;
-
-const configSchema = z.object({
-  paddleocr_api_url: z.string().optional(),
-  paddleocr_token: z.string().optional(),
-  rubric_definition: z.string().optional(),
-  review_enabled: z.boolean(),
-});
-
-type ConfigFormValues = z.infer<typeof configSchema>;
-
-const defaultValues: ConfigFormValues = {
-  paddleocr_api_url: '',
-  paddleocr_token: '',
-  rubric_definition: '',
-  review_enabled: true,
-};
-
-function errorText(error: Error): string {
-  const e = error as { response?: { data?: { detail?: string } } };
-  return e.response?.data?.detail ?? error.message ?? '操作失败';
-}
-
-interface ProfileDialogState {
-  open: boolean;
-  mode: 'create' | 'rename' | 'copy';
-  profileId?: number;
-  profileName?: string;
-}
+import { ProfileDialog } from '@/components/settings/ProfileDialog';
+import { ProfileManagerCard } from '@/components/settings/ProfileManagerCard';
+import { ConfigSettingsForm } from '@/components/settings/ConfigSettingsForm';
+import { useLanguage } from '@/i18n';
+import {
+  CLOSED_PROFILE_DIALOG,
+  configSchema,
+  defaultConfigFormValues,
+  errorText,
+  type ConfigFormValues,
+  type ProfileDialogState,
+} from '@/lib/settingsForm';
 
 export default function SettingsPage() {
+  const { t } = useLanguage();
   const { data: profiles, isLoading: profilesLoading } = useConfigProfiles();
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [dialog, setDialog] = useState<ProfileDialogState>({
-    open: false,
-    mode: 'create',
-  });
+  const [dialog, setDialog] = useState<ProfileDialogState>(CLOSED_PROFILE_DIALOG);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const defaultProfile = useMemo(
@@ -141,7 +78,7 @@ export default function SettingsPage() {
 
   const form = useForm<ConfigFormValues>({
     resolver: zodResolver(configSchema),
-    defaultValues,
+    defaultValues: defaultConfigFormValues,
   });
 
   useEffect(() => {
@@ -163,14 +100,14 @@ export default function SettingsPage() {
       try {
         rubric_definition = JSON.parse(values.rubric_definition) as ConfigOut['rubric_definition'];
       } catch {
-        toast.error('Rubric 必须是合法 JSON');
+        toast.error(t('Rubric 必须是合法 JSON'));
         return;
       }
     }
     const { rubric_definition: _raw, ...rest } = values;
     updateMutation.mutate({ ...rest, rubric_definition }, {
       onSuccess: () => {
-        toast.success('配置已保存');
+        toast.success(t('配置已保存'));
       },
       onError: (err) => {
         toast.error(errorText(err));
@@ -180,7 +117,7 @@ export default function SettingsPage() {
 
   const handleResetRubric = () => {
     form.setValue('rubric_definition', '', { shouldDirty: true });
-    toast.info('Rubric 已清空，保存后评分标准将由客户端从题目中提取');
+    toast.info(t('Rubric 已清空，保存后评分标准将由客户端从题目中提取'));
   };
 
   const openDialog = (mode: 'create' | 'rename' | 'copy') => {
@@ -201,7 +138,7 @@ export default function SettingsPage() {
   const handleDialogSubmit = (name: string) => {
     const trimmed = name.trim();
     if (!trimmed) {
-      toast.error('请输入配置项目名称');
+      toast.error(t('请输入配置项目名称'));
       return;
     }
     if (dialog.mode === 'create') {
@@ -209,8 +146,8 @@ export default function SettingsPage() {
         { name: trimmed },
         {
           onSuccess: (created) => {
-            toast.success('配置项目已创建');
-            setDialog({ open: false, mode: 'create' });
+            toast.success(t('配置项目已创建'));
+            setDialog(CLOSED_PROFILE_DIALOG);
             setSelectedId(created.id);
           },
           onError: (err) => toast.error(errorText(err)),
@@ -221,8 +158,8 @@ export default function SettingsPage() {
         { id: dialog.profileId!, name: trimmed },
         {
           onSuccess: () => {
-            toast.success('配置项目已重命名');
-            setDialog({ open: false, mode: 'create' });
+            toast.success(t('配置项目已重命名'));
+            setDialog(CLOSED_PROFILE_DIALOG);
           },
           onError: (err) => toast.error(errorText(err)),
         },
@@ -232,8 +169,8 @@ export default function SettingsPage() {
         { name: trimmed, copy_from_id: dialog.profileId },
         {
           onSuccess: (created) => {
-            toast.success('已复制为新配置项目');
-            setDialog({ open: false, mode: 'create' });
+            toast.success(t('已复制为新配置项目'));
+            setDialog(CLOSED_PROFILE_DIALOG);
             setSelectedId(created.id);
           },
           onError: (err) => toast.error(errorText(err)),
@@ -246,7 +183,7 @@ export default function SettingsPage() {
     if (!selectedProfile || selectedProfile.is_default) return;
     deleteMutation.mutate(selectedProfile.id, {
       onSuccess: () => {
-        toast.success('配置项目已删除');
+        toast.success(t('配置项目已删除'));
         setSelectedId(defaultProfile?.id ?? null);
         setConfirmDelete(false);
       },
@@ -260,7 +197,7 @@ export default function SettingsPage() {
   const handleSetDefault = () => {
     if (!selectedProfile || selectedProfile.is_default) return;
     setDefaultMutation.mutate(selectedProfile.id, {
-      onSuccess: () => toast.success('已设为默认配置项目'),
+      onSuccess: () => toast.success(t('已设为默认配置项目')),
       onError: (err) => toast.error(errorText(err)),
     });
   };
@@ -269,7 +206,7 @@ export default function SettingsPage() {
     return (
       <div className="flex flex-col items-center justify-center gap-3 py-32">
         <Loader2 className="size-8 animate-spin text-primary" />
-        <p className="text-sm text-muted-foreground">加载配置中...</p>
+        <p className="text-sm text-muted-foreground">{t('加载配置中...')}</p>
       </div>
     );
   }
@@ -281,7 +218,7 @@ export default function SettingsPage() {
           <CardContent className="pt-6">
             <Alert variant="destructive">
               <AlertCircle />
-              <AlertTitle>加载配置失败</AlertTitle>
+              <AlertTitle>{t('加载配置失败')}</AlertTitle>
               <AlertDescription>{error?.message}</AlertDescription>
             </Alert>
           </CardContent>
@@ -294,407 +231,70 @@ export default function SettingsPage() {
     <div className="mx-auto max-w-3xl">
       <div className="mb-6">
         <h1 className="text-2xl font-bold tracking-tight text-foreground">
-          系统设置
+          {t('系统设置')}
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          配置 OCR 解析、评分标准与 MCP 自检开关，支持多套独立配置项目
+          {t('配置 OCR 解析、评分标准与 MCP 自检开关，支持多套独立配置项目')}
         </p>
       </div>
 
       {/* 配置项目管理 */}
-      <Card className="elevated-card mb-5">
-        <CardHeader className="pb-3">
-          <div className="flex items-center gap-3">
-            <div className="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary/10 to-primary/5 text-primary ring-1 ring-primary/10">
-              <FolderKanban className="size-5" />
-            </div>
-            <div>
-              <CardTitle className="text-lg">配置项目</CardTitle>
-              <CardDescription>
-                每套配置独立管理，题目在上传时选择使用哪一套
-              </CardDescription>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3 pt-1">
-          <div className="flex flex-wrap gap-2">
-            {profiles?.map((p) => (
-              <Button
-                key={p.id}
-                type="button"
-                variant={displayProfileId === p.id ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setSelectedId(p.id)}
-                className="gap-1.5"
-              >
-                {p.is_default && <Star className="size-3.5" />}
-                {p.name}
-              </Button>
-            ))}
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => openDialog('create')}
-              className="gap-1.5 text-muted-foreground"
-            >
-              <Plus className="size-4" />
-              新建配置项目
-            </Button>
-          </div>
-
-          {selectedProfile && (
-            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-muted/40 px-3 py-2">
-              <span className="text-sm font-medium text-foreground">
-                {selectedProfile.name}
-              </span>
-              {selectedProfile.is_default && (
-                <Badge variant="secondary" className="gap-1">
-                  <Star className="size-3" />
-                  默认
-                </Badge>
-              )}
-              <div className="ml-auto flex flex-wrap gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => openDialog('rename')}
-                  className="gap-1.5"
-                >
-                  <Pencil className="size-3.5" />
-                  重命名
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => openDialog('copy')}
-                  className="gap-1.5"
-                >
-                  <Copy className="size-3.5" />
-                  复制
-                </Button>
-                {!selectedProfile.is_default && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={handleSetDefault}
-                    className="gap-1.5"
-                  >
-                    <Star className="size-3.5" />
-                    设为默认
-                  </Button>
-                )}
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setConfirmDelete(true)}
-                  disabled={selectedProfile.is_default}
-                  className="gap-1.5 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                >
-                  <Trash2 className="size-3.5" />
-                  删除
-                </Button>
-              </div>
-            </div>
-          )}
-          {profiles && profiles.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              暂无配置项目，点击「新建配置项目」创建第一套配置
-            </p>
-          ) : null}
-        </CardContent>
-      </Card>
+      <ProfileManagerCard
+        profiles={profiles}
+        selectedProfile={selectedProfile}
+        displayProfileId={displayProfileId}
+        onSelect={setSelectedId}
+        onOpenDialog={openDialog}
+        onSetDefault={handleSetDefault}
+        onRequestDelete={() => setConfirmDelete(true)}
+      />
 
       {!selectedProfile ? (
         <Card className="elevated-card">
           <CardContent className="pt-6">
             <Alert>
-              <AlertTitle>请选择一个配置项目</AlertTitle>
+              <AlertTitle>{t('请选择一个配置项目')}</AlertTitle>
               <AlertDescription>
-                选择或新建配置项目后可编辑其详细配置
+                {t('选择或新建配置项目后可编辑其详细配置')}
               </AlertDescription>
             </Alert>
           </CardContent>
         </Card>
       ) : (
-        <Form {...form}>
-          <form
-            onSubmit={form.handleSubmit(onSubmit)}
-            className="flex flex-col gap-5"
-          >
-            <Card className="elevated-card stagger-1 animate-fade-in-up motion-reduce:animate-none overflow-hidden">
-              <CardHeader className="pb-4">
-                <div className="flex items-center gap-3">
-                  <div className="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary/10 to-primary/5 text-primary ring-1 ring-primary/10">
-                    <ShieldCheck className="size-5" />
-                  </div>
-                  <div>
-                    <CardTitle className="text-lg">MCP 评分自检</CardTitle>
-                    <CardDescription>
-                      编程助手(Codex 等)通过本地 MCP 接口完成评分与复核
-                    </CardDescription>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="pt-5">
-                <FormField
-                  control={form.control}
-                  name="review_enabled"
-                  render={({ field }) => (
-                    <FormItem className="flex items-start gap-3 space-y-0">
-                      <FormControl>
-                        <Checkbox
-                          checked={field.value}
-                          onCheckedChange={field.onChange}
-                          className="mt-0.5"
-                        />
-                      </FormControl>
-                      <div className="space-y-1 leading-none">
-                        <FormLabel>要求客户端在保存建议前完成第二遍反向自检</FormLabel>
-                        <FormDescription>
-                          评分流程要求 MCP 客户端对每条评分项做反向校验（依据原文引用与分数上限推导），
-                          双重检查通过后才能保存建议，最终成绩仍需教师在此网页确认。
-                        </FormDescription>
-                      </div>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </CardContent>
-            </Card>
-
-            <Card className="elevated-card stagger-2 animate-fade-in-up motion-reduce:animate-none overflow-hidden">
-              <CardHeader className="pb-4">
-                <div className="flex items-center gap-3">
-                  <div className="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary/10 to-primary/5 text-primary ring-1 ring-primary/10">
-                    <ScanEye className="size-5" />
-                  </div>
-                  <div>
-                    <CardTitle className="text-lg">PaddleOCR-VL 文档解析</CardTitle>
-                    <CardDescription>
-                      将 PDF 解析为结构化 Markdown，保留表格、公式与阅读顺序
-                    </CardDescription>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-4 pt-5">
-                <FormField
-                  control={form.control}
-                  name="paddleocr_api_url"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>PaddleOCR API URL</FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="https://xxx.aistudio.baidu.com/xxx"
-                          {...field}
-                        />
-                      </FormControl>
-                      <FormDescription>
-                        请填写完整接口：异步任务入口 .../api/v2/ocr/jobs，或同步入口 .../layout-parsing；不要填写 .../api/v2/ocr/jobs/layout-parsing。
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="paddleocr_token"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>PaddleOCR Access Token</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="password"
-                          placeholder="请输入 PaddleOCR Access Token"
-                          autoComplete="new-password"
-                          {...field}
-                        />
-                      </FormControl>
-                      <FormDescription>
-                        AI Studio 个人访问令牌
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </CardContent>
-            </Card>
-
-            <Card className="elevated-card stagger-4 animate-fade-in-up motion-reduce:animate-none overflow-hidden">
-              <CardHeader className="pb-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex items-center gap-3">
-                    <div className="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary/10 to-primary/5 text-primary ring-1 ring-primary/10">
-                      <ClipboardCheck className="size-5" />
-                    </div>
-                    <div>
-                      <CardTitle className="text-lg">评分标准(Rubric)</CardTitle>
-                      <CardDescription>
-                        配置的评分标准优先于题目提取结果；留空时由客户端从题目中提取
-                      </CardDescription>
-                    </div>
-                  </div>
-                  <CardAction>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={handleResetRubric}
-                    >
-                      <Undo2 className="size-4" />
-                      重置为默认
-                    </Button>
-                  </CardAction>
-                </div>
-              </CardHeader>
-              <CardContent className="pt-5">
-                <FormField
-                  control={form.control}
-                  name="rubric_definition"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>结构化 Rubric JSON</FormLabel>
-                      <FormControl>
-                        <Textarea
-                          rows={10}
-                          placeholder={DEFAULT_RUBRIC_PLACEHOLDER}
-                          className="font-mono text-sm"
-                          {...field}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </CardContent>
-            </Card>
-
-            <Separator className="my-1" />
-
-            <div className="-mx-2 flex justify-end rounded-xl border border-border bg-muted/50 p-4">
-              <Button
-                type="submit"
-                size="lg"
-                disabled={updateMutation.isPending}
-                className="gap-2 px-8 text-base"
-              >
-                {updateMutation.isPending ? (
-                  <Loader2 className="animate-spin" />
-                ) : (
-                  <Save className="size-4" />
-                )}
-                保存配置
-              </Button>
-            </div>
-          </form>
-        </Form>
+        <ConfigSettingsForm
+          form={form}
+          isSaving={updateMutation.isPending}
+          onSubmit={onSubmit}
+          onResetRubric={handleResetRubric}
+        />
       )}
 
       <ProfileDialog
         dialog={dialog}
         busy={createMutation.isPending || renameMutation.isPending}
         onSubmit={handleDialogSubmit}
-        onClose={() => setDialog({ open: false, mode: 'create' })}
+        onClose={() => setDialog(CLOSED_PROFILE_DIALOG)}
       />
 
       <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>删除配置项目</AlertDialogTitle>
+            <AlertDialogTitle>{t('删除配置项目')}</AlertDialogTitle>
             <AlertDialogDescription>
-              确定删除配置项目「{selectedProfile?.name}」？该项目的配置将从当前生效集合中移除。
+              {t('确定删除配置项目')}「{selectedProfile?.name}」？{t('该项目的配置将从当前生效集合中移除。')}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogCancel>{t('取消')}</AlertDialogCancel>
             <AlertDialogAction onClick={handleDelete} disabled={deleteMutation.isPending}>
               {deleteMutation.isPending ? (
                 <Loader2 className="size-4 animate-spin" />
               ) : null}
-              删除
+              {t('删除')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
     </div>
-  );
-}
-
-function ProfileDialog({
-  dialog,
-  busy,
-  onSubmit,
-  onClose,
-}: {
-  dialog: ProfileDialogState;
-  busy: boolean;
-  onSubmit: (name: string) => void;
-  onClose: () => void;
-}) {
-  const [name, setName] = useState(dialog.profileName ?? '');
-
-  // 打开时同步初始化名称
-  useEffect(() => {
-    if (dialog.open) {
-      setName(dialog.profileName ?? '');
-    }
-  }, [dialog.open, dialog.profileName]);
-
-  const title =
-    dialog.mode === 'create'
-      ? '新建配置项目'
-      : dialog.mode === 'rename'
-        ? '重命名配置项目'
-        : '复制配置项目';
-  const description =
-    dialog.mode === 'create'
-      ? '创建一套全新的独立配置'
-      : dialog.mode === 'rename'
-        ? '修改当前配置项目名称'
-        : '基于当前项目复制一套全新配置，可在此基础上微调';
-
-  const busyNow = dialog.mode === 'copy' ? false : busy;
-
-  return (
-    <AlertDialog open={dialog.open} onOpenChange={(open) => !open && onClose()}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>{title}</AlertDialogTitle>
-          <AlertDialogDescription>{description}</AlertDialogDescription>
-        </AlertDialogHeader>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            onSubmit(name);
-          }}
-          className="flex flex-col gap-3"
-        >
-          <Input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="如：初二语文 / 期中考冲刺"
-            autoFocus
-          />
-        </form>
-        <AlertDialogFooter>
-          <AlertDialogCancel type="button">取消</AlertDialogCancel>
-          <AlertDialogAction
-            type="submit"
-            disabled={busyNow}
-          >
-            {busyNow ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              '确定'
-            )}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
   );
 }

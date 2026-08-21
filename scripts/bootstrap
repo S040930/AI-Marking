@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
+BACKEND_DIR="$ROOT_DIR/backend"
+FRONTEND_DIR="$ROOT_DIR/frontend"
+PYTHON_VERSION="$(tr -d '[:space:]' < "$ROOT_DIR/.python-version")"
+PYTHON_BIN="${PYTHON_BIN:-python3}"
+VENV_DIR="$BACKEND_DIR/.venv"
+MODE="dev"
+
+if [[ "${1:-}" == "--prod" ]]; then
+  MODE="prod"
+elif [[ "${1:-}" != "" ]]; then
+  printf '用法：%s [--prod]\n' "$0" >&2
+  exit 2
+fi
+
+command -v "$PYTHON_BIN" >/dev/null 2>&1 || {
+  printf '未找到 Python：%s\n' "$PYTHON_BIN" >&2
+  exit 1
+}
+
+"$PYTHON_BIN" - "$PYTHON_VERSION" <<'PY'
+import sys
+from pathlib import Path
+
+expected = sys.argv[1]
+actual = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+if actual != expected:
+    raise SystemExit(f"需要 Python {expected}，当前为 {actual}；请设置 PYTHON_BIN")
+PY
+
+if [[ ! -x "$VENV_DIR/bin/python" ]]; then
+  "$PYTHON_BIN" -m venv "$VENV_DIR"
+fi
+
+REQUIREMENTS_FILE="$BACKEND_DIR/requirements-${MODE}.txt"
+"$VENV_DIR/bin/python" -m pip install --require-hashes -r "$REQUIREMENTS_FILE"
+
+command -v npm >/dev/null 2>&1 || {
+  printf '未找到 npm；请安装 Node.js 18 或更高版本。\n' >&2
+  exit 1
+}
+(
+  cd "$FRONTEND_DIR"
+  npm ci
+)
+
+printf '开发环境已就绪：%s\n' "$VENV_DIR"

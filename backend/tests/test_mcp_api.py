@@ -2,11 +2,11 @@ import json
 
 import pytest
 
-from app.api.mcp import _grading_policy
 from app.core.config import settings
 from app.models.question import Question, QuestionStatus
 from app.models.submission import Submission, SubmissionGradingMode, SubmissionStatus
 from app.models.submission_code_file import SubmissionCodeFile
+from app.services.mcp_workflow import build_grading_policy
 from app.services.rubric import resolve_rubric
 
 
@@ -40,7 +40,7 @@ def _configure_default_rubric(db_session) -> None:
 
 
 def test_grading_policy_requires_manual_visual_confirmation():
-    policy = _grading_policy(resolve_rubric(None, {}))
+    policy = build_grading_policy(resolve_rubric(None, {}))
     requirements = "\n".join(policy["requirements"])
     assert "提交含代码时" in requirements
     assert "已检查且一致" in requirements
@@ -702,5 +702,300 @@ async def test_save_question_rubric_rejects_after_ocr_change(client, db_session)
         f"/api/mcp/questions/{question.id}/rubric",
         headers=_headers(),
         json={"handle": handle, "status": "absent_or_ambiguous"},
+    )
+    assert response.status_code == 409
+
+
+# ---------- MCP 独立复核 ----------
+
+
+def _configure_two_item_rubric(db_session) -> None:
+    from app.services.config import upsert_config
+
+    upsert_config(
+        db_session,
+        {
+            "rubric_definition": json.dumps(
+                {
+                    "items": [
+                        {"criterion": "Task 1", "max_score": 60, "details": "完成度"},
+                        {"criterion": "Task 2", "max_score": 40, "details": "分析质量"},
+                    ],
+                    "total_max_score": 100,
+                },
+                ensure_ascii=False,
+            )
+        },
+    )
+    db_session.commit()
+
+
+async def _prepare_reviewed_suggestion(client, db_session):
+    """创建作业、保存建议并返回 (submission, 评分用 rubric, 复核用新句柄)。"""
+    question = Question(
+        name="复核题",
+        original_filename="q.pdf",
+        file_path="/tmp/q.pdf",
+        ocr_text="Task 1: 60 points. Task 2: 40 points.",
+        status=QuestionStatus.ready,
+    )
+    submission = Submission(
+        original_filename="answer.pdf",
+        file_path="/tmp/a.pdf",
+        question=question,
+        ocr_text="学生内容",
+        status=SubmissionStatus.awaiting_mcp,
+        grading_mode=SubmissionGradingMode.external_agent,
+    )
+    db_session.add(submission)
+    _configure_two_item_rubric(db_session)
+    db_session.commit()
+
+    pkg = await client.get(
+        f"/api/mcp/submissions/{submission.id}/package", headers=_headers()
+    )
+    assert pkg.status_code == 200, pkg.text
+    payload = pkg.json()
+    header = json.loads(payload["content"].split("\n", 1)[1].split("\n\n", 1)[0])
+    resolved = header["grading_policy"]["resolved_rubric"]
+
+    save = await client.put(
+        f"/api/mcp/submissions/{submission.id}/assessment-v2",
+        headers=_headers(),
+        json={
+            "grading_handle": payload["grading_handle"],
+            "client": "claude-code",
+            "assessment": {
+                "request_id": "33333333-3333-4333-8333-333333333333",
+                "rubric_snapshot_id": resolved["snapshot_id"],
+                "rubric_source": "configured",
+                "score": 80,
+                "max_score": 100,
+                "confidence": 0.8,
+                "feedback": "整体完成较好。",
+                "details": [
+                    {
+                        "rubric_item_id": item["rubric_item_id"],
+                        "criterion": item["criterion"],
+                        "score": score,
+                        "max_score": item["max_score"],
+                        "comment": "完成。",
+                        "evidence": ["学生内容"],
+                    }
+                    for item, score in zip(resolved["items"], (50, 30), strict=True)
+                ],
+                "self_check": {
+                    "rubric_items_reviewed": [item["rubric_item_id"] for item in resolved["items"]],
+                    "second_pass_completed": True,
+                },
+            },
+        },
+    )
+    assert save.status_code == 200, save.text
+
+    # 保存建议后 revision 递增,复核者需重新打开作业获取绑定当前 revision 的句柄
+    reopen = await client.get(
+        f"/api/mcp/submissions/{submission.id}/package", headers=_headers()
+    )
+    assert reopen.status_code == 200, reopen.text
+    return submission, resolved, reopen.json()["grading_handle"]
+
+
+@pytest.mark.asyncio
+async def test_save_assessment_review_persists_verdict(client, db_session):
+    """独立复核结论写入 assessment_review,含服务端补全的 criterion/max_score。"""
+    submission, resolved, handle = await _prepare_reviewed_suggestion(client, db_session)
+
+    response = await client.put(
+        f"/api/mcp/submissions/{submission.id}/assessment-review",
+        headers=_headers(),
+        json={
+            "grading_handle": handle,
+            "verdict": "partial",
+            "summary": "第 1 项证据充分,第 2 项扣分依据不足。",
+            "confidence": 0.7,
+            "items": [
+                {
+                    "rubric_item_id": resolved["items"][0]["rubric_item_id"],
+                    "verdict": "agree",
+                    "comment": "证据可定位,得分合理。",
+                },
+                {
+                    "rubric_item_id": resolved["items"][1]["rubric_item_id"],
+                    "verdict": "disagree",
+                    "comment": "报告包含分析内容,建议提高得分。",
+                    "suggested_score": 35,
+                },
+            ],
+            "client": "codex",
+        },
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["verdict"] == "partial"
+    assert body["reviewed_revision"] == 1
+    assert body["status"] == "ready_for_review"
+
+    db_session.expire_all()
+    saved = db_session.get(Submission, submission.id)
+    assert saved.assessment_review is not None
+    assert saved.assessment_review["reviewed_revision"] == saved.grading_revision
+    assert saved.assessment_review["client"] == "codex"
+    disagree = next(
+        item for item in saved.assessment_review["items"] if item["verdict"] == "disagree"
+    )
+    assert disagree["criterion"] == "Task 2"
+    assert disagree["max_score"] == 40
+    assert disagree["suggested_score"] == 35
+
+
+@pytest.mark.asyncio
+async def test_save_assessment_review_rejects_stale_handle(client, db_session):
+    """保存建议前的旧句柄 revision 不匹配,复核返回 409。"""
+    submission, resolved, _ = await _prepare_reviewed_suggestion(client, db_session)
+    # 打开作业获取绑定当前 revision 的句柄,再模拟建议更新使句柄过期
+    stale_pkg = await client.get(
+        f"/api/mcp/submissions/{submission.id}/package", headers=_headers()
+    )
+    assert stale_pkg.status_code == 200
+    handle = stale_pkg.json()["grading_handle"]
+
+    # 模拟建议更新:直接递增 revision(等价于另一编程助手保存了新建议)
+    db_session.expire_all()
+    row = db_session.get(Submission, submission.id)
+    row.grading_revision += 1
+    db_session.commit()
+
+    response = await client.put(
+        f"/api/mcp/submissions/{submission.id}/assessment-review",
+        headers=_headers(),
+        json={
+            "grading_handle": handle,
+            "verdict": "agree",
+            "summary": "复核同意。",
+            "confidence": 0.9,
+            "items": [
+                {
+                    "rubric_item_id": item["rubric_item_id"],
+                    "verdict": "agree",
+                    "comment": "合理。",
+                }
+                for item in resolved["items"]
+            ],
+        },
+    )
+    assert response.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_save_assessment_review_rejects_bad_items(client, db_session):
+    """复核项缺失、伪造 item ID 或建议分超满分时返回 422。"""
+    submission, resolved, handle = await _prepare_reviewed_suggestion(client, db_session)
+    first_id = resolved["items"][0]["rubric_item_id"]
+
+    missing = await client.put(
+        f"/api/mcp/submissions/{submission.id}/assessment-review",
+        headers=_headers(),
+        json={
+            "grading_handle": handle,
+            "verdict": "partial",
+            "summary": "只复核了第一项。",
+            "items": [
+                {"rubric_item_id": first_id, "verdict": "agree", "comment": "合理。"}
+            ],
+        },
+    )
+    assert missing.status_code == 422
+    assert "未完整覆盖" in missing.json()["detail"]
+
+    unknown = await client.put(
+        f"/api/mcp/submissions/{submission.id}/assessment-review",
+        headers=_headers(),
+        json={
+            "grading_handle": handle,
+            "verdict": "agree",
+            "summary": "伪造评分项。",
+            "items": [
+                {"rubric_item_id": first_id, "verdict": "agree", "comment": "合理。"},
+                {
+                    "rubric_item_id": "rubric_item_unknown",
+                    "verdict": "agree",
+                    "comment": "伪造。",
+                },
+            ],
+        },
+    )
+    assert unknown.status_code == 422
+
+    over = await client.put(
+        f"/api/mcp/submissions/{submission.id}/assessment-review",
+        headers=_headers(),
+        json={
+            "grading_handle": handle,
+            "verdict": "partial",
+            "summary": "建议分超满分。",
+            "items": [
+                {"rubric_item_id": first_id, "verdict": "agree", "comment": "合理。"},
+                {
+                    "rubric_item_id": resolved["items"][1]["rubric_item_id"],
+                    "verdict": "disagree",
+                    "comment": "应得更多。",
+                    "suggested_score": 999,
+                },
+            ],
+        },
+    )
+    assert over.status_code == 422
+    assert "不能超过该项满分" in over.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_save_assessment_review_rejects_after_finalize(client, db_session):
+    """教师确认最终成绩后复核返回 409。"""
+    submission, resolved, handle = await _prepare_reviewed_suggestion(client, db_session)
+
+    finalized = await client.post(
+        f"/api/submissions/{submission.id}/finalize",
+        json={
+            "reviewer_name": "Teacher",
+            "score": 80,
+            "max_score": 100,
+            "feedback": "确认成绩。",
+            "details": [
+                {
+                    "criterion": "Task 1",
+                    "score": 50,
+                    "max_score": 60,
+                    "comment": "完成。",
+                    "evidence": ["学生内容"],
+                },
+                {
+                    "criterion": "Task 2",
+                    "score": 30,
+                    "max_score": 40,
+                    "comment": "一般。",
+                    "evidence": ["学生内容"],
+                },
+            ],
+        },
+    )
+    assert finalized.status_code == 200, finalized.text
+
+    response = await client.put(
+        f"/api/mcp/submissions/{submission.id}/assessment-review",
+        headers=_headers(),
+        json={
+            "grading_handle": handle,
+            "verdict": "agree",
+            "summary": "已定稿。",
+            "items": [
+                {
+                    "rubric_item_id": item["rubric_item_id"],
+                    "verdict": "agree",
+                    "comment": "合理。",
+                }
+                for item in resolved["items"]
+            ],
+        },
     )
     assert response.status_code == 409

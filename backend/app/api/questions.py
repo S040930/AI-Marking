@@ -1,8 +1,10 @@
 """独立题目库：上传、OCR、复用、替换与安全删除。"""
 
+import json
 import logging
 import shutil
 from pathlib import Path
+from types import SimpleNamespace
 
 from fastapi import (
     APIRouter,
@@ -27,8 +29,9 @@ from app.models.question import (
     QuestionReplacementStatus,
     QuestionStatus,
 )
-from app.models.submission import Submission
+from app.models.submission import Submission, SubmissionGradingMode
 from app.schemas.question import (
+    GradingPromptOut,
     PaginatedQuestions,
     QuestionConfigProfileRequest,
     QuestionConfirmRequest,
@@ -39,12 +42,18 @@ from app.schemas.question import (
     QuestionReplacementResponse,
 )
 from app.services.config import (
+    get_config_dict,
     get_or_create_default_profile,
     get_profile,
 )
 from app.services.document_storage import (
+    remove_document_if_unreferenced,
     save_document_as_pdf,
     validate_document_upload,
+)
+from app.services.mcp_workflow import (
+    build_grading_policy,
+    resolve_submission_rubric,
 )
 from app.services.queue import (
     new_question_ocr_job,
@@ -118,17 +127,18 @@ async def create_question(
         config_profile_id = default.id
     elif get_profile(db, config_profile_id) is None:
         raise HTTPException(status_code=422, detail="配置项目不存在")
-    original_filename, path = await save_document_as_pdf(
+    stored = await save_document_as_pdf(
         file, _upload_dir(), suffix="_question"
     )
+    original_filename, path = stored.original_filename, stored.path
     display_name = (name or Path(original_filename).stem).strip()
     if not display_name:
-        path.unlink(missing_ok=True)
         raise HTTPException(status_code=422, detail="题目名称不能为空")
     question = Question(
         name=display_name,
         original_filename=original_filename,
         file_path=str(path),
+        file_sha256=stored.sha256,
         status=QuestionStatus.pending,
         config_profile_id=config_profile_id,
     )
@@ -140,7 +150,6 @@ async def create_question(
         db.refresh(question)
     except Exception:
         db.rollback()
-        path.unlink(missing_ok=True)
         raise
     return _serialize(question, 0)
 
@@ -194,6 +203,63 @@ def get_question(question_id: int, db: Session = Depends(get_db)):
     if row is None:
         raise HTTPException(status_code=404, detail="题目不存在")
     return _serialize(row[0], row[1], detail=True)
+
+
+@router.get("/questions/{question_id}/grading-prompt", response_model=GradingPromptOut)
+def get_question_grading_prompt(question_id: int, db: Session = Depends(get_db)):
+    """按题目生成可审计的批改提示词。
+
+    复用与运行时评分包完全相同的 rubric 解析与评分策略组装
+    （``resolve_submission_rubric`` + ``build_grading_policy``），
+    保证教师复制的提示词与 ``open_ai_marking_assignment`` 返回的
+    grading_policy 同源、一字不差。题目 OCR 未完成时无法生成。
+    """
+    question = db.get(Question, question_id)
+    if question is None:
+        raise HTTPException(status_code=404, detail="题目不存在")
+    ocr_text = question.ocr_text or ""
+    if not ocr_text.strip():
+        raise HTTPException(status_code=409, detail="题目 OCR 尚未完成，无法生成提示词")
+
+    # resolve_submission_rubric 只依赖 sub.question 与配置，这里用轻量持有者
+    # 复用同一条解析路径，确保与评分包一致。
+    resolved = resolve_submission_rubric(
+        db, SimpleNamespace(question=question)
+    )
+    config = get_config_dict(db, profile_id=question.config_profile_id)
+    review_enabled = (config.get("review_enabled", "true") or "true").lower() == "true"
+    grading_policy = build_grading_policy(resolved, review_required=review_enabled)
+
+    text = (
+        "[AI-Marking grading prompt]\n"
+        + json.dumps(
+            {
+                "question_id": question.id,
+                "question_name": question.name,
+                "grading_mode": SubmissionGradingMode.external_agent.value,
+                "review_enabled": review_enabled,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        + f"\n\n--- question ---\n{ocr_text}"
+        + "\n\n--- grading_policy ---\n"
+        + json.dumps(grading_policy, ensure_ascii=False, sort_keys=True)
+    )
+
+    return GradingPromptOut(
+        question_id=question.id,
+        name=question.name,
+        grading_mode=SubmissionGradingMode.external_agent.value,
+        review_enabled=review_enabled,
+        source=resolved.source,
+        snapshot_id=resolved.snapshot_id,
+        total_max_score=resolved.total_max_score,
+        needs_rubric=resolved.source == "built_in_default",
+        ocr_text=ocr_text,
+        grading_policy=grading_policy,
+        text=text,
+    )
 
 
 @router.api_route(
@@ -271,12 +337,14 @@ async def retry_question_ocr(
     if question.status != QuestionStatus.failed:
         raise HTTPException(status_code=409, detail="仅识别失败的题目可以重新上传")
 
-    original_filename, new_path = await save_document_as_pdf(
+    stored = await save_document_as_pdf(
         file, _upload_dir(), suffix="_question"
     )
+    original_filename, new_path = stored.original_filename, stored.path
     old_path = question.file_path
     question.original_filename = original_filename
     question.file_path = str(new_path)
+    question.file_sha256 = stored.sha256
     question.status = QuestionStatus.pending
     question.error_message = None
     question.updated_at = utc_now_naive()
@@ -286,10 +354,9 @@ async def retry_question_ocr(
         db.refresh(question)
     except Exception:
         db.rollback()
-        new_path.unlink(missing_ok=True)
         raise
     if old_path != str(new_path):
-        _unlink_after_commit([old_path])
+        _unlink_after_commit(db, [old_path])
     row = _question_with_count(db, question_id)
     return _serialize(row[0], row[1])
 
@@ -318,11 +385,11 @@ def _blocked_ids(submissions: list[Submission]) -> list[int]:
     )
 
 
-def _unlink_after_commit(paths: list[str]) -> None:
+def _unlink_after_commit(db: Session, paths: list[str]) -> None:
     for file_path in paths:
         try:
-            Path(file_path).unlink(missing_ok=True)
-        except OSError as exc:
+            remove_document_if_unreferenced(db, file_path, Path(settings.UPLOAD_DIR))
+        except (OSError, ValueError) as exc:
             logger.warning("清理题目库关联 PDF 失败 [%s]: %s", file_path, exc)
 
 
@@ -375,11 +442,13 @@ async def replace_question(
             },
         )
 
-    original_filename, new_path = await save_document_as_pdf(
+    stored = await save_document_as_pdf(
         file, _upload_dir(), suffix="_question"
     )
+    original_filename, new_path = stored.original_filename, stored.path
     current.replacement_status = QuestionReplacementStatus.pending
     current.replacement_file_path = str(new_path)
+    current.replacement_file_sha256 = stored.sha256
     current.replacement_original_filename = original_filename
     current.replacement_error_message = None
     current.updated_at = utc_now_naive()
@@ -388,7 +457,6 @@ async def replace_question(
         db.commit()
     except Exception:
         db.rollback()
-        new_path.unlink(missing_ok=True)
         raise
     return QuestionReplacementResponse(
         question_id=current.id,
@@ -454,7 +522,7 @@ def delete_question(
     except Exception:
         db.rollback()
         raise
-    _unlink_after_commit(paths)
+    _unlink_after_commit(db, paths)
     for artifact_root in artifact_roots:
         shutil.rmtree(artifact_root, ignore_errors=True)
     return QuestionMutationResponse(deleted_submission_count=len(submissions))

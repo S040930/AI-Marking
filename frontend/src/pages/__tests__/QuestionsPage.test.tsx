@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { MemoryRouter } from 'react-router-dom';
 
 const mocks = vi.hoisted(() => ({
   retry: vi.fn(),
@@ -27,7 +28,6 @@ vi.mock('@/api/questions', () => ({
       ],
     },
   }),
-  useCreateQuestion: () => ({ mutate: vi.fn(), isPending: false }),
   useRenameQuestion: () => ({ mutate: vi.fn() }),
   useRetryQuestionOcr: () => ({ mutate: mocks.retry }),
   useDeleteQuestion: () => ({ mutate: mocks.remove, isPending: false }),
@@ -36,6 +36,7 @@ vi.mock('@/api/questions', () => ({
     mutate: vi.fn(),
     isPending: false,
   }),
+  useGradingPrompt: () => ({ data: undefined, isLoading: true, isError: false }),
 }));
 
 vi.mock('@/api/config', () => ({
@@ -49,11 +50,25 @@ vi.mock('@/api/config', () => ({
 
 import QuestionsPage from '@/pages/QuestionsPage';
 
+function renderPage() {
+  return render(
+    <MemoryRouter>
+      <QuestionsPage />
+    </MemoryRouter>,
+  );
+}
+
 describe('QuestionsPage', () => {
   beforeEach(() => vi.clearAllMocks());
 
+  it('提供前往题目上传页的入口', () => {
+    renderPage();
+    const link = screen.getByRole('link', { name: '上传题目' });
+    expect(link).toHaveAttribute('href', '/questions/upload');
+  });
+
   it('展示 OCR 失败原因并允许重新上传', () => {
-    render(<QuestionsPage />);
+    renderPage();
     expect(screen.getByText(/OCR 服务异常/)).toBeInTheDocument();
     const file = new File(['pdf'], 'replacement.pdf', {
       type: 'application/pdf',
@@ -70,7 +85,7 @@ describe('QuestionsPage', () => {
   });
 
   it('必须输入完整题目名称才能执行危险删除', () => {
-    render(<QuestionsPage />);
+    renderPage();
     fireEvent.click(screen.getByRole('button', { name: '删除' }));
     const action = screen.getByRole('button', { name: '确认并永久删除' });
     expect(action).toBeDisabled();

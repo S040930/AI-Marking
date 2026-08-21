@@ -28,6 +28,22 @@ class QuestionDetail(QuestionOut):
     ocr_text: str | None = None
 
 
+class GradingPromptOut(BaseModel):
+    """按题目生成的可审计批改提示词：与运行时评分包中的 grading_policy 同源。"""
+
+    question_id: int
+    name: str
+    grading_mode: str
+    review_enabled: bool
+    source: str
+    snapshot_id: str | None = None
+    total_max_score: float
+    needs_rubric: bool
+    ocr_text: str | None = None
+    grading_policy: dict
+    text: str
+
+
 class PaginatedQuestions(BaseModel):
     items: list[QuestionOut]
     total: int

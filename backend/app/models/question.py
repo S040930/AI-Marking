@@ -39,6 +39,7 @@ class Question(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
     file_path: Mapped[str] = mapped_column(String(512), nullable=False)
+    file_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     ocr_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     # 题目 OCR 阶段由服务端提取并校验的规范 rubric 文本；可信性还需同时满足
     # extracted_rubric_items、OCR hash、version 和时间字段。题目被替换时清空。
@@ -64,6 +65,9 @@ class Question(Base):
     )
     replacement_file_path: Mapped[str | None] = mapped_column(
         String(512), nullable=True
+    )
+    replacement_file_sha256: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, index=True
     )
     replacement_original_filename: Mapped[str | None] = mapped_column(
         String(255), nullable=True

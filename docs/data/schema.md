@@ -4,8 +4,8 @@
 
 | 表 | 核心数据 | 生命周期 |
 |---|---|---|
-| `questions` | 题目 PDF、OCR 文本、服务端校验通过的题目提取 rubric 快照（`extracted_rubric*`）与新版替换状态 | 可被多份作业复用；新版成功后切换 |
-| `submissions` | 学生 PDF 路径、作业 OCR、MCP 评分建议与人工审核结果 | 必须关联一个题目；终态记录可单独删除 |
+| `questions` | 题目 PDF、`file_sha256`、OCR 文本、服务端校验通过的题目提取 rubric 快照（`extracted_rubric*`）与新版替换状态 | 可被多份作业复用；新版成功后切换 |
+| `submissions` | 学生 PDF 路径、`file_sha256`、作业 OCR、MCP 评分建议与人工审核结果 | 必须关联一个题目；终态记录可单独删除 |
 | `submission_code_files` | 编程助手提交的多语言小题源码与 SHA-256（不保存运行产物） | 随 submission 级联删除 |
 | `submission_code_input_files` | 历史数据：旧代码运行输入文件，仅只读保留 | 随 submission 级联删除 |
 | `background_jobs` | 待执行、运行中或死信的题目 OCR/题目替换/作业 OCR 任务 | 成功后删除；随业务实体级联删除 |
@@ -15,7 +15,9 @@
 | `mcp_assessment_receipts` | 外部编程助手成功保存的请求哈希与响应 | 用于跨 revision、重启的精确幂等重放 |
 | `alembic_version` | 当前数据库迁移版本 | 由 Alembic 管理 |
 
-`submissions` 的 MCP 审计字段：`grading_mode`（收敛为 MCP-only 后固定为 `external_agent`）、`grading_revision`（乐观锁整数，每次成功保存建议递增）和 `graded_at`（最近一次建议保存时间）。评分来源记录在 `assessment_suggestion.mcp_metadata.client`（如 `codex`、`claude-code`、`opencode`），界面据此显示具体客户端名称，不保存未经验证的模型名称。后端不再调用任何 LLM，也不存在 Agent/Critic 执行字段。
+`submissions` 的 MCP 审计字段：`grading_mode`（收敛为 MCP-only 后固定为 `external_agent`）、`grading_revision`（乐观锁整数，每次成功保存建议递增）和 `graded_at`（最近一次建议保存时间）。评分来源记录在 `assessment_suggestion.mcp_metadata.client`（由启动器参数可选提供），界面据此显示具体客户端名称，不保存未经验证的模型名称。后端不再调用任何 LLM，也不存在 Agent/Critic 执行字段。
+
+`submissions.assessment_review` 存储独立复核任务对当前建议的结论（总体 `verdict` agree/partial/disagree、`summary`、逐项 `items` 含服务端补全的 criterion/max_score 与可选 `suggested_score`、`reviewed_revision`、复核客户端与时间）。复核由教师按需触发、经 `save_ai_marking_assessment_review` 写入：不修改建议本身、不改变状态；`reviewed_revision` 与当前 `grading_revision` 不一致时界面标记为过期，重试批改时随建议一起清空。
 
 `questions.extracted_rubric*` 只有在 rubric item 的 OCR 原文引用、分值和总分通过后端确定性校验且 OCR SHA-256 匹配时才构成可信 `question_extracted` 快照；快照由编程助手经 `save_ai_marking_question_rubric` 提取、服务端校验后写入，历史旧文本没有来源标记时不参与 MCP rubric 选择。
 
@@ -106,10 +108,11 @@ pending → ocr_processing → ocr_done → awaiting_mcp
 
 ## 文件生命周期
 
-- 题目 PDF 路径存储于 `questions.file_path`，定期清理任务会保护仍被题目表引用的文件。
-- 学生 PDF 路径存储于 `submissions.file_path`，删除作业后在数据库提交成功后清理。
-- 定期清理会删除超过保留期且不受保护的 PDF；数据库中的 OCR 文本和评分记录继续保留。
-- 文件删除失败只记录 warning，数据库是删除结果的权威来源。
+- 题目和学生 PDF 通过 `file_sha256` 映射到 `uploads/documents/<hash 前两位>/<hash>.pdf`。
+- 同内容文件共享实体路径；同名但内容不同的文件保留为不同实体，原始文件名仍由记录保存。
+- PDF 永久保留；删除作业或替换题目时，数据库提交成功后只清理没有任何题目、替换或作业引用的实体文件。
+- 临时目录和无引用孤儿文件由维护任务清理；清理前校验真实路径位于 `UPLOAD_DIR` 内。
+- 文件删除失败记录具体路径并允许维护命令重试，数据库事务不会因文件删除失败而回滚。
 
 ## 数据敏感性
 

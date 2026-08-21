@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Lock } from 'lucide-react';
 import { AUTH_CHANGED_EVENT, login } from '@/lib/auth';
+import { useLanguage } from '@/i18n';
 
 interface AuthGateProps {
   children: React.ReactNode;
@@ -16,6 +17,7 @@ interface AuthGateProps {
  * httpOnly Cookie 维持会话，前端不存储令牌。
  */
 export default function AuthGate({ children }: AuthGateProps) {
+  const { t } = useLanguage();
   const [status, setStatus] = useState<'checking' | 'verified' | 'failed'>(
     'checking',
   );
@@ -56,7 +58,7 @@ export default function AuthGate({ children }: AuthGateProps) {
       setInput('');
       setStatus('verified');
     } catch {
-      setError('令牌无效，请检查 backend/.env 中的 ACCESS_TOKEN');
+      setError(t('访问令牌无效，请检查 backend/.env 中的 ACCESS_TOKEN'));
       setStatus('failed');
     } finally {
       setSubmitting(false);
@@ -79,9 +81,9 @@ export default function AuthGate({ children }: AuthGateProps) {
             <Lock className="size-4" />
           </div>
           <div>
-            <h1 className="text-sm font-semibold text-foreground">访问令牌</h1>
+            <h1 className="text-sm font-semibold text-foreground">{t('访问令牌')}</h1>
             <p className="text-xs text-muted-foreground">
-              请输入 backend/.env 中的 ACCESS_TOKEN
+              {t('请输入 backend/.env 中的 ACCESS_TOKEN')}
             </p>
           </div>
         </div>
@@ -90,7 +92,7 @@ export default function AuthGate({ children }: AuthGateProps) {
             type="password"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="访问令牌"
+            placeholder={t('访问令牌')}
             autoFocus
             disabled={submitting}
           />
@@ -100,7 +102,7 @@ export default function AuthGate({ children }: AuthGateProps) {
             className="w-full"
             disabled={submitting || !input.trim()}
           >
-            {submitting ? '验证中…' : '进入'}
+            {submitting ? t('验证中…') : t('进入')}
           </Button>
         </form>
       </div>

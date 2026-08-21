@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Empty } from '@/components/Empty';
+import { useLanguage } from '@/i18n';
 
 interface ManualReviewPanelProps {
   suggestion: AiSuggestion | null;
@@ -58,6 +59,7 @@ export default function ManualReviewPanel({
   isFinalizing,
   className,
 }: ManualReviewPanelProps) {
+  const { t } = useLanguage();
   const [details, setDetails] = useState<EditableDetail[]>(() =>
     toEditable(suggestion),
   );
@@ -79,7 +81,9 @@ export default function ManualReviewPanel({
     () => details.reduce((sum, item) => sum + (item.max_score || 0), 0),
     [details],
   );
-  const totalsMatch = Math.abs(totalScore - maxScore) < 0.01;
+  // The item scores form the proposed final score; they do not need to equal
+  // the rubric's maximum unless the student received full marks.
+  const totalsMatch = totalScore <= maxScore + 0.01;
   const totalMaxMatch = Math.abs(totalMax - maxScore) < 0.01;
   const canSubmit =
     !isReadOnly &&
@@ -115,7 +119,7 @@ export default function ManualReviewPanel({
   if (!suggestion) {
     return (
       <div className={`flex h-full items-center justify-center p-8 ${className ?? ''}`}>
-        <Empty text="还没有评分建议" />
+        <Empty text={t('还没有评分建议')} />
       </div>
     );
   }
@@ -127,7 +131,7 @@ export default function ManualReviewPanel({
           <div className="mb-3 flex items-start justify-between gap-3">
             <div>
               <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                编程助手建议评分
+                {t('编程助手建议评分')}
               </p>
               <p className="mt-0.5 text-2xl font-bold tracking-tight text-foreground">
                 {totalScore}
@@ -142,23 +146,23 @@ export default function ManualReviewPanel({
                 className="h-5 shrink-0 gap-1 px-2 text-[10px] font-medium"
               >
                 <Sparkles className="size-3" />
-                置信度 {Math.round((suggestion.confidence ?? 0) * 100)}%
+                {t('置信度')} {Math.round((suggestion.confidence ?? 0) * 100)}%
               </Badge>
               <p className="text-[10px] text-muted-foreground">
-                最终成绩以教师确认提交为准
+                {t('最终成绩以教师确认提交为准')}
               </p>
             </div>
           </div>
 
           {/* 反馈编辑 */}
           <label className="mb-1 block text-xs font-medium text-foreground">
-            总评反馈
+            {t('总评反馈')}
           </label>
           <Textarea
             value={feedback}
             onChange={(e) => setFeedback(e.target.value)}
             disabled={isReadOnly}
-            placeholder="输入最终反馈…"
+            placeholder={t('输入最终反馈…')}
             className="min-h-[72px] resize-none rounded-lg border-border bg-background px-3 py-2.5 text-sm leading-relaxed shadow-sm"
           />
 
@@ -198,7 +202,7 @@ export default function ManualReviewPanel({
                   <ScoreBar score={item.score} maxScore={item.max_score} />
                   {outOfRange && (
                     <p className="text-[10px] text-destructive">
-                      单项得分不能超过该项满分
+                      {t('单项得分不能超过该项满分')}
                     </p>
                   )}
                   <Textarea
@@ -207,13 +211,13 @@ export default function ManualReviewPanel({
                       updateDetail(idx, { comment: e.target.value })
                     }
                     disabled={isReadOnly}
-                    placeholder="该项评分说明…"
+                    placeholder={t('该项评分说明…')}
                     className="min-h-[48px] resize-none rounded-lg border-border bg-slate-50 px-3 py-2 text-[11px] leading-relaxed shadow-sm"
                   />
                   {(item.evidence?.length ?? 0) > 0 && (
                     <div className="rounded-md border border-blue-100 bg-blue-50/70 px-2.5 py-2">
                       <p className="mb-1 text-[10px] font-medium text-blue-700">
-                        原文证据
+                        {t('原文证据')}
                       </p>
                       <ul className="space-y-1 text-[10px] leading-relaxed text-slate-600">
                         {item.evidence.map((evidence, evidenceIndex) => (
@@ -230,12 +234,12 @@ export default function ManualReviewPanel({
           {/* 分数一致性提示 */}
           {!totalsMatch && (
             <p className="mt-4 text-xs text-destructive">
-              各评分项得分之和 {totalScore} 与总分 {maxScore} 不一致，暂不可提交。
+              {t('各评分项得分之和')} {totalScore} {t('超过总分')} {maxScore}，{t('暂不可提交。')}
             </p>
           )}
           {!totalMaxMatch && totalsMatch && (
             <p className="mt-4 text-xs text-destructive">
-              各评分项满分之和 {totalMax} 与总满分 {maxScore} 不一致，暂不可提交。
+              {t('各评分项满分之和')} {totalMax} {t('与总满分')} {maxScore} {t('不一致，暂不可提交。')}
             </p>
           )}
         </div>
@@ -246,7 +250,7 @@ export default function ManualReviewPanel({
         {isReadOnly ? (
           <div className="flex items-center justify-center gap-2 rounded-xl border border-border bg-muted/40 py-3 text-sm text-muted-foreground">
             <CheckCircle2 className="size-4" />
-            该作业已审阅，成绩已锁定
+            {t('该作业已审阅，成绩已锁定')}
           </div>
         ) : (
           <Button
@@ -259,7 +263,7 @@ export default function ManualReviewPanel({
             ) : (
               <CheckCircle2 className="size-4" />
             )}
-            确认最终评分并提交
+            {t('复核并提交最终评分')}
           </Button>
         )}
       </div>

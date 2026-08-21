@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-# 可选第一个参数:客户端标识(codex/claude-code/opencode 等),
-# 由各客户端注册时的 args 传入,用于后端记录评分来源。
+# 可选第一个参数:任意客户端标识,
+# 由 MCP 客户端配置中的 args 传入,用于后端记录评分来源。
 CLIENT_NAME="${1:-}"
 if [ -n "$CLIENT_NAME" ]; then
   export AI_MARKING_MCP_CLIENT="$CLIENT_NAME"

@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
-import { McpWaitingPanel } from '@/pages/ReviewPage';
+import { McpWaitingPanel } from '@/components/review/McpWaitingPanel';
 
 describe('McpWaitingPanel', () => {
   it('展示用于中断任务恢复的作业 ID 和继续指令', () => {

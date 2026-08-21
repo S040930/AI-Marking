@@ -68,6 +68,9 @@ async def test_state_changed_during_ocr_cleans_staging_and_raises_business_error
     """
     staged_path = _write_pdf(tmp_path, "staged.pdf")
     newer_path = _write_pdf(tmp_path, "newer.pdf")
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "UPLOAD_DIR", str(tmp_path))
 
     question = _ready_question(tmp_path, staged_path)
     db_session.add(question)
@@ -103,6 +106,9 @@ async def test_state_changed_job_deleted_without_retry(
     """P3: worker 收到 BusinessError 后直接删除任务,不重试、不进死信。"""
     staged_path = _write_pdf(tmp_path, "staged.pdf")
     newer_path = _write_pdf(tmp_path, "newer.pdf")
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "UPLOAD_DIR", str(tmp_path))
 
     question = _ready_question(tmp_path, staged_path)
     db_session.add(question)

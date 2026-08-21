@@ -5,7 +5,7 @@
 ``UPLOAD_RETENTION_DAYS`` 删除过期 PDF,保留 DB 记录。
 
 实现:
-- ``cleanup_uploads``:扫描一次 upload_dir,按 mtime 删除过期 PDF
+- ``cleanup_uploads``:递归扫描 upload_dir,按 mtime 删除过期且无数据库引用的 PDF
 - ``periodic_cleanup_loop``:在独立任务 worker 中以后台 task 运行,
   每隔 ``CLEANUP_INTERVAL_SECONDS`` 扫描一次
 
@@ -57,7 +57,7 @@ def cleanup_uploads(
     cutoff = time.time() - retention_days * 86400
     protected = {path.resolve() for path in (protected_paths or set())}
     deleted = 0
-    for entry in upload_dir.iterdir():
+    for entry in upload_dir.rglob("*.pdf"):
         if not entry.is_file() or entry.suffix.lower() != ".pdf":
             continue
         if entry.resolve() in protected:
@@ -68,6 +68,12 @@ def cleanup_uploads(
                 deleted += 1
         except OSError as exc:
             logger.warning("删除 %s 失败: %s", entry, exc)
+    for directory in sorted(upload_dir.rglob("*"), reverse=True):
+        if directory.is_dir():
+            try:
+                directory.rmdir()
+            except OSError:
+                pass
     if deleted:
         logger.info("清理 uploads/ 完成,删除 %s 个过期 PDF", deleted)
     return deleted

@@ -26,6 +26,35 @@ export interface PaginatedQuestions {
   limit: number;
 }
 
+/** GET /questions/{id}/grading-prompt 返回的提示词素材（后端生成，与评分包同源）。 */
+export interface GradingPrompt {
+  question_id: number;
+  name: string;
+  grading_mode: string;
+  review_enabled: boolean;
+  source: string;
+  snapshot_id: string | null;
+  total_max_score: number;
+  needs_rubric: boolean;
+  ocr_text: string | null;
+  grading_policy: Record<string, unknown>;
+  text: string;
+}
+
+export function useGradingPrompt(questionId: number | null) {
+  return useQuery({
+    queryKey: ['questions', questionId, 'grading-prompt'],
+    queryFn: () =>
+      apiClient
+        .get<GradingPrompt>(`/questions/${questionId}/grading-prompt`, {
+          skipErrorToast: true,
+        })
+        .then((response) => response.data),
+    enabled: questionId !== null,
+    staleTime: 60_000,
+  });
+}
+
 export function useQuestions(search = '', limit = 50) {
   return useQuery({
     queryKey: ['questions', { search, limit }],

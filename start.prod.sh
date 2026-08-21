@@ -117,13 +117,11 @@ fi
 
 if ! (
   cd "$BACKEND_DIR"
-  "$PYTHON_BIN" -c 'import app, langgraph, mcp'
+  "$PYTHON_BIN" -c 'import app, mcp'
 ) >/dev/null 2>&1; then
-  info "正在安装后端依赖..."
-  (
-    cd "$BACKEND_DIR"
-    "$PYTHON_BIN" -m pip install --require-hashes -r requirements-prod.txt
-  )
+  info "生产依赖未就绪，运行 bootstrap --prod..."
+  "$ROOT_DIR/scripts/bootstrap" --prod
+  PYTHON_BIN="$BACKEND_DIR/.venv/bin/python"
 fi
 
 if [ ! -d "$FRONTEND_DIR/node_modules" ]; then

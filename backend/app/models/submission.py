@@ -61,6 +61,7 @@ class Submission(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
     file_path: Mapped[str] = mapped_column(String(512), nullable=False)
+    file_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     question_id: Mapped[int] = mapped_column(
         ForeignKey("questions.id", ondelete="RESTRICT"), nullable=False, index=True
     )
@@ -95,6 +96,9 @@ class Submission(Base):
     # MCP 客户端写入的完整建议分快照(含 score/max_score/feedback/details/confidence
     # 与 mcp_metadata),面向教师展示的建议
     assessment_suggestion: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # 独立复核任务对当前建议的复核结论(逐项 agree/disagree + 总结),
+    # 绑定 reviewed_revision;建议更新后字段保留但视为过期
+    assessment_review: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     reviewed_by: Mapped[str | None] = mapped_column(String(100), nullable=True)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     error_message: Mapped[str | None] = mapped_column(String(1024), nullable=True)

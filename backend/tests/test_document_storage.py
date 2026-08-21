@@ -18,15 +18,43 @@ def _upload(filename: str, content: bytes, content_type: str) -> UploadFile:
 
 
 async def test_pdf_is_streamed_to_final_pdf(tmp_path):
-    original, saved = await document_storage.save_document_as_pdf(
+    stored = await document_storage.save_document_as_pdf(
         _upload("answer.pdf", b"%PDF-1.4 answer", document_storage.PDF_MIME_TYPE),
         tmp_path,
     )
 
-    assert original == "answer.pdf"
-    assert saved.suffix == ".pdf"
-    assert saved.read_bytes() == b"%PDF-1.4 answer"
+    assert stored.original_filename == "answer.pdf"
+    assert stored.path.suffix == ".pdf"
+    assert stored.path.read_bytes() == b"%PDF-1.4 answer"
+    assert stored.sha256
+    assert stored.created is True
     assert not list(tmp_path.glob(".document-*"))
+
+
+async def test_identical_pdf_reuses_content_addressed_blob(tmp_path):
+    first = await document_storage.save_document_as_pdf(
+        _upload("one.pdf", b"%PDF-1.4 same", document_storage.PDF_MIME_TYPE), tmp_path
+    )
+    second = await document_storage.save_document_as_pdf(
+        _upload("two.pdf", b"%PDF-1.4 same", document_storage.PDF_MIME_TYPE), tmp_path
+    )
+
+    assert first.path == second.path
+    assert first.created is True
+    assert second.created is False
+    assert len(list((tmp_path / "documents").rglob("*.pdf"))) == 1
+
+
+async def test_same_filename_with_different_content_keeps_two_blobs(tmp_path):
+    first = await document_storage.save_document_as_pdf(
+        _upload("answer.pdf", b"%PDF-1.4 one", document_storage.PDF_MIME_TYPE), tmp_path
+    )
+    second = await document_storage.save_document_as_pdf(
+        _upload("answer.pdf", b"%PDF-1.4 two", document_storage.PDF_MIME_TYPE), tmp_path
+    )
+
+    assert first.path != second.path
+    assert first.path.exists() and second.path.exists()
 
 
 @pytest.mark.parametrize(

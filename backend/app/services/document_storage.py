@@ -3,14 +3,17 @@
 import ast
 import hashlib
 import json
+import os
 import shutil
 import tempfile
 import unicodedata
 import uuid
+from dataclasses import dataclass
 from pathlib import Path
 
 import aiofiles
 from fastapi import HTTPException, UploadFile
+from sqlalchemy import select
 
 PDF_MIME_TYPE = "application/pdf"
 MAX_DOCUMENT_SIZE_BYTES = 50 * 1024 * 1024
@@ -25,6 +28,16 @@ MAX_CODE_FILE_BYTES = 20 * 1024 * 1024
 _CHUNK_SIZE = 1024 * 1024
 
 
+@dataclass(frozen=True, slots=True)
+class StoredDocument:
+    """结果 of a PDF write, including whether this request created the blob."""
+
+    original_filename: str
+    path: Path
+    sha256: str
+    created: bool
+
+
 def validate_document_upload(upload_file: UploadFile) -> str:
     """校验上传声明并返回 ``pdf``。"""
     filename = upload_file.filename or ""
@@ -36,9 +49,10 @@ def validate_document_upload(upload_file: UploadFile) -> str:
 
 async def _stream_upload(
     upload_file: UploadFile, destination: Path, max_size_bytes: int
-) -> None:
+) -> tuple[int, str]:
     written = 0
     prefix = bytearray()
+    digest = hashlib.sha256()
     async with aiofiles.open(destination, "wb") as output:
         while chunk := await upload_file.read(_CHUNK_SIZE):
             written += len(chunk)
@@ -49,11 +63,53 @@ async def _stream_upload(
                 )
             if len(prefix) < 5:
                 prefix.extend(chunk[: 5 - len(prefix)])
+            digest.update(chunk)
             await output.write(chunk)
     if written == 0:
         raise HTTPException(status_code=422, detail="上传文件不能为空")
     if bytes(prefix) != b"%PDF-":
         raise HTTPException(status_code=422, detail="文件内容不是有效 PDF")
+    return written, digest.hexdigest()
+
+
+def _same_file(left: Path, right: Path, size: int) -> bool:
+    """Compare an existing blob without loading either file into memory."""
+    if left.stat().st_size != size:
+        return False
+    with left.open("rb") as first, right.open("rb") as second:
+        while True:
+            left_chunk = first.read(_CHUNK_SIZE)
+            right_chunk = second.read(_CHUNK_SIZE)
+            if left_chunk != right_chunk:
+                return False
+            if not left_chunk:
+                return True
+
+
+def remove_document_if_unreferenced(db, file_path: str, upload_dir: Path) -> bool:
+    """Delete a PDF only after checking every question/submission reference."""
+    from app.models.question import Question
+    from app.models.submission import Submission
+
+    candidate = Path(file_path).resolve()
+    root = upload_dir.resolve()
+    try:
+        candidate.relative_to(root)
+    except ValueError:
+        raise ValueError(f"拒绝删除 uploads 目录外的文件：{file_path}")
+    refs = set(
+        db.execute(select(Question.file_path, Question.replacement_file_path)).all()
+    )
+    referenced = {value for row in refs for value in row if value}
+    referenced.update(
+        value
+        for (value,) in db.execute(select(Submission.file_path)).all()
+        if value
+    )
+    if str(candidate) in {str(Path(value).resolve()) for value in referenced}:
+        return False
+    candidate.unlink(missing_ok=True)
+    return True
 
 
 async def save_document_as_pdf(
@@ -61,21 +117,38 @@ async def save_document_as_pdf(
     upload_dir: Path,
     suffix: str = "",
     max_size_bytes: int = MAX_DOCUMENT_SIZE_BYTES,
-) -> tuple[str, Path]:
-    """流式接收 PDF 并持久化到上传目录。"""
+) -> StoredDocument:
+    """流式接收 PDF 并按内容哈希持久化到共享 blob 目录。"""
     original_filename = upload_file.filename or ""
     temporary_dir: Path | None = None
     try:
         validate_document_upload(upload_file)
         upload_dir.mkdir(parents=True, exist_ok=True)
         temporary_dir = Path(tempfile.mkdtemp(prefix=".document-", dir=upload_dir))
-        stored_stem = f"{uuid.uuid4().hex}{suffix}"
+        stored_stem = uuid.uuid4().hex
         source = temporary_dir / f"{stored_stem}.pdf"
-        await _stream_upload(upload_file, source, max_size_bytes)
-
-        saved_path = upload_dir / f"{stored_stem}.pdf"
-        source.replace(saved_path)
-        return original_filename, saved_path
+        size, digest = await _stream_upload(upload_file, source, max_size_bytes)
+        blob_dir = upload_dir / "documents" / digest[:2]
+        saved_path = blob_dir / f"{digest}.pdf"
+        blob_dir.mkdir(parents=True, exist_ok=True)
+        if saved_path.exists():
+            if not _same_file(saved_path, source, size):
+                raise RuntimeError(f"内容哈希冲突，拒绝覆盖已有文件：{saved_path}")
+            source.unlink(missing_ok=True)
+            created = False
+        else:
+            try:
+                # Hard-link creation is atomic and never overwrites a blob
+                # another concurrent uploader may have created.
+                os.link(source, saved_path)
+                source.unlink(missing_ok=True)
+                created = True
+            except FileExistsError:
+                if not _same_file(saved_path, source, size):
+                    raise RuntimeError(f"内容哈希冲突，拒绝覆盖已有文件：{saved_path}")
+                source.unlink(missing_ok=True)
+                created = False
+        return StoredDocument(original_filename, saved_path, digest, created)
     finally:
         await upload_file.close()
         if temporary_dir is not None:

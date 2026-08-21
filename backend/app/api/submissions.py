@@ -50,6 +50,7 @@ from app.schemas.submission import (
 from app.services.code_manifest import parse_code_manifest_json
 from app.services.document_storage import (
     MAX_CODE_FILES,
+    remove_document_if_unreferenced,
     save_code_files,
     save_document_as_pdf,
     validate_document_upload,
@@ -131,7 +132,8 @@ async def create_submission(
         )
     upload_dir.mkdir(parents=True, exist_ok=True)
 
-    original_filename, saved_path = await save_document_as_pdf(file, upload_dir)
+    stored = await save_document_as_pdf(file, upload_dir)
+    original_filename, saved_path = stored.original_filename, stored.path
     code_metadata: list[dict] = []
     try:
         if code_files:
@@ -149,13 +151,13 @@ async def create_submission(
             )
             validate_independent_code_entries(code_metadata)
     except Exception:
-        saved_path.unlink(missing_ok=True)
         raise
 
     # 创建记录
     submission = Submission(
         original_filename=original_filename,
         file_path=str(saved_path),
+        file_sha256=stored.sha256,
         question_id=question.id,
         status=SubmissionStatus.pending,
     )
@@ -180,7 +182,6 @@ async def create_submission(
         db.commit()
     except Exception:
         db.rollback()
-        saved_path.unlink(missing_ok=True)
         for metadata in code_metadata:
             Path(metadata["path"]).unlink(missing_ok=True)
         raise
@@ -233,6 +234,7 @@ async def retry_submission(
     ):
         raise HTTPException(status_code=409, detail="题目新版正在处理中，暂不可重试")
 
+    stored = None
     new_path: Path | None = None
     original_filename = sub.original_filename
     if file is not None:
@@ -244,7 +246,8 @@ async def retry_submission(
             raise HTTPException(
                 status_code=500, detail="UPLOAD_DIR 配置非法,必须位于后端根目录下"
             ) from exc
-        original_filename, new_path = await save_document_as_pdf(file, upload_dir)
+        stored = await save_document_as_pdf(file, upload_dir)
+        original_filename, new_path = stored.original_filename, stored.path
     elif not Path(sub.file_path).exists():
         raise HTTPException(
             status_code=409,
@@ -266,6 +269,7 @@ async def retry_submission(
     old_path = sub.file_path
     if new_path is not None:
         sub.file_path = str(new_path)
+        sub.file_sha256 = stored.sha256
         sub.original_filename = original_filename
     for field in (
         "ocr_text",
@@ -275,6 +279,7 @@ async def retry_submission(
         "feedback",
         "details",
         "assessment_suggestion",
+        "assessment_review",
         "reviewed_by",
         "reviewed_at",
         "completed_at",
@@ -295,13 +300,13 @@ async def retry_submission(
         db.refresh(sub)
     except Exception:
         db.rollback()
-        if new_path is not None:
-            new_path.unlink(missing_ok=True)
         raise
-    if new_path is not None and old_path != str(new_path):
+    if new_path is not None and stored is not None and old_path != str(new_path):
         try:
-            Path(old_path).unlink(missing_ok=True)
-        except OSError as exc:
+            remove_document_if_unreferenced(
+                db, old_path, Path(settings.UPLOAD_DIR)
+            )
+        except (OSError, ValueError) as exc:
             logger.warning("清理旧学生作业 PDF 失败 [%s]: %s", old_path, exc)
     shutil.rmtree(
         Path(settings.UPLOAD_DIR).resolve() / "code-artifacts" / str(submission_id),
@@ -454,8 +459,8 @@ def batch_delete_submissions(
     # 出现“记录仍在但 PDF 已丢失”的不可恢复状态。
     for file_path in file_paths:
         try:
-            Path(file_path).unlink(missing_ok=True)
-        except OSError as exc:
+            remove_document_if_unreferenced(db, file_path, Path(settings.UPLOAD_DIR))
+        except (OSError, ValueError) as exc:
             logger.warning("删除 submission PDF 失败 [%s]: %s", file_path, exc)
     for file_path in code_paths:
         try:

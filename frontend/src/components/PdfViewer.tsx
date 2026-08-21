@@ -1,14 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
 import {
   FileText,
   AlertCircle,
   BookOpen,
-  ChevronLeft,
 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Button } from '@/components/ui/button';
 import { apiClient } from '@/api/client';
+import { useLanguage } from '@/i18n';
 
 interface PdfViewerProps {
   submissionId: number;
@@ -36,7 +34,7 @@ const STATUS_BADGE: Record<string, { label: string; className: string }> = {
 };
 
 export function PdfViewer({ submissionId, filename, status, className }: PdfViewerProps) {
-  const navigate = useNavigate();
+  const { t } = useLanguage();
   const [type, setType] = useState<'submission' | 'question'>('submission');
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
@@ -104,16 +102,6 @@ export function PdfViewer({ submissionId, filename, status, className }: PdfView
     >
       {/* Toolbar */}
       <div className="flex items-center gap-2 border-b border-border bg-muted/50 px-3 py-2">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => navigate('/history')}
-          className="size-8 rounded-full text-muted-foreground hover:text-foreground"
-          title="返回历史"
-        >
-          <ChevronLeft className="size-4" />
-        </Button>
-
         <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
           {filename}
         </span>
@@ -121,7 +109,7 @@ export function PdfViewer({ submissionId, filename, status, className }: PdfView
         <span
           className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-medium ${statusBadge.className}`}
         >
-          {statusBadge.label}
+          {t(statusBadge.label)}
         </span>
 
         <div className="hidden items-center rounded-full bg-background p-0.5 shadow-sm sm:inline-flex">
@@ -135,7 +123,7 @@ export function PdfViewer({ submissionId, filename, status, className }: PdfView
             }`}
           >
             <FileText className="size-3" />
-            作业
+            {t('作业')}
           </button>
           <button
             type="button"
@@ -147,7 +135,7 @@ export function PdfViewer({ submissionId, filename, status, className }: PdfView
             }`}
           >
             <BookOpen className="size-3" />
-            题目
+            {t('题目')}
           </button>
         </div>
       </div>
@@ -165,7 +153,7 @@ export function PdfViewer({ submissionId, filename, status, className }: PdfView
             }`}
           >
             <FileText className="size-3.5" />
-            学生作业
+            {t('学生作业')}
           </button>
           <button
             type="button"
@@ -177,7 +165,7 @@ export function PdfViewer({ submissionId, filename, status, className }: PdfView
             }`}
           >
             <BookOpen className="size-3.5" />
-            作业题目
+            {t('作业题目')}
           </button>
         </div>
       </div>
@@ -198,15 +186,15 @@ export function PdfViewer({ submissionId, filename, status, className }: PdfView
           <div className="flex size-12 items-center justify-center rounded-full bg-muted">
             <AlertCircle className="size-6 text-muted-foreground" />
           </div>
-          <p className="text-sm font-medium text-foreground">PDF 加载失败</p>
+          <p className="text-sm font-medium text-foreground">{t('PDF 加载失败')}</p>
           <p className="max-w-xs text-xs text-muted-foreground">
-            文件可能已过期或无法访问。请返回历史记录重新上传。
+            {t('文件可能已过期或无法访问。请返回历史记录重新上传。')}
           </p>
         </div>
       ) : (
         <iframe
           src={pdfUrl}
-          title={type === 'question' ? '作业题目' : '学生作业'}
+          title={type === 'question' ? t('作业题目') : t('学生作业')}
           className={`min-h-0 w-full flex-1 ${isLoading ? 'opacity-0' : 'animate-soft-fade-in opacity-100'}`}
           onLoad={() => {
             loadedRef.current = true;

@@ -45,7 +45,7 @@
 
 ### McpAuditBanner
 
-评分建议已保存后展示于评分面板顶部：`mcp_metadata.client` 客户端标签（Codex / Claude Code / Opencode）、`grading_revision` 与 rubric 来源（题目提取 / 配置 / 内置默认）。
+评分建议已保存后展示于评分面板顶部：`mcp_metadata.client` 客户端标签、`grading_revision` 与 rubric 来源（题目提取 / 配置 / 内置默认）。
 
 ### CodeEvidencePanel
 
@@ -57,6 +57,8 @@
 表单式人工改分面板，取代旧的 AI 聊天面板：
 
 - **建议评分**：展示 MCP 建议总分、置信度、总体反馈与逐项证据。
+- **MCP 来源横幅**：`McpAuditBanner` 显示评分客户端、revision 与 rubric 来源。
+- **AI 复核卡片**：`AssessmentReviewCard` 显示独立复核任务的结论（总体 verdict、总结、可折叠逐项意见、复核客户端与时间）；建议更新后按 `reviewed_revision` 与当前 revision 的差异标记过期；未复核时提供「发起 AI 复核」按钮复制编程助手指令。
 - **表单改分**：每个评分项提供分数 Input 与评语 Textarea，教师可直接修改；另有总体反馈 Textarea。
 - **一致性校验**：实时校验各评分项得分之和等于总分、各项满分之和等于总满分（`totalsMatch` / `totalMaxMatch`），不通过时禁用提交并提示。
 - **确认提交**：通过 `onFinalize(FinalizePayload)` 调用 `POST /submissions/{id}/finalize`；提交成功后跳转结果页。

@@ -1,5 +1,6 @@
 """题目库接口的复用、删除与并发保护测试。"""
 
+import json
 from pathlib import Path
 
 from sqlalchemy import select, text
@@ -224,8 +225,8 @@ async def test_delete_question_cascades_terminal_records_and_files(
     assert response.json() == {"deleted_submission_count": 1}
     assert db_session.get(Question, question.id) is None
     assert db_session.get(Submission, sub_id) is None
-    assert not question_path.exists()
-    assert not student_path.exists()
+    assert question_path.exists()
+    assert student_path.exists()
 
 
 async def test_delete_question_rejects_processing_submission(
@@ -321,9 +322,10 @@ async def test_replace_question_queues_then_atomically_switches(
     assert question.replacement_status is None
     db_session.expire_all()
     assert db_session.get(Submission, sub_id) is None
-    assert not old_question_path.exists()
-    assert not student_path.exists()
-    assert question.file_path.endswith("_question.pdf")
+    assert old_question_path.exists()
+    assert student_path.exists()
+    assert "/documents/" in question.file_path
+    assert question.file_path.endswith(".pdf")
 
 
 async def test_replace_question_failure_keeps_old_version(
@@ -336,6 +338,7 @@ async def test_replace_question_failure_keeps_old_version(
     monkeypatch.setattr(settings, "TASK_MAX_ATTEMPTS", 1)
 
     question, old_path = await _question(db_session, tmp_path)
+    monkeypatch.setattr(settings, "UPLOAD_DIR", str(tmp_path))
     monkeypatch.setattr("app.api.questions._upload_dir", lambda: tmp_path)
     response = await client.post(
         f"/api/questions/{question.id}/replace",
@@ -446,3 +449,103 @@ async def test_replacement_freezes_question_mutations(client, db_session, tmp_pa
     assert renamed.status_code == 409
     assert deleted.status_code == 409
     assert replaced.status_code == 409
+
+
+async def _grading_prompt_question(db_session, *, name="提示词题"):
+    """创建带 config_profile_id 的题目并返回。"""
+    from app.models.config_profile import ConfigProfile
+
+    profile = db_session.query(ConfigProfile).filter_by(is_default=True).one()
+    path = Path(f"/tmp/{name}.pdf")
+    question = Question(
+        name=name,
+        original_filename=path.name,
+        file_path=str(path),
+        ocr_text="Task 1: 100 points\nTask 2: 50 points",
+        status=QuestionStatus.ready,
+        config_profile_id=profile.id,
+    )
+    db_session.add(question)
+    db_session.commit()
+    return question
+
+
+async def test_grading_prompt_404_when_question_missing(client):
+    response = await client.get("/api/questions/999/grading-prompt")
+    assert response.status_code == 404
+    assert "不存在" in response.json()["detail"]
+
+
+async def test_grading_prompt_409_when_ocr_missing(client, db_session):
+    from app.models.config_profile import ConfigProfile
+
+    profile = db_session.query(ConfigProfile).filter_by(is_default=True).one()
+    question = Question(
+        name="无 OCR 题",
+        original_filename="noocr.pdf",
+        file_path="/tmp/noocr.pdf",
+        ocr_text=None,
+        status=QuestionStatus.pending,
+        config_profile_id=profile.id,
+    )
+    db_session.add(question)
+    db_session.commit()
+
+    response = await client.get(f"/api/questions/{question.id}/grading-prompt")
+    assert response.status_code == 409
+    assert "OCR" in response.json()["detail"]
+
+
+async def test_grading_prompt_needs_rubric_with_default_rubric(client, db_session):
+    question = await _grading_prompt_question(db_session)
+
+    response = await client.get(f"/api/questions/{question.id}/grading-prompt")
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["question_id"] == question.id
+    assert payload["name"] == question.name
+    assert payload["grading_mode"] == "external_agent"
+    assert payload["review_enabled"] is True
+    assert payload["source"] == "built_in_default"
+    assert payload["needs_rubric"] is True
+    assert payload["total_max_score"] == 100
+    assert payload["ocr_text"] == "Task 1: 100 points\nTask 2: 50 points"
+    assert payload["grading_policy"]["resolved_rubric"]["source"] == "built_in_default"
+    # 纯文本须包含题目 OCR 与评分策略 JSON
+    assert "--- question ---" in payload["text"]
+    assert "Task 1: 100 points" in payload["text"]
+    assert "--- grading_policy ---" in payload["text"]
+    assert '"grading_policy"' not in payload["text"]
+
+
+async def test_grading_prompt_uses_configured_rubric(client, db_session):
+    from app.services.config import upsert_config
+
+    question = await _grading_prompt_question(db_session)
+    upsert_config(
+        db_session,
+        {
+            "rubric_definition": json.dumps(
+                {
+                    "items": [
+                        {"criterion": "Task 1", "max_score": 60, "details": "完成度"},
+                        {"criterion": "Task 2", "max_score": 40, "details": "正确性"},
+                    ],
+                    "total_max_score": 100,
+                },
+                ensure_ascii=False,
+            )
+        },
+    )
+    db_session.commit()
+
+    response = await client.get(f"/api/questions/{question.id}/grading-prompt")
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["source"] == "configured"
+    assert payload["needs_rubric"] is False
+    assert payload["total_max_score"] == 100
+    items = payload["grading_policy"]["resolved_rubric"]["items"]
+    assert len(items) == 2
+    assert items[0]["criterion"] == "Task 1"
+    assert items[0]["max_score"] == 60

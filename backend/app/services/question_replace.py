@@ -5,11 +5,13 @@ from pathlib import Path
 
 from sqlalchemy import select
 
+from app.core.config import settings
 from app.core.time import utc_now_naive
 from app.db.session import SessionLocal
 from app.models.question import Question, QuestionReplacementStatus
 from app.models.submission import Submission
 from app.services.config import get_config_dict
+from app.services.document_storage import remove_document_if_unreferenced
 from app.services.errors import BusinessError
 from app.services.events import notify_question_status
 from app.services.ocr import OCRError, ocr_pdf
@@ -18,11 +20,14 @@ logger = logging.getLogger(__name__)
 
 
 def _unlink_paths(paths: list[str]) -> None:
-    for file_path in paths:
-        try:
-            Path(file_path).unlink(missing_ok=True)
-        except OSError as exc:
-            logger.warning("清理题目替换关联 PDF 失败 [%s]: %s", file_path, exc)
+    with SessionLocal() as db:
+        for file_path in paths:
+            try:
+                remove_document_if_unreferenced(
+                    db, file_path, Path(settings.UPLOAD_DIR)
+                )
+            except (OSError, ValueError) as exc:
+                logger.warning("清理题目替换关联 PDF 失败 [%s]: %s", file_path, exc)
 
 
 async def run_question_replace(question_id: int) -> None:
@@ -32,6 +37,7 @@ async def run_question_replace(question_id: int) -> None:
         if question is None:
             return
         staged_path = question.replacement_file_path
+        staged_sha256 = question.replacement_file_sha256
         staged_name = question.replacement_original_filename
         if not staged_path or not staged_name:
             raise BusinessError("题目替换任务缺少暂存 PDF")
@@ -62,6 +68,7 @@ async def run_question_replace(question_id: int) -> None:
             if question is not None:
                 question.replacement_status = QuestionReplacementStatus.failed
                 question.replacement_file_path = None
+                question.replacement_file_sha256 = None
                 question.replacement_original_filename = None
                 question.replacement_error_message = message[:1024]
                 question.updated_at = utc_now_naive()
@@ -105,6 +112,7 @@ async def run_question_replace(question_id: int) -> None:
             db.delete(submission)
         question.original_filename = staged_name
         question.file_path = staged_path
+        question.file_sha256 = staged_sha256
         question.ocr_text = new_ocr_text
         question.extracted_rubric = None
         question.extracted_rubric_items = None
@@ -113,6 +121,7 @@ async def run_question_replace(question_id: int) -> None:
         question.extracted_rubric_at = None
         question.replacement_status = None
         question.replacement_file_path = None
+        question.replacement_file_sha256 = None
         question.replacement_original_filename = None
         question.replacement_error_message = None
         question.updated_at = utc_now_naive()

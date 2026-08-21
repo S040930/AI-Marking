@@ -63,6 +63,7 @@ class SubmissionDetail(SubmissionOut):
     question_ocr_text: str | None = None
     feedback: str | None = None
     assessment_suggestion: dict | None = None
+    assessment_review: dict | None = None
     details: list[dict] | None = None
     reviewed_by: str | None = None
     reviewed_at: datetime | None = None

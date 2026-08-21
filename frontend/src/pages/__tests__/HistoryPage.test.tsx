@@ -3,9 +3,9 @@ import { render, screen } from '@testing-library/react';
 import {
   isDeletableStatus,
   shouldMoveToPreviousPage,
-  StatusBadge,
   STATUS_TEXT,
-} from '@/pages/HistoryPage';
+} from '@/lib/submissionStatus';
+import { StatusBadge } from '@/components/history/StatusBadge';
 import type { SubmissionStatus } from '@/api/submissions';
 
 describe('StatusBadge', () => {

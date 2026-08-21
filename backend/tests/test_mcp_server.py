@@ -4,7 +4,7 @@ from uuid import UUID
 import pytest
 from pydantic import ValidationError
 
-from app.mcp import server
+from app.mcp import plans, server
 from app.mcp.errors import McpApiError
 from app.schemas.mcp import McpAssessmentRequest
 
@@ -34,7 +34,7 @@ async def test_prepare_returns_opaque_plan_and_enforces_independent_files(tmp_pa
     assert result["status"] == "ready_to_submit"
     assert result["submission_plan"]
     assert str(q1) not in result["submission_plan"]
-    assert "source" not in server._prepared_plans[result["submission_plan"]]
+    assert "source" not in plans._prepared_plans[result["submission_plan"]]
 
     q2 = tmp_path / "Q2.py"
     q2.write_text("import Q1", encoding="utf-8")
@@ -45,9 +45,9 @@ async def test_prepare_returns_opaque_plan_and_enforces_independent_files(tmp_pa
 
 
 def test_expired_prepared_plans_are_purged_and_capacity_is_bounded(monkeypatch):
-    server._prepared_plans.clear()
-    server._prepared_plans["expired"] = {"expires_at": 0}
-    token = server._make_plan(
+    plans._prepared_plans.clear()
+    plans._prepared_plans["expired"] = {"expires_at": 0}
+    token = plans.make_plan(
         {
             "question_id": 1,
             "question_name": "q",
@@ -56,9 +56,9 @@ def test_expired_prepared_plans_are_purged_and_capacity_is_bounded(monkeypatch):
             "code_manifest": [],
         }
     )
-    assert "expired" not in server._prepared_plans
-    assert token in server._prepared_plans
-    server._prepared_plans.clear()
+    assert "expired" not in plans._prepared_plans
+    assert token in plans._prepared_plans
+    plans._prepared_plans.clear()
 
 
 @pytest.mark.asyncio
@@ -248,18 +248,3 @@ def test_mcp_assessment_accepts_consistent_totals():
     """C1: 总分与明细自洽的评分建议通过校验。"""
     model = McpAssessmentRequest(**_assessment(score=80, max_score=100, details_score=80))
     assert model.score == 80
-
-
-def test_grade_assignment_prompt_uses_only_new_workflow():
-    prompt = server.grade_assignment(13)
-    assert "open_ai_marking_assignment" in prompt
-    assert "save_ai_marking_assessment" in prompt
-    assert "grading_policy" in prompt
-    assert "本地运行表现" in prompt
-    assert "尚未检查、含糊或未回答时暂停" in prompt
-    assert "本地运行表现" in prompt
-    assert "不生成任何视觉比较或复核证据" in prompt
-    assert "read_ai_marking_evidence_image" not in prompt
-    assert "第二遍" in prompt
-    assert "最终成绩" in prompt
-    assert "wait_for_codex_assignment" not in prompt

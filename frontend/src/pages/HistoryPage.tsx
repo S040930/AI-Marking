@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
 import dayjs from 'dayjs';
 import { toast } from 'sonner';
 import { ChevronLeft, ChevronRight, FileText, History, Trash2 } from 'lucide-react';
@@ -8,9 +7,7 @@ import {
   useSubmissions,
   useSubmissionsCount,
   useBatchDeleteSubmissions,
-  isProcessing,
   type SubmissionOut,
-  type SubmissionStatus,
 } from '@/api/submissions';
 import {
   Card,
@@ -26,7 +23,6 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -46,93 +42,19 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-
-export const STATUS_TEXT: Record<SubmissionStatus, string> = {
-  pending: '待处理',
-  ocr_processing: 'OCR识别中',
-  ocr_done: 'OCR完成',
-  awaiting_mcp: '等待MCP评分',
-  ready_for_review: '待审阅',
-  reviewed: '已审阅',
-  failed: '失败',
-};
+import { StatusBadge } from '@/components/history/StatusBadge';
+import { useLanguage } from '@/i18n';
+import {
+  isDeletableStatus,
+  resolveDeleteError,
+  shouldMoveToPreviousPage,
+} from '@/lib/submissionStatus';
 
 const PAGE_SIZE = 10;
 
-export function isDeletableStatus(status: SubmissionStatus): boolean {
-  return (
-    status === 'ready_for_review' ||
-    status === 'awaiting_mcp' ||
-    status === 'reviewed' ||
-    status === 'failed'
-  );
-}
-
-export function shouldMoveToPreviousPage(
-  page: number,
-  rowCount: number,
-  deletedCount: number,
-): boolean {
-  return page > 1 && rowCount > 0 && rowCount <= deletedCount;
-}
-
-function resolveDeleteError(error: unknown): {
-  message: string;
-  isConflict: boolean;
-} {
-  if (axios.isAxiosError(error) && error.response?.status === 409) {
-    const detail = error.response.data?.detail;
-    if (detail && typeof detail === 'object' && 'message' in detail) {
-      return { message: String(detail.message), isConflict: true };
-    }
-    return {
-      message: '正在处理的记录不可删除，请等待批改完成后重试',
-      isConflict: true,
-    };
-  }
-  return { message: '删除失败，请稍后重试', isConflict: false };
-}
-
-export function StatusBadge({ status }: { status: SubmissionStatus }) {
-  if (status === 'reviewed') {
-    return (
-      <Badge className="border border-success/20 bg-success/10 text-success hover:bg-success/15">
-        {STATUS_TEXT[status]}
-      </Badge>
-    );
-  }
-  if (status === 'failed') {
-    return <Badge variant="destructive">{STATUS_TEXT[status]}</Badge>;
-  }
-  if (status === 'ready_for_review') {
-    return (
-      <Badge className="border border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100">
-        {STATUS_TEXT[status]}
-      </Badge>
-    );
-  }
-  if (status === 'awaiting_mcp') {
-    return <Badge variant="outline">{STATUS_TEXT[status]}</Badge>;
-  }
-  if (isProcessing(status)) {
-    return (
-      <Badge
-        variant="secondary"
-        className="gap-1.5 pr-2.5 text-primary"
-      >
-        <span className="relative flex size-1.5">
-          <span className="absolute inline-flex size-full animate-ping motion-reduce:animate-none rounded-full bg-primary opacity-75" />
-          <span className="relative inline-flex size-1.5 rounded-full bg-primary" />
-        </span>
-        {STATUS_TEXT[status]}
-      </Badge>
-    );
-  }
-  return <Badge variant="outline">{STATUS_TEXT[status]}</Badge>;
-}
-
 export default function HistoryPage() {
   const navigate = useNavigate();
+  const { t } = useLanguage();
   const [page, setPage] = useState(1);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -194,7 +116,7 @@ export default function HistoryPage() {
     const ids = Array.from(selectedIds);
     deleteMutation.mutate(ids, {
       onSuccess: (res) => {
-        toast.success(`已删除 ${res.deleted_count} 条记录`);
+        toast.success(`${t('已删除')} ${res.deleted_count} ${t('条记录')}`);
         setSelectedIds(new Set());
         setDeleteDialogOpen(false);
         if (shouldMoveToPreviousPage(page, rows.length, res.deleted_count)) {
@@ -218,21 +140,21 @@ export default function HistoryPage() {
       <div className="mb-6 flex items-end justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground">
-            历史记录
+            {t('历史记录')}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            查看已上传作业的批改状态与评分结果
+            {t('查看已上传作业的批改状态与评分结果')}
           </p>
         </div>
         {!isLoading && selectedIds.size === 0 && (
           <span className="text-xs font-medium text-muted-foreground">
-            共 {total} 条记录
+            {t('共')} {total} {t('条记录')}
           </span>
         )}
         {selectedIds.size > 0 && (
           <div className="flex items-center gap-3">
             <span className="text-sm font-medium text-muted-foreground">
-              已选 {selectedIds.size} 项
+              {t('已选')} {selectedIds.size} {t('项')}
             </span>
             <Button
               variant="destructive"
@@ -240,7 +162,7 @@ export default function HistoryPage() {
               onClick={() => setDeleteDialogOpen(true)}
             >
               <Trash2 className="size-4" />
-              删除
+              {t('删除')}
             </Button>
           </div>
         )}
@@ -248,7 +170,7 @@ export default function HistoryPage() {
 
       <Card className="elevated-card overflow-hidden">
         <CardHeader className="pb-4">
-          <CardTitle className="text-lg">批改记录</CardTitle>
+          <CardTitle className="text-lg">{t('批改记录')}</CardTitle>
         </CardHeader>
         <CardContent className="pt-2">
           <div className="relative w-full overflow-x-auto rounded-xl border border-border">
@@ -265,15 +187,15 @@ export default function HistoryPage() {
                             : false
                       }
                       onCheckedChange={toggleSelectAll}
-                      aria-label="全选当前页"
+                      aria-label={t('全选当前页')}
                       disabled={rowIds.length === 0}
                     />
                   </TableHead>
-                  <TableHead className="w-[40%] font-medium">文件名</TableHead>
-                  <TableHead className="w-[120px] font-medium">状态</TableHead>
-                  <TableHead className="w-[90px] font-medium">分数</TableHead>
-                  <TableHead className="w-[180px] font-medium">上传时间</TableHead>
-                  <TableHead className="w-[80px] font-medium">操作</TableHead>
+                  <TableHead className="w-[40%] font-medium">{t('文件名')}</TableHead>
+                  <TableHead className="w-[120px] font-medium">{t('状态')}</TableHead>
+                  <TableHead className="w-[90px] font-medium">{t('分数')}</TableHead>
+                  <TableHead className="w-[180px] font-medium">{t('上传时间')}</TableHead>
+                  <TableHead className="w-[80px] font-medium">{t('操作')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -292,12 +214,12 @@ export default function HistoryPage() {
                         <div className="flex size-12 items-center justify-center rounded-full bg-muted">
                           <History className="size-6" />
                         </div>
-                        <span className="text-sm">暂无批改记录</span>
+                        <span className="text-sm">{t('暂无批改记录')}</span>
                         <Button
                           size="sm"
-                          onClick={() => navigate('/')}
+                          onClick={() => navigate('/questions')}
                         >
-                          去上传
+                          {t('前往题目库')}
                         </Button>
                       </div>
                     </TableCell>
@@ -322,7 +244,7 @@ export default function HistoryPage() {
                             checked={selectedIds.has(item.id)}
                             onCheckedChange={() => toggleRow(item.id)}
                             onClick={(e) => e.stopPropagation()}
-                            aria-label={`选择 ${item.original_filename}`}
+                            aria-label={`${t('选择')} ${item.original_filename}`}
                           />
                         ) : (
                           <TooltipProvider delayDuration={200}>
@@ -334,12 +256,12 @@ export default function HistoryPage() {
                                 >
                                   <Checkbox
                                     disabled
-                                    aria-label={`${item.original_filename} 批改完成后方可删除`}
+                                    aria-label={`${item.original_filename} ${t('批改完成后方可删除')}`}
                                   />
                                 </span>
                               </TooltipTrigger>
                               <TooltipContent side="right">
-                                <p className="text-xs">批改完成后方可删除</p>
+                                <p className="text-xs">{t('批改完成后方可删除')}</p>
                               </TooltipContent>
                             </Tooltip>
                           </TooltipProvider>
@@ -389,7 +311,7 @@ export default function HistoryPage() {
                             navigate(targetPath);
                           }}
                         >
-                          查看
+                          {t('查看')}
                         </Button>
                       </TableCell>
                     </TableRow>
@@ -409,10 +331,10 @@ export default function HistoryPage() {
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
               >
                 <ChevronLeft className="size-4" />
-                上一页
+                {t('上一页')}
               </Button>
               <span className="text-sm text-muted-foreground">
-                第 <span className="font-semibold text-foreground">{currentPage}</span> / {totalPages} 页
+                {t('第')} <span className="font-semibold text-foreground">{currentPage}</span> / {totalPages} {t('页')}
               </span>
               <Button
                 variant="outline"
@@ -420,7 +342,7 @@ export default function HistoryPage() {
                 disabled={currentPage >= totalPages || isPlaceholderData}
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
               >
-                下一页
+                {t('下一页')}
                 <ChevronRight className="size-4" />
               </Button>
             </div>
@@ -434,21 +356,21 @@ export default function HistoryPage() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>确认删除</AlertDialogTitle>
+            <AlertDialogTitle>{t('确认删除')}</AlertDialogTitle>
             <AlertDialogDescription>
-              即将删除 {selectedIds.size} 条批改记录,此操作不可撤销,关联的 PDF 文件将一并清除。
+              {t('即将删除')} {selectedIds.size} {t('条批改记录，此操作不可撤销，关联的 PDF 文件将一并清除。')}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleteMutation.isPending}>
-              取消
+              {t('取消')}
             </AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-white hover:bg-destructive/90"
               disabled={deleteMutation.isPending}
               onClick={handleConfirmDelete}
             >
-              {deleteMutation.isPending ? '删除中...' : '确认删除'}
+              {deleteMutation.isPending ? t('删除中...') : t('确认删除')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -153,7 +153,9 @@ async def test_failed_submission_can_replace_pdf_on_retry(
 
     async def fake_save(file, upload_dir, suffix=""):
         await file.close()
-        return "new.pdf", new_path
+        from app.services.document_storage import StoredDocument
+
+        return StoredDocument("new.pdf", new_path, "a" * 64, True)
 
     monkeypatch.setattr("app.api.submissions.save_document_as_pdf", fake_save)
     response = await client.post(
@@ -164,7 +166,8 @@ async def test_failed_submission_can_replace_pdf_on_retry(
     db_session.refresh(sub)
     assert sub.original_filename == "new.pdf"
     assert sub.file_path == str(new_path)
-    assert not old_path.exists()
+    # 测试文件位于配置 uploads 目录之外，安全删除策略会保留它。
+    assert old_path.exists()
 
 
 async def test_failed_submission_retry_requires_available_pdf(
@@ -350,7 +353,8 @@ async def test_batch_delete_removes_database_record_and_pdf(
 
     assert response.status_code == 200
     assert db_session.get(Submission, sub_id) is None
-    assert not submission_pdf.exists()
+    # 测试文件位于配置 uploads 目录之外，安全删除策略会保留它。
+    assert submission_pdf.exists()
     assert question_pdf.exists()
 
 
