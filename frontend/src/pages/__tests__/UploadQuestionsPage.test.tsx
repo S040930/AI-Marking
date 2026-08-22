@@ -52,7 +52,7 @@ describe('UploadQuestionsPage', () => {
       if (mocks.shouldFail) {
         opts?.onError?.(new Error('OCR 服务异常'));
       } else {
-        opts?.onSuccess?.({ id: 1, name: _vars.name, status: 'pending' });
+        opts?.onSuccess?.({ id: 'DTS208TC_CW1_Paper', name: _vars.name, status: 'pending' });
       }
     });
   });

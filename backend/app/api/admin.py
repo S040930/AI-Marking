@@ -27,7 +27,7 @@ class DeadJobOut(BaseModel):
 
     id: int = Field(..., description="任务 ID")
     job_type: str = Field(..., description="任务类型")
-    question_id: int | None = Field(None, description="关联题目 ID")
+    question_id: str | None = Field(None, description="关联题目 ID")
     submission_id: int | None = Field(None, description="关联提交 ID")
     attempts: int = Field(..., description="已重试次数")
     last_error: str | None = Field(None, description="最近一次错误信息")

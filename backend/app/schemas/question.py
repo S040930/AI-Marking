@@ -10,7 +10,7 @@ from app.models.question import QuestionReplacementStatus, QuestionStatus
 class QuestionOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
-    id: int
+    id: str
     config_profile_id: int
     name: str
     original_filename: str
@@ -31,7 +31,7 @@ class QuestionDetail(QuestionOut):
 class GradingPromptOut(BaseModel):
     """按题目生成的可审计批改提示词：与运行时评分包中的 grading_policy 同源。"""
 
-    question_id: int
+    question_id: str
     name: str
     grading_mode: str
     review_enabled: bool
@@ -68,6 +68,6 @@ class QuestionMutationResponse(BaseModel):
 
 
 class QuestionReplacementResponse(BaseModel):
-    question_id: int
+    question_id: str
     replacement_status: QuestionReplacementStatus
     affected_submission_count: int

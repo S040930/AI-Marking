@@ -253,7 +253,7 @@ async def open_ai_marking_assignment(
     )
 )
 async def save_ai_marking_question_rubric(
-    question_id: int,
+    question_id: str,
     handle: str,
     status: Literal["complete", "absent_or_ambiguous"],
     items: list[dict] | None = None,

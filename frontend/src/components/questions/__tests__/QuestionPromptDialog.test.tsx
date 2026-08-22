@@ -18,7 +18,7 @@ vi.mock('@/api/questions', () => ({
 import { QuestionPromptDialog } from '@/components/questions/QuestionPromptDialog';
 
 const QUESTION = {
-  id: 7,
+  id: 'DTS208TC_CW1_Paper',
   config_profile_id: 1,
   name: '期末作文',
   original_filename: 'essay.pdf',
@@ -65,7 +65,7 @@ describe('QuestionPromptDialog', () => {
 
   it('展示精简提示词（题目名 + 引用 ai-marking-grader skill）', () => {
     mocks.gradingPrompt.data = {
-      question_id: 7,
+      question_id: 'DTS208TC_CW1_Paper',
       name: '期末作文',
       grading_mode: 'external_agent',
       review_enabled: true,

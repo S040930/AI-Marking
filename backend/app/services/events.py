@@ -106,7 +106,7 @@ def notify_submission_status(
 
 
 def notify_question_status(
-    db: Session, question_id: int, status: str
+    db: Session, question_id: str, status: str
 ) -> None:
     """在当前事务内发送 question 状态变更 NOTIFY。"""
     if not _is_postgres(db):
@@ -162,7 +162,7 @@ def _drain_notifies(
 async def _event_loop(
     conn: "psycopg2.extensions.connection",
     match_key: str,
-    match_value: int,
+    match_value: int | str,
     initial_payload: str | None,
 ) -> AsyncIterator[str]:
     """通用 SSE 事件循环:先推初始状态,再持续 poll NOTIFY 并过滤匹配 ID。
@@ -218,7 +218,7 @@ async def submission_event_stream(submission_id: int) -> AsyncIterator[str]:
         conn.close()
 
 
-async def question_event_stream(question_id: int) -> AsyncIterator[str]:
+async def question_event_stream(question_id: str) -> AsyncIterator[str]:
     """SSE 流:推送指定 question 的状态变更事件。"""
     from app.models.question import Question  # 延迟导入避免循环依赖
 

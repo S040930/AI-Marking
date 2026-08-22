@@ -4,7 +4,7 @@ import { buildGradingPrompt } from '@/lib/gradingPrompt';
 describe('buildGradingPrompt', () => {
   const input = {
     questionName: '实验一 数据分析',
-    questionId: 42,
+    questionId: 'DTS208TC_CW1_Paper',
   };
 
   it.each(['zh-CN', 'en-US'] as const)(
@@ -12,7 +12,7 @@ describe('buildGradingPrompt', () => {
     (locale) => {
       const prompt = buildGradingPrompt(input, locale);
       expect(prompt).toContain('实验一 数据分析');
-      expect(prompt).toContain('42');
+      expect(prompt).toContain('DTS208TC_CW1_Paper');
     },
   );
 
@@ -37,12 +37,12 @@ describe('buildGradingPrompt', () => {
   it('replaces placeholders for different inputs', () => {
     const first = buildGradingPrompt(input, 'zh-CN');
     const second = buildGradingPrompt(
-      { questionName: '实验二', questionId: 7 },
+      { questionName: '实验二', questionId: 'DTS208TC_CW2_Paper' },
       'zh-CN',
     );
     expect(first).not.toBe(second);
     expect(second).toContain('实验二');
-    expect(second).toContain('7');
+    expect(second).toContain('DTS208TC_CW2_Paper');
     expect(first).not.toContain('实验二');
   });
 

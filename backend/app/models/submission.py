@@ -62,7 +62,7 @@ class Submission(Base):
     original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
     file_path: Mapped[str] = mapped_column(String(512), nullable=False)
     file_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
-    question_id: Mapped[int] = mapped_column(
+    question_id: Mapped[str] = mapped_column(
         ForeignKey("questions.id", ondelete="RESTRICT"), nullable=False, index=True
     )
     question = relationship("Question", back_populates="submissions", lazy="selectin")

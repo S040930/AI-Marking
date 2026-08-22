@@ -26,7 +26,7 @@ prepare_ai_marking_submission（只读）
 
 ### 题目 rubric 提取（needs_rubric 分支）
 
-`open_ai_marking_assignment` 返回 `needs_rubric=true` 时，评分包携带 `question_id`、`question_ocr_text` 与 `rubric_handle`，表示题目还没有可信 rubric 且配置也未提供。流程：
+`open_ai_marking_assignment` 返回 `needs_rubric=true` 时，评分包携带 `question_id`（题目的文件名 slug 字符串，如 `DTS208TC_CW1_Paper`）、`question_ocr_text` 与 `rubric_handle`，表示题目还没有可信 rubric 且配置也未提供。流程：
 
 1. 编程助手只从 `question_ocr_text` 提取评分项与满分（不得凭空生成或沿用旧缓存）。
 2. 调用 `save_ai_marking_question_rubric(question_id, handle, status, items, total_max_score)`：

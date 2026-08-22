@@ -50,14 +50,14 @@ class McpPreflightRequest(BaseModel):
 
 
 class McpQuestionCandidate(BaseModel):
-    id: int
+    id: str
     name: str
     original_filename: str
 
 
 class McpPreflightResponse(BaseModel):
     status: Literal["ready_to_submit", "needs_question_choice"]
-    question_id: int | None = None
+    question_id: str | None = None
     question_name: str | None = None
     code_manifest: list[dict] = Field(default_factory=list)
     candidates: list[McpQuestionCandidate] = Field(default_factory=list)
@@ -77,7 +77,7 @@ class McpPackageResponse(BaseModel):
     # 题目 OCR、question_id 与 rubric 提取句柄,客户端提取并保存后才能
     # 重新打开作业评分。
     needs_rubric: bool = False
-    question_id: int | None = None
+    question_id: str | None = None
     question_ocr_text: str | None = None
     rubric_handle: str | None = None
 
@@ -124,7 +124,7 @@ class McpSaveRubricRequest(BaseModel):
 
 class McpSaveRubricResponse(BaseModel):
     status: Literal["complete", "absent_or_ambiguous"]
-    question_id: int
+    question_id: str
     question_name: str
     # complete 时为新 rubric 快照 ID;absent_or_ambiguous 时为 None
     rubric_snapshot_id: str | None = None

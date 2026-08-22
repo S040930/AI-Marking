@@ -34,13 +34,13 @@ def _backoff_seconds(attempts: int) -> float:
 class ClaimedJob:
     id: int
     job_type: BackgroundJobType
-    question_id: int | None
+    question_id: str | None
     submission_id: int | None
     attempts: int
     claim_token: str
 
 
-def new_question_ocr_job(question_id: int) -> BackgroundJob:
+def new_question_ocr_job(question_id: str) -> BackgroundJob:
     return BackgroundJob(
         job_type=BackgroundJobType.question_ocr,
         question_id=question_id,
@@ -48,7 +48,7 @@ def new_question_ocr_job(question_id: int) -> BackgroundJob:
     )
 
 
-def new_question_replace_job(question_id: int) -> BackgroundJob:
+def new_question_replace_job(question_id: str) -> BackgroundJob:
     return BackgroundJob(
         job_type=BackgroundJobType.question_replace,
         question_id=question_id,
@@ -64,7 +64,7 @@ def new_submission_ocr_job(submission_id: int) -> BackgroundJob:
     )
 
 
-def reset_question_ocr_job(db: Session, question_id: int) -> None:
+def reset_question_ocr_job(db: Session, question_id: str) -> None:
     """失败题目重新入队；已有死信任务复用同一行。"""
     job = (
         db.execute(
@@ -86,7 +86,7 @@ def reset_question_ocr_job(db: Session, question_id: int) -> None:
     job.last_error = None
 
 
-def reset_question_replace_job(db: Session, question_id: int) -> None:
+def reset_question_replace_job(db: Session, question_id: str) -> None:
     """新版题目 OCR 入队；复用该题目的死信任务。"""
     job = (
         db.execute(

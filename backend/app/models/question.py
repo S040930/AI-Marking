@@ -3,7 +3,7 @@
 import enum
 from datetime import datetime
 
-from sqlalchemy import JSON, DateTime, Enum, ForeignKey, Index, String, Text, func
+from sqlalchemy import JSON, DateTime, Enum, ForeignKey, Index, String, Text, event, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.time import utc_now_naive
@@ -30,7 +30,9 @@ class Question(Base):
         Index("ix_questions_last_used_at", "last_used_at"),
     )
 
-    id: Mapped[int] = mapped_column(primary_key=True)
+    # id 为创建时 original_filename 去扩展名生成的稳定 slug(见
+    # app/services/question_identity.py),替换/重试 OCR 不改 id。
+    id: Mapped[str] = mapped_column(String(100), primary_key=True)
     config_profile_id: Mapped[int] = mapped_column(
         ForeignKey("config_profiles.id", ondelete="RESTRICT"),
         nullable=False,
@@ -88,3 +90,18 @@ class Question(Base):
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     submissions = relationship("Submission", back_populates="question")
+
+
+@event.listens_for(Question, "before_insert")
+def _ensure_question_id(mapper, connection, target) -> None:  # noqa: ANN001
+    """题目未显式指定 id 时,由 original_filename 自动生成 slug 主键。
+
+    正常流程 ``create_question`` 已显式传 id 并在 API 层拒绝重名;此钩子
+    仅兜底任何绕过显式指定(如测试/脚本直接建行)的题目,保证主键非空。
+    同名冲突由数据库主键唯一性自然暴露。
+    """
+    if target.id:
+        return
+    from app.services.question_identity import build_question_id
+
+    target.id = build_question_id(target.original_filename)

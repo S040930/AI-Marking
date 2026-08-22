@@ -28,8 +28,8 @@ interface QuestionCardProps {
   profiles: ConfigProfile[] | undefined;
   isSwitchingProfile: boolean;
   onRename: (question: Question) => void;
-  onRetryUpload: (id: number, file: File) => void;
-  onSwitchProfile: (id: number, configProfileId: number) => void;
+  onRetryUpload: (id: string, file: File) => void;
+  onSwitchProfile: (id: string, configProfileId: number) => void;
   onReplace: (question: Question, file: File) => void;
   onDelete: (question: Question) => void;
   onCopyPrompt: (question: Question) => void;

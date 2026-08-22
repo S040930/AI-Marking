@@ -14,7 +14,7 @@ vi.mock('@/api/questions', () => ({
       total: 1,
       items: [
         {
-          id: 7,
+          id: 'DTS208TC_CW1_Paper',
           config_profile_id: 1,
           name: '期末作文',
           original_filename: 'essay.pdf',
@@ -79,7 +79,7 @@ describe('QuestionsPage', () => {
       target: { files: [file] },
     });
     expect(mocks.retry).toHaveBeenCalledWith(
-      { id: 7, file },
+      { id: 'DTS208TC_CW1_Paper', file },
       expect.any(Object),
     );
   });

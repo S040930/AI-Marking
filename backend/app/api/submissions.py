@@ -84,7 +84,7 @@ DELETABLE_SUBMISSION_STATUSES = {
 )
 async def create_submission(
     file: UploadFile = File(..., description="学生作业 PDF"),
-    question_id: int = Form(..., description="题目库 ID"),
+    question_id: str = Form(..., description="题目 ID(文件名 slug)"),
     code_files: list[UploadFile] = File(
         default=[], description="可选多语言代码文件"
     ),

@@ -30,7 +30,7 @@ def _unlink_paths(paths: list[str]) -> None:
                 logger.warning("清理题目替换关联 PDF 失败 [%s]: %s", file_path, exc)
 
 
-async def run_question_replace(question_id: int) -> None:
+async def run_question_replace(question_id: str) -> None:
     """OCR 暂存 PDF；成功后切换，业务失败时保留旧题目。"""
     with SessionLocal() as db:
         question = db.get(Question, question_id)

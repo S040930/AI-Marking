@@ -26,7 +26,11 @@ Thumbs.db
 logs/
 storage-migration*.json
 
+# Local database backups (may contain student data and API credentials)
+.backups/
+
 # AI workspace artifacts
 .trae/
 .codebuddy/
+.mimosa/
 SURF-2026-0031-AI-Agent-Marking.md

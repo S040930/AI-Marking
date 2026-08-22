@@ -50,7 +50,7 @@ export default function QuestionsPage() {
     );
   };
 
-  const retryUpload = (id: number, file: File) => {
+  const retryUpload = (id: string, file: File) => {
     retryMutation.mutate(
       { id, file },
       {
@@ -60,7 +60,7 @@ export default function QuestionsPage() {
     );
   };
 
-  const switchProfile = (id: number, configProfileId: number) => {
+  const switchProfile = (id: string, configProfileId: number) => {
     switchProfileMutation.mutate(
       { id, configProfileId },
       {

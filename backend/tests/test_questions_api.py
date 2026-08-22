@@ -549,3 +549,32 @@ async def test_grading_prompt_uses_configured_rubric(client, db_session):
     assert len(items) == 2
     assert items[0]["criterion"] == "Task 1"
     assert items[0]["max_score"] == 60
+
+
+async def test_create_question_id_is_filename_slug(client, db_session):
+    """创建题目的 id 是基于文件名去扩展名的 slug。"""
+    created = await client.post(
+        "/api/questions",
+        files={"file": ("DTS208TC_CW1_Paper.pdf", b"%PDF-1.4", "application/pdf")},
+        data={"name": "课程作业一"},
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["id"] == "DTS208TC_CW1_Paper"
+
+
+async def test_create_question_rejects_duplicate_filename_slug(client, db_session):
+    """同名题目第二次上传返回 409,拒绝重复 id。"""
+    first = await client.post(
+        "/api/questions",
+        files={"file": ("DTS208TC_CW1_Paper.pdf", b"%PDF-1.4", "application/pdf")},
+        data={"name": "课程作业一"},
+    )
+    assert first.status_code == 201, first.text
+
+    second = await client.post(
+        "/api/questions",
+        files={"file": ("DTS208TC_CW1_Paper.pdf", b"%PDF-1.4", "application/pdf")},
+        data={"name": "同名不同内容"},
+    )
+    assert second.status_code == 409, second.text
+    assert "同名题目已存在" in second.json()["detail"]

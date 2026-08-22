@@ -60,6 +60,7 @@ from app.services.queue import (
     reset_question_ocr_job,
     reset_question_replace_job,
 )
+from app.services.question_identity import build_question_id
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -78,7 +79,7 @@ def _upload_dir() -> Path:
     return upload_dir
 
 
-def _question_with_count(db: Session, question_id: int):
+def _question_with_count(db: Session, question_id: str):
     count_subquery = (
         select(func.count(Submission.id))
         .where(Submission.question_id == Question.id)
@@ -134,7 +135,15 @@ async def create_question(
     display_name = (name or Path(original_filename).stem).strip()
     if not display_name:
         raise HTTPException(status_code=422, detail="题目名称不能为空")
+    question_id = build_question_id(original_filename)
+    if not question_id:
+        raise HTTPException(status_code=422, detail="无法从文件名生成题目 ID")
+    if db.get(Question, question_id) is not None:
+        raise HTTPException(
+            status_code=409, detail="同名题目已存在，请修改文件名后重新上传"
+        )
     question = Question(
+        id=question_id,
         name=display_name,
         original_filename=original_filename,
         file_path=str(path),
@@ -198,7 +207,7 @@ def list_questions(
 
 
 @router.get("/questions/{question_id}", response_model=QuestionDetail)
-def get_question(question_id: int, db: Session = Depends(get_db)):
+def get_question(question_id: str, db: Session = Depends(get_db)):
     row = _question_with_count(db, question_id)
     if row is None:
         raise HTTPException(status_code=404, detail="题目不存在")
@@ -206,7 +215,7 @@ def get_question(question_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/questions/{question_id}/grading-prompt", response_model=GradingPromptOut)
-def get_question_grading_prompt(question_id: int, db: Session = Depends(get_db)):
+def get_question_grading_prompt(question_id: str, db: Session = Depends(get_db)):
     """按题目生成可审计的批改提示词。
 
     复用与运行时评分包完全相同的 rubric 解析与评分策略组装
@@ -266,7 +275,7 @@ def get_question_grading_prompt(question_id: int, db: Session = Depends(get_db))
     "/questions/{question_id}/pdf",
     methods=["GET", "HEAD"],
 )
-def get_question_pdf(question_id: int, db: Session = Depends(get_db)):
+def get_question_pdf(question_id: str, db: Session = Depends(get_db)):
     question = db.get(Question, question_id)
     if question is None:
         raise HTTPException(status_code=404, detail="题目不存在")
@@ -283,7 +292,7 @@ def get_question_pdf(question_id: int, db: Session = Depends(get_db)):
 
 @router.patch("/questions/{question_id}", response_model=QuestionOut)
 def rename_question(
-    question_id: int,
+    question_id: str,
     payload: QuestionRenameRequest,
     db: Session = Depends(get_db),
 ):
@@ -304,7 +313,7 @@ def rename_question(
 
 @router.patch("/questions/{question_id}/config-profile", response_model=QuestionOut)
 def change_question_config_profile(
-    question_id: int,
+    question_id: str,
     payload: QuestionConfigProfileRequest,
     db: Session = Depends(get_db),
 ):
@@ -325,7 +334,7 @@ def change_question_config_profile(
 
 @router.post("/questions/{question_id}/retry-ocr", response_model=QuestionOut)
 async def retry_question_ocr(
-    question_id: int,
+    question_id: str,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
 ):
@@ -361,7 +370,7 @@ async def retry_question_ocr(
     return _serialize(row[0], row[1])
 
 
-def _locked_submissions(db: Session, question_id: int):
+def _locked_submissions(db: Session, question_id: str):
     return (
         (
             db.execute(
@@ -399,7 +408,7 @@ def _unlink_after_commit(db: Session, paths: list[str]) -> None:
     status_code=202,
 )
 async def replace_question(
-    question_id: int,
+    question_id: str,
     file: UploadFile = File(...),
     confirmation_name: str = Form(..., max_length=255),
     acknowledge_deletion: bool = Form(False),
@@ -467,7 +476,7 @@ async def replace_question(
 
 @router.delete("/questions/{question_id}", response_model=QuestionMutationResponse)
 def delete_question(
-    question_id: int,
+    question_id: str,
     payload: QuestionConfirmRequest = Body(...),
     db: Session = Depends(get_db),
 ):

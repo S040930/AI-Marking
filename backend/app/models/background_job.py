@@ -55,7 +55,7 @@ class BackgroundJob(Base):
     job_type: Mapped[BackgroundJobType] = mapped_column(
         Enum(BackgroundJobType, name="background_job_type"), nullable=False
     )
-    question_id: Mapped[int | None] = mapped_column(
+    question_id: Mapped[str | None] = mapped_column(
         ForeignKey("questions.id", ondelete="CASCADE"),
         nullable=True,
         unique=True,

@@ -25,7 +25,7 @@ class McpWorkflowHandle(Base):
     )
     # rubric 提取句柄（kind="rubric_extraction"）绑定题目与 OCR hash，
     # 防止 OCR 变化后复用旧提取结果；普通句柄这两列为 NULL。
-    question_id: Mapped[int | None] = mapped_column(
+    question_id: Mapped[str | None] = mapped_column(
         ForeignKey("questions.id", ondelete="CASCADE"), nullable=True
     )
     ocr_hash: Mapped[str | None] = mapped_column(String(71), nullable=True)

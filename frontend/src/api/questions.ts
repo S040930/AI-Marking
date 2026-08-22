@@ -5,7 +5,7 @@ export type QuestionStatus = 'pending' | 'ocr_processing' | 'ready' | 'failed';
 export type QuestionReplacementStatus = 'pending' | 'processing' | 'failed';
 
 export interface Question {
-  id: number;
+  id: string;
   config_profile_id: number;
   name: string;
   original_filename: string;
@@ -28,7 +28,7 @@ export interface PaginatedQuestions {
 
 /** GET /questions/{id}/grading-prompt 返回的提示词素材（后端生成，与评分包同源）。 */
 export interface GradingPrompt {
-  question_id: number;
+  question_id: string;
   name: string;
   grading_mode: string;
   review_enabled: boolean;
@@ -41,7 +41,7 @@ export interface GradingPrompt {
   text: string;
 }
 
-export function useGradingPrompt(questionId: number | null) {
+export function useGradingPrompt(questionId: string | null) {
   return useQuery({
     queryKey: ['questions', questionId, 'grading-prompt'],
     queryFn: () =>
@@ -99,7 +99,7 @@ export function useCreateQuestion() {
 
 export function useRenameQuestion() {
   const queryClient = useQueryClient();
-  return useMutation<Question, Error, { id: number; name: string }>({
+  return useMutation<Question, Error, { id: string; name: string }>({
     mutationFn: ({ id, name }) =>
       apiClient
         .patch<Question>(`/questions/${id}`, { name })
@@ -110,7 +110,7 @@ export function useRenameQuestion() {
 
 export function useRetryQuestionOcr() {
   const queryClient = useQueryClient();
-  return useMutation<Question, Error, { id: number; file: File }>({
+  return useMutation<Question, Error, { id: string; file: File }>({
     mutationFn: ({ id, file }) => {
       const form = new FormData();
       form.append('file', file);
@@ -129,7 +129,7 @@ export function useRetryQuestionOcr() {
 
 export function useChangeQuestionConfigProfile() {
   const queryClient = useQueryClient();
-  return useMutation<Question, Error, { id: number; configProfileId: number }>({
+  return useMutation<Question, Error, { id: string; configProfileId: number }>({
     mutationFn: ({ id, configProfileId }) =>
       apiClient
         .patch<Question>(`/questions/${id}/config-profile`, {
@@ -145,7 +145,7 @@ export function useDeleteQuestion() {
   return useMutation<
     { deleted_submission_count: number },
     Error,
-    { id: number; confirmationName: string }
+    { id: string; confirmationName: string }
   >({
     mutationFn: ({ id, confirmationName }) =>
       apiClient
@@ -166,12 +166,12 @@ export function useReplaceQuestion() {
   const queryClient = useQueryClient();
   return useMutation<
     {
-      question_id: number;
+      question_id: string;
       replacement_status: 'pending';
       affected_submission_count: number;
     },
     Error,
-    { id: number; file: File; confirmationName: string; acknowledgeDeletion: boolean }
+    { id: string; file: File; confirmationName: string; acknowledgeDeletion: boolean }
   >({
     mutationFn: ({ id, file, confirmationName, acknowledgeDeletion }) => {
       const form = new FormData();

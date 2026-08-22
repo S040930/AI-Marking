@@ -22,10 +22,13 @@ def test_database_timestamp_is_naive_utc():
 
 
 def _ready_question(db_session, name: str = "测试题目") -> Question:
-    """显式创建可用于批改的题目，避免测试绕过真实 question_id 约束。"""
+    """显式创建可用于批改的题目，避免测试绕过真实 question_id 约束。
+
+    original_filename 由 name 派生，保证不同 name 的题目拥有不同 slug id。
+    """
     question = Question(
         name=name,
-        original_filename="question.pdf",
+        original_filename=f"{name}.pdf",
         file_path="/tmp/question.pdf",
         ocr_text="测试题目内容",
         status=QuestionStatus.ready,

@@ -22,7 +22,7 @@ async def test_prepare_returns_opaque_plan_and_enforces_independent_files(tmp_pa
         assert method == "POST"
         return {
             "status": "ready_to_submit",
-            "question_id": 2,
+            "question_id": "DTS208",
             "question_name": "DTS208",
             "code_manifest": [{"filename": "Q1.py", "question_number": 1}],
         }
@@ -49,7 +49,7 @@ def test_expired_prepared_plans_are_purged_and_capacity_is_bounded(monkeypatch):
     plans._prepared_plans["expired"] = {"expires_at": 0}
     token = plans.make_plan(
         {
-            "question_id": 1,
+            "question_id": "q",
             "question_name": "q",
             "report": {},
             "code_files": [],
@@ -98,7 +98,7 @@ async def test_open_returns_early_on_needs_rubric(monkeypatch):
         "submission_id": 7,
         "status": "awaiting_mcp",
         "needs_rubric": True,
-        "question_id": 3,
+        "question_id": "期末作文",
         "question_ocr_text": "Task 1: 100 points",
         "rubric_handle": "rubric-handle",
     }
@@ -185,14 +185,14 @@ async def test_save_question_rubric_posts_to_question_endpoint(monkeypatch):
         captured.update(kwargs)
         return {
             "status": "complete",
-            "question_id": 3,
+            "question_id": "期末作文",
             "question_name": "期末作文",
             "rubric_snapshot_id": "rubric_abc123",
         }
 
     monkeypatch.setattr(server, "_call", fake_call)
     result = await server.save_ai_marking_question_rubric(
-        question_id=3,
+        question_id="期末作文",
         handle="rubric-extraction-handle",
         status="complete",
         items=[

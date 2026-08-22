@@ -490,7 +490,7 @@ def save_mcp_assessment_review(
     response_model=McpSaveRubricResponse,
 )
 def save_mcp_question_rubric(
-    question_id: int,
+    question_id: str,
     payload: McpSaveRubricRequest,
     db: Session = Depends(get_db),
 ) -> McpSaveRubricResponse:

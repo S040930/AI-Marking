@@ -13,7 +13,7 @@ from app.services.ocr import OCRError, ocr_pdf
 logger = logging.getLogger(__name__)
 
 
-async def run_question_ocr(question_id: int) -> None:
+async def run_question_ocr(question_id: str) -> None:
     """执行一次题目 OCR；可安全地由租约恢复后重新运行。"""
     with SessionLocal() as db:
         question = db.get(Question, question_id)

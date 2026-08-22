@@ -2,7 +2,7 @@ import type { Locale } from '@/i18n';
 
 export interface GradingPromptInput {
   questionName: string;
-  questionId: number;
+  questionId: string;
 }
 
 const ZH_TEMPLATE = `使用 ai-marking-grader skill 批改学生作业。
