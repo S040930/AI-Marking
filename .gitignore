@@ -32,6 +32,8 @@ storage-migration*.json
 # AI workspace artifacts
 .trae/
 .codebuddy/
+.codex/
+.zcode/
 .mimosa/
 SURF-2026-0031-AI-Agent-Marking.md
 
