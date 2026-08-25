@@ -61,7 +61,7 @@ async def run_question_replace(question_id: str) -> None:
             config.get("paddleocr_api_url", "") or "",
             config.get("paddleocr_token", "") or "",
         )
-    except (BusinessError, OCRError) as exc:
+    except BusinessError as exc:
         message = f"新版题目 OCR 失败: {exc}"
         with SessionLocal() as db:
             question = db.get(Question, question_id, with_for_update=True)
@@ -78,6 +78,13 @@ async def run_question_replace(question_id: str) -> None:
                 db.commit()
         _unlink_paths([staged_path])
         raise BusinessError(message) from exc
+    except OCRError as exc:
+        logger.warning(
+            "新版题目 OCR 短暂失败，保留暂存文件并交由队列重试 [%s]: %s",
+            question_id,
+            exc,
+        )
+        raise
 
     # 新版题目 OCR 后,旧的 extracted_rubric 快照随新 OCR 作废(ocr_hash 不匹配)。
     # 首次评分时由 MCP 客户端通过 save_ai_marking_question_rubric 重新提取。

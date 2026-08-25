@@ -33,7 +33,7 @@ async def run_question_ocr(question_id: str) -> None:
             config.get("paddleocr_api_url", "") or "",
             config.get("paddleocr_token", "") or "",
         )
-    except (BusinessError, OCRError) as exc:
+    except BusinessError as exc:
         message = f"题目 OCR 失败: {exc}"
         with SessionLocal() as db:
             question = db.get(Question, question_id, with_for_update=True)
@@ -44,6 +44,9 @@ async def run_question_ocr(question_id: str) -> None:
                 notify_question_status(db, question_id, QuestionStatus.failed.value)
                 db.commit()
         raise BusinessError(message) from exc
+    except OCRError as exc:
+        logger.warning("题目 OCR 短暂失败，交由队列重试 [%s]: %s", question_id, exc)
+        raise
 
     # rubric 提取由 MCP 客户端在首次评分时完成（save_ai_marking_question_rubric），
     # 服务端不再在 OCR 阶段调用 LLM 提取；此处只保存题目 OCR 文本。

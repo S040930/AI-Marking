@@ -88,6 +88,13 @@ def _parse_pg_dsn(url: str) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _notify_sql(channel: str) -> str:
+    """返回带参数占位符的 NOTIFY 语句;频道名只接受白名单常量。"""
+    if channel not in _VALID_CHANNELS:
+        raise ValueError(f"不支持的 NOTIFY 频道: {channel}")
+    return "NOTIFY " + channel + ", :payload"
+
+
 def notify_submission_status(
     db: Session, submission_id: int, status: str
 ) -> None:
@@ -100,7 +107,7 @@ def notify_submission_status(
         return
     payload = json.dumps({"submission_id": submission_id, "status": status})
     db.execute(
-        text(f"NOTIFY {CHANNEL_SUBMISSION}, :payload"),
+        text(_notify_sql(CHANNEL_SUBMISSION)),
         {"payload": payload},
     )
 
@@ -113,7 +120,7 @@ def notify_question_status(
         return
     payload = json.dumps({"question_id": question_id, "status": status})
     db.execute(
-        text(f"NOTIFY {CHANNEL_QUESTION}, :payload"),
+        text(_notify_sql(CHANNEL_QUESTION)),
         {"payload": payload},
     )
 
@@ -133,12 +140,19 @@ def _sse_keepalive() -> str:
     return ": keepalive\n\n"
 
 
+# 允许监听的 PG 通知频道白名单。频道名只会来自这两个模块常量,
+# 在执行 LISTEN 前显式校验,避免任何外部拼接进入 SQL 语句结构。
+_VALID_CHANNELS = frozenset({CHANNEL_SUBMISSION, CHANNEL_QUESTION})
+
+
 def _listen(dsn: str, channel: str) -> "psycopg2.extensions.connection":
     """建立独立 psycopg2 连接并执行 LISTEN。"""
+    if channel not in _VALID_CHANNELS:
+        raise ValueError(f"不支持的 LISTEN 频道: {channel}")
     conn = psycopg2.connect(dsn)
     conn.set_isolation_level(pg_ext.ISOLATION_LEVEL_AUTOCOMMIT)
     cur = conn.cursor()
-    cur.execute(f"LISTEN {channel};")
+    cur.execute("LISTEN " + channel + ";")
     cur.close()
     return conn
 
@@ -193,52 +207,61 @@ async def submission_event_stream(submission_id: int) -> AsyncIterator[str]:
     """SSE 流:推送指定 submission 的状态变更事件。"""
     from app.models.submission import Submission  # 延迟导入避免循环依赖
 
-    # 先在 SQLAlchemy Session 内读取当前状态,立即释放连接后再 yield。
-    initial_payload: str | None = None
-    with SessionLocal() as db:
-        sub = db.get(Submission, submission_id)
-        if sub is not None:
-            initial_payload = json.dumps(
-                {
-                    "submission_id": submission_id,
-                    "status": sub.status.value,
-                }
-            )
-
-    conn = _listen(
-        _parse_pg_dsn(settings.DATABASE_URL), CHANNEL_SUBMISSION
-    )
+    conn: "psycopg2.extensions.connection | None" = None
     try:
+        # Include initial DB access and LISTEN setup in the release guard: either
+        # can fail before the generator yields its first event.
+        initial_payload: str | None = None
+        with SessionLocal() as db:
+            sub = db.get(Submission, submission_id)
+            if sub is not None:
+                initial_payload = json.dumps(
+                    {
+                        "submission_id": submission_id,
+                        "status": sub.status.value,
+                    }
+                )
+        conn = await asyncio.to_thread(
+            _listen,
+            _parse_pg_dsn(settings.DATABASE_URL),
+            CHANNEL_SUBMISSION,
+        )
         async for chunk in _event_loop(
             conn, "submission_id", submission_id, initial_payload
         ):
             yield chunk
     finally:
+        if conn is not None:
+            await asyncio.to_thread(conn.close)
         _sse_slots.release()
-        conn.close()
 
 
 async def question_event_stream(question_id: str) -> AsyncIterator[str]:
     """SSE 流:推送指定 question 的状态变更事件。"""
     from app.models.question import Question  # 延迟导入避免循环依赖
 
-    initial_payload: str | None = None
-    with SessionLocal() as db:
-        question = db.get(Question, question_id)
-        if question is not None:
-            initial_payload = json.dumps(
-                {
-                    "question_id": question_id,
-                    "status": question.status.value,
-                }
-            )
-
-    conn = _listen(_parse_pg_dsn(settings.DATABASE_URL), CHANNEL_QUESTION)
+    conn: "psycopg2.extensions.connection | None" = None
     try:
+        initial_payload: str | None = None
+        with SessionLocal() as db:
+            question = db.get(Question, question_id)
+            if question is not None:
+                initial_payload = json.dumps(
+                    {
+                        "question_id": question_id,
+                        "status": question.status.value,
+                    }
+                )
+        conn = await asyncio.to_thread(
+            _listen,
+            _parse_pg_dsn(settings.DATABASE_URL),
+            CHANNEL_QUESTION,
+        )
         async for chunk in _event_loop(
             conn, "question_id", question_id, initial_payload
         ):
             yield chunk
     finally:
+        if conn is not None:
+            await asyncio.to_thread(conn.close)
         _sse_slots.release()
-        conn.close()

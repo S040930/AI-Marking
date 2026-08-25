@@ -207,22 +207,13 @@ prometheus-fastapi-instrumentator 自动埋点 HTTP 指标，手动埋点聚焦�
 
 ### 实现
 
-[cleanup.py](file:///Users/mac/Desktop/AI-Marking/backend/app/services/cleanup.py) 的 `periodic_cleanup_loop` 加 `LIMIT 10000` 保护，并在注释中明确：
+`periodic_cleanup_loop` 先从磁盘枚举已过保留期的文件，每 250 个候选路径一批，再分别查询题目、作业、代码和输入文件引用。只有整批查询都确认无引用的文件才会被删除；每批后结束只读事务，避免扫描大目录时长期持有数据库快照。
 
-```python
-# 题目表通常 < 1000 行,每行两个 path 字段,内存占用 < 100KB,
-# 可接受。真正的瓶颈是 iterdir() 扫描磁盘,不是 DB 查询。
-# 加 LIMIT 防止极端情况下题目表暴涨导致 OOM。
-question_paths = db.execute(
-    select(Question.file_path, Question.replacement_file_path).limit(10000)
-).all()
-```
-
-`cleanup_uploads` 函数签名保持 `protected_paths: set[Path] | None = None`，逻辑不变。
+单文件的事务失败清理使用 DB 侧存在性查询，同样不加载全部引用。
 
 ### Why
 
-P5 实际开销远小于 P0-P4（题目表 < 1000 行，内存占用 < 100KB），过度优化得不偿失。本次仅加防御性 LIMIT 与注释说明，真正优化留待 P3 的 StorageBackend 落地后统一处理（用 `storage.list_files()` 替代 `iterdir()` 扫描磁盘）。
+`LIMIT 10000` 会把第 10001 条之后的真实引用当成无引用，属于数据安全问题而非单纯性能权衡。候选驱动的分批反查同时保证完整性与 O(250) 内存上限。
 
 ## 风险与回滚
 

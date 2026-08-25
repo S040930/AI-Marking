@@ -220,7 +220,7 @@ def validate_code_evidence(sub: Submission, payload: McpAssessmentRequest) -> No
             ref_type = ref.get("type")
             quote = normalize_for_evidence(str(ref.get("quote", "")))
             if ref_type == "report_quote":
-                if quote and quote not in normalize_for_evidence(sub.ocr_text or ""):
+                if not quote or quote not in normalize_for_evidence(sub.ocr_text or ""):
                     invalid.append(f"{detail.criterion}: 报告证据无法定位")
             elif ref_type == "source_line":
                 filename = ref.get("filename")

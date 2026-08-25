@@ -562,19 +562,23 @@ async def test_create_question_id_is_filename_slug(client, db_session):
     assert created.json()["id"] == "DTS208TC_CW1_Paper"
 
 
-async def test_create_question_rejects_duplicate_filename_slug(client, db_session):
+async def test_create_question_rejects_duplicate_filename_slug(
+    client, db_session, tmp_path, monkeypatch
+):
     """同名题目第二次上传返回 409,拒绝重复 id。"""
+    monkeypatch.setattr("app.api.questions._upload_dir", lambda: tmp_path)
     first = await client.post(
         "/api/questions",
-        files={"file": ("DTS208TC_CW1_Paper.pdf", b"%PDF-1.4", "application/pdf")},
+        files={"file": ("DTS208TC_CW1_Paper.pdf", b"%PDF-1.4 first", "application/pdf")},
         data={"name": "课程作业一"},
     )
     assert first.status_code == 201, first.text
 
     second = await client.post(
         "/api/questions",
-        files={"file": ("DTS208TC_CW1_Paper.pdf", b"%PDF-1.4", "application/pdf")},
+        files={"file": ("DTS208TC_CW1_Paper.pdf", b"%PDF-1.4 second", "application/pdf")},
         data={"name": "同名不同内容"},
     )
     assert second.status_code == 409, second.text
     assert "同名题目已存在" in second.json()["detail"]
+    assert len(list((tmp_path / "documents").rglob("*.pdf"))) == 1

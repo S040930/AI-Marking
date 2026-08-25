@@ -179,11 +179,11 @@ async def test_dead_letter_marks_business_target_failed(db_session, monkeypatch)
     assert question.error_message == "worker crashed"
 
 
-async def test_known_ocr_failure_is_reported_without_queue_retry(
+async def test_transient_ocr_failure_remains_queued_for_retry(
     db_session, monkeypatch
 ):
     from app.core.config import settings
-    monkeypatch.setattr(settings, "TASK_MAX_ATTEMPTS", 1)
+    monkeypatch.setattr(settings, "TASK_MAX_ATTEMPTS", 2)
 
     question = await _queued_question_job(db_session)
     factory = sessionmaker(bind=db_session.bind, expire_on_commit=False)
@@ -202,10 +202,40 @@ async def test_known_ocr_failure_is_reported_without_queue_retry(
 
     db_session.expire_all()
     job_in_db = db_session.get(BackgroundJob, claimed.id)
-    assert job_in_db is None
+    assert job_in_db is not None
+    assert job_in_db.status == BackgroundJobStatus.queued
+    retrying_question = db_session.get(Question, question.id)
+    assert retrying_question.status == QuestionStatus.ocr_processing
+    assert retrying_question.error_message is None
+
+
+async def test_transient_ocr_failure_marks_target_only_after_dead_letter(
+    db_session, monkeypatch
+):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "TASK_MAX_ATTEMPTS", 1)
+    question = await _queued_question_job(db_session)
+    factory = sessionmaker(bind=db_session.bind, expire_on_commit=False)
+    monkeypatch.setattr(worker, "SessionLocal", factory)
+    monkeypatch.setattr(question_ocr, "SessionLocal", factory)
+
+    async def fail_ocr(*args, **kwargs):
+        raise OCRError("OCR 服务不可用")
+
+    monkeypatch.setattr(question_ocr, "ocr_pdf", fail_ocr)
+    claimed = claim_next_job(
+        db_session, worker_id="worker-a", lease_seconds=90
+    )
+    await worker._run_claimed(claimed)
+
+    db_session.expire_all()
+    dead_job = db_session.get(BackgroundJob, claimed.id)
+    assert dead_job is not None
+    assert dead_job.status == BackgroundJobStatus.dead
     failed_question = db_session.get(Question, question.id)
     assert failed_question.status == QuestionStatus.failed
-    assert failed_question.error_message == "题目 OCR 失败: OCR 服务不可用"
+    assert "OCRError" in failed_question.error_message
 
 
 async def test_dead_question_replace_keeps_old_question_usable(

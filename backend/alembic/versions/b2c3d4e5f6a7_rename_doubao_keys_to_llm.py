@@ -24,17 +24,23 @@ _RENAME_MAP = {
     "doubao_model": "llm_model",
 }
 
+# 键名是模块级常量，SQL 在加载时确定，不随任何运行时输入变化。
+_UPGRADE_STATEMENTS = [
+    f"UPDATE system_config SET key = '{new_key}', "
+    f"description = description WHERE key = '{old_key}'"
+    for old_key, new_key in _RENAME_MAP.items()
+]
+_DOWNGRADE_STATEMENTS = [
+    f"UPDATE system_config SET key = '{old_key}' WHERE key = '{new_key}'"
+    for old_key, new_key in _RENAME_MAP.items()
+]
+
 
 def upgrade() -> None:
-    for old_key, new_key in _RENAME_MAP.items():
-        op.execute(
-            f"UPDATE system_config SET key = '{new_key}', "
-            f"description = description WHERE key = '{old_key}'"
-        )
+    for statement in _UPGRADE_STATEMENTS:
+        op.execute(statement)
 
 
 def downgrade() -> None:
-    for old_key, new_key in _RENAME_MAP.items():
-        op.execute(
-            f"UPDATE system_config SET key = '{old_key}' WHERE key = '{new_key}'"
-        )
+    for statement in _DOWNGRADE_STATEMENTS:
+        op.execute(statement)

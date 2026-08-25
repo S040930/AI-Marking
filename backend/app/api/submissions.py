@@ -22,6 +22,7 @@ from fastapi import (
 )
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import exists, func, select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import settings
@@ -50,6 +51,7 @@ from app.schemas.submission import (
 from app.services.code_manifest import parse_code_manifest_json
 from app.services.document_storage import (
     MAX_CODE_FILES,
+    discard_stored_document,
     remove_document_if_unreferenced,
     save_code_files,
     save_document_as_pdf,
@@ -75,6 +77,19 @@ DELETABLE_SUBMISSION_STATUSES = {
     SubmissionStatus.reviewed,
     SubmissionStatus.failed,
 }
+
+
+def _discard_uncommitted_document(db: Session, stored, upload_dir: Path) -> None:
+    try:
+        discard_stored_document(db, stored, upload_dir)
+    except (OSError, SQLAlchemyError, ValueError) as exc:
+        logger.warning("清理未提交学生 PDF 失败 [%s]: %s", stored.path, exc)
+
+
+def _discard_code_storage(code_metadata: list[dict]) -> None:
+    storage_roots = {Path(item["path"]).parent for item in code_metadata}
+    for storage_root in storage_roots:
+        shutil.rmtree(storage_root, ignore_errors=True)
 
 
 @router.post(
@@ -150,20 +165,17 @@ async def create_submission(
                 ],
             )
             validate_independent_code_entries(code_metadata)
-    except Exception:
-        raise
 
-    # 创建记录
-    submission = Submission(
-        original_filename=original_filename,
-        file_path=str(saved_path),
-        file_sha256=stored.sha256,
-        question_id=question.id,
-        status=SubmissionStatus.pending,
-    )
-    question.last_used_at = utc_now_naive()
-    db.add(submission)
-    try:
+        # 创建记录
+        submission = Submission(
+            original_filename=original_filename,
+            file_path=str(saved_path),
+            file_sha256=stored.sha256,
+            question_id=question.id,
+            status=SubmissionStatus.pending,
+        )
+        question.last_used_at = utc_now_naive()
+        db.add(submission)
         db.flush()
         for metadata in code_metadata:
             db.add(
@@ -182,8 +194,8 @@ async def create_submission(
         db.commit()
     except Exception:
         db.rollback()
-        for metadata in code_metadata:
-            Path(metadata["path"]).unlink(missing_ok=True)
+        _discard_code_storage(code_metadata)
+        _discard_uncommitted_document(db, stored, upload_dir)
         raise
     db.refresh(submission)
 
@@ -234,21 +246,7 @@ async def retry_submission(
     ):
         raise HTTPException(status_code=409, detail="题目新版正在处理中，暂不可重试")
 
-    stored = None
-    new_path: Path | None = None
-    original_filename = sub.original_filename
-    if file is not None:
-        backend_root = Path(__file__).resolve().parent.parent.parent
-        upload_dir = Path(settings.UPLOAD_DIR).resolve()
-        try:
-            upload_dir.relative_to(backend_root)
-        except ValueError as exc:
-            raise HTTPException(
-                status_code=500, detail="UPLOAD_DIR 配置非法,必须位于后端根目录下"
-            ) from exc
-        stored = await save_document_as_pdf(file, upload_dir)
-        original_filename, new_path = stored.original_filename, stored.path
-    elif not Path(sub.file_path).exists():
+    if file is None and not Path(sub.file_path).exists():
         raise HTTPException(
             status_code=409,
             detail="原学生作业文件已过期，请重新选择 PDF 后重试",
@@ -265,6 +263,21 @@ async def retry_submission(
             status_code=409,
             detail="原数据集文件已过期，请通过编程助手（MCP）重新提交 PDF、代码与数据集",
         )
+
+    stored = None
+    new_path: Path | None = None
+    original_filename = sub.original_filename
+    upload_dir = Path(settings.UPLOAD_DIR).resolve()
+    if file is not None:
+        backend_root = Path(__file__).resolve().parent.parent.parent
+        try:
+            upload_dir.relative_to(backend_root)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=500, detail="UPLOAD_DIR 配置非法,必须位于后端根目录下"
+            ) from exc
+        stored = await save_document_as_pdf(file, upload_dir)
+        original_filename, new_path = stored.original_filename, stored.path
 
     old_path = sub.file_path
     if new_path is not None:
@@ -300,6 +313,8 @@ async def retry_submission(
         db.refresh(sub)
     except Exception:
         db.rollback()
+        if stored is not None:
+            _discard_uncommitted_document(db, stored, upload_dir)
         raise
     if new_path is not None and stored is not None and old_path != str(new_path):
         try:

@@ -20,7 +20,7 @@ from typing import Sequence, Union
 from alembic import op
 import sqlalchemy as sa
 
-from app.services.question_identity import build_question_id
+from app.services.question_identity import MAX_QUESTION_ID_LEN, build_question_id
 
 # revision identifiers, used by Alembic.
 revision: str = '858c3ddac415'
@@ -28,7 +28,7 @@ down_revision: Union[str, None] = 'e2f3a4b5c6d7'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
-_QUESTION_ID_TYPE = sa.String(100)
+_QUESTION_ID_TYPE = sa.String(MAX_QUESTION_ID_LEN)
 
 # (表名, 旧外键名, 旧索引名, 旧 unique 约束名, 外键 ondelete, 新列是否 NOT NULL)
 # 注意:只有 submissions.question_id 原为 NOT NULL;另两表原为 nullable。
@@ -51,15 +51,23 @@ def _slug_map() -> dict[int, str]:
     used: set[str] = set()
     mapping: dict[int, str] = {}
     for row_id, original_filename in rows:
-        base = build_question_id(original_filename or "question")
-        slug = base
-        suffix = 2
-        while slug in used or not slug:
-            slug = f"{base}-{suffix}"
-            suffix += 1
+        base = build_question_id(original_filename or "question") or "question"
+        slug = _unique_slug(base, used)
         used.add(slug)
         mapping[row_id] = slug
     return mapping
+
+
+def _unique_slug(base: str, used: set[str]) -> str:
+    """Return a unique slug without ever exceeding the model column length."""
+    slug = base[:MAX_QUESTION_ID_LEN]
+    suffix = 2
+    while slug in used:
+        suffix_text = f"-{suffix}"
+        prefix = base[: MAX_QUESTION_ID_LEN - len(suffix_text)].rstrip("-")
+        slug = f"{prefix}{suffix_text}"
+        suffix += 1
+    return slug
 
 
 def _backfill_sub_table(table: str, mapping: dict[int, str]) -> None:
@@ -174,6 +182,15 @@ def downgrade() -> None:
         "id",
         server_default=sa.text("nextval('questions_id_seq')"),
     )
+    op.execute(
+        """
+        SELECT setval(
+            'questions_id_seq',
+            COALESCE((SELECT MAX(id) FROM questions), 1),
+            EXISTS (SELECT 1 FROM questions)
+        )
+        """
+    )
 
     for table, fk_name, index_name, unique_name, ondelete, not_null in _SUB_TABLES:
         op.drop_column(table, "question_id")
@@ -188,3 +205,9 @@ def downgrade() -> None:
             op.create_unique_constraint(unique_name, table, ["question_id"])
         if index_name is not None:
             op.create_index(index_name, table, ["question_id"])
+    op.create_check_constraint(
+        "ck_background_jobs_single_target",
+        "background_jobs",
+        "(question_id IS NOT NULL AND submission_id IS NULL) OR "
+        "(question_id IS NULL AND submission_id IS NOT NULL)",
+    )

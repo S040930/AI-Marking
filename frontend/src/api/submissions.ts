@@ -1,5 +1,10 @@
 import { useEffect } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import {
+  type QueryClient,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
 import { apiClient } from './client';
 import {
   type BatchDeleteResponse,
@@ -89,10 +94,13 @@ export function useSubmission(
  * 与 ``useSubmissionStatus`` 的 30s 兜底轮询配合:SSE 主路径推送,
  * 轮询仅在 SSE 断开时(网络抖动、代理超时)仍能恢复。
  */
-export function useSubmissionEvents(id: number | undefined) {
+export function useSubmissionEvents(
+  id: number | undefined,
+  enabled: boolean = true,
+) {
   const queryClient = useQueryClient();
   useEffect(() => {
-    if (id === undefined || isNaN(id)) return;
+    if (id === undefined || isNaN(id) || !enabled) return;
     // EventSource 在 SSR / 部分测试环境不存在,守卫一下避免崩溃
     if (typeof window === 'undefined' || typeof EventSource === 'undefined') {
       return;
@@ -123,7 +131,7 @@ export function useSubmissionEvents(id: number | undefined) {
     return () => {
       es.close();
     };
-  }, [id, queryClient]);
+  }, [enabled, id, queryClient]);
 }
 
 /**
@@ -133,8 +141,7 @@ export function useSubmissionEvents(id: number | undefined) {
  * 完整 ``SubmissionDetail`` 用于结果渲染。
  */
 export function useSubmissionStatus(id: number | undefined) {
-  useSubmissionEvents(id);
-  return useQuery<SubmissionStatusOut>({
+  const query = useQuery<SubmissionStatusOut>({
     queryKey: ['submission-status', id],
     queryFn: () =>
       apiClient
@@ -149,6 +156,8 @@ export function useSubmissionStatus(id: number | undefined) {
     },
     refetchIntervalInBackground: false,
   });
+  useSubmissionEvents(id, query.data ? isProcessing(query.data.status) : true);
+  return query;
 }
 
 export function useRetrySubmission(submissionId: number) {
@@ -188,11 +197,27 @@ export function useFinalizeSubmission(submissionId: number) {
         })
         .then((r) => r.data),
     onSuccess: (data) => {
-      queryClient.setQueryData(['submission', submissionId], data);
+      cacheFinalizedSubmission(queryClient, submissionId, data);
       queryClient.invalidateQueries({ queryKey: ['submissions'] });
       queryClient.invalidateQueries({ queryKey: ['submissions-count'] });
     },
   });
+}
+
+export function cacheFinalizedSubmission(
+  queryClient: QueryClient,
+  submissionId: number,
+  data: SubmissionDetail,
+) {
+  queryClient.removeQueries({ queryKey: ['submission', submissionId] });
+  queryClient.setQueryData(
+    ['submission', submissionId, data.status],
+    data,
+  );
+  queryClient.setQueryData<SubmissionStatusOut>(
+    ['submission-status', submissionId],
+    data,
+  );
 }
 
 export function useBatchDeleteSubmissions() {

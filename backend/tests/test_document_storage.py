@@ -87,3 +87,57 @@ async def test_oversized_upload_is_rejected_and_cleaned(tmp_path):
 
     assert caught.value.status_code == 413
     assert list(tmp_path.iterdir()) == []
+
+
+async def test_same_question_accepts_one_entrypoint_and_helper(tmp_path):
+    files = await document_storage.save_code_files(
+        [
+            _upload("main.py", b"import helper\nprint(helper.VALUE)", "text/x-python"),
+            _upload("helper.py", b"VALUE = 1\n", "text/x-python"),
+        ],
+        tmp_path,
+        question_numbers=[1, 1],
+        entrypoints=[True, False],
+    )
+
+    document_storage.validate_independent_code_entries(files)
+    assert [item["question_number"] for item in files] == [1, 1]
+    assert [item["entrypoint"] for item in files] == [True, False]
+
+
+def test_discard_created_blob_only_when_unreferenced(db_session, tmp_path):
+    from app.models.question import Question, QuestionStatus
+
+    orphan = tmp_path / "orphan.pdf"
+    orphan.write_bytes(b"%PDF-orphan")
+    stored = document_storage.StoredDocument("orphan.pdf", orphan, "a" * 64, True)
+    assert document_storage.discard_stored_document(db_session, stored, tmp_path)
+    assert not orphan.exists()
+
+    referenced = tmp_path / "referenced.pdf"
+    referenced.write_bytes(b"%PDF-referenced")
+    db_session.add(
+        Question(
+            name="referenced",
+            original_filename="referenced.pdf",
+            file_path=str(referenced),
+            status=QuestionStatus.pending,
+        )
+    )
+    db_session.commit()
+    stored = document_storage.StoredDocument(
+        "referenced.pdf", referenced, "b" * 64, True
+    )
+    assert not document_storage.discard_stored_document(
+        db_session, stored, tmp_path
+    )
+    assert referenced.exists()
+
+
+def test_discard_never_removes_reused_blob(db_session, tmp_path):
+    reused = tmp_path / "reused.pdf"
+    reused.write_bytes(b"%PDF-reused")
+    stored = document_storage.StoredDocument("reused.pdf", reused, "c" * 64, False)
+
+    assert not document_storage.discard_stored_document(db_session, stored, tmp_path)
+    assert reused.exists()

@@ -120,7 +120,7 @@ async def run_marking_pipeline(submission_id: int) -> None:
     """批改流水线:作业 OCR → awaiting_mcp,带状态机。
 
     状态流转:pending → ocr_processing → ocr_done → awaiting_mcp
-    任何阶段失败:status=failed, error_message 写入。
+    确定性业务失败立即转 failed；系统失败由 worker 重试。
 
     连接策略:每个阶段使用短生命周期 Session,读快照/写状态后立即释放;
     OCR 调用期间不持有任何数据库连接(与 question_ocr 保持一致),避免
@@ -171,13 +171,16 @@ async def run_marking_pipeline(submission_id: int) -> None:
             paddleocr_token,
         )
     except OCRError as exc:
-        _mark_failed(submission_id, f"作业 OCR 失败: {exc}")
-        raise BusinessError(f"作业 OCR 失败: {exc}") from exc
+        logger.warning(
+            "作业 OCR 短暂失败，交由队列重试 [submission=%s]: %s",
+            submission_id,
+            exc,
+        )
+        raise
     except BusinessError as exc:
         _mark_failed(submission_id, f"作业 OCR 失败: {exc}")
         raise
-    except Exception as exc:  # noqa: BLE00 - 未预期异常同样需落库 failed
-        _mark_failed(submission_id, f"作业 OCR 失败: {exc}")
+    except Exception:  # 系统失败保留队列重试与死信语义
         raise
 
     # 第三阶段:写 ocr_done → awaiting_mcp。MCP-only 收敛后所有作业都在此

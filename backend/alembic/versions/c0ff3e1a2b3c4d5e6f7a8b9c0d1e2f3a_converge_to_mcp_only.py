@@ -42,6 +42,13 @@ _STATUSES = (
 
 _BATCH_SIZE = 100
 
+# 状态枚举值来自模块级常量，SQL 在加载时确定，不随运行时输入变化。
+_STATUS_ENUM_SQL = (
+    "CREATE TYPE submission_status AS ENUM ("
+    + ", ".join(f"'{value}'" for value in _STATUSES)
+    + ")"
+)
+
 
 def _upload_root() -> Path:
     """上传目录(与 app.core.config 一致,相对 CWD 解析)。"""
@@ -157,8 +164,7 @@ def upgrade() -> None:
             "WHERE status = 'awaiting_external_agent'"
         )
         op.execute("DROP TYPE submission_status")
-        values = ", ".join(f"'{value}'" for value in _STATUSES)
-        op.execute(f"CREATE TYPE submission_status AS ENUM ({values})")
+        op.execute(_STATUS_ENUM_SQL)
         op.execute(
             "ALTER TABLE submissions ALTER COLUMN status TYPE submission_status "
             "USING status::submission_status"

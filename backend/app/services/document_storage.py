@@ -13,7 +13,7 @@ from pathlib import Path
 
 import aiofiles
 from fastapi import HTTPException, UploadFile
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 PDF_MIME_TYPE = "application/pdf"
 MAX_DOCUMENT_SIZE_BYTES = 50 * 1024 * 1024
@@ -97,19 +97,41 @@ def remove_document_if_unreferenced(db, file_path: str, upload_dir: Path) -> boo
         candidate.relative_to(root)
     except ValueError:
         raise ValueError(f"拒绝删除 uploads 目录外的文件：{file_path}")
-    refs = set(
-        db.execute(select(Question.file_path, Question.replacement_file_path)).all()
+    path_values = {file_path, str(candidate)}
+    try:
+        path_values.add(str(candidate.relative_to(Path.cwd().resolve())))
+    except ValueError:
+        pass
+    question_ref = db.scalar(
+        select(Question.id)
+        .where(
+            or_(
+                Question.file_path.in_(path_values),
+                Question.replacement_file_path.in_(path_values),
+            )
+        )
+        .limit(1)
     )
-    referenced = {value for row in refs for value in row if value}
-    referenced.update(
-        value
-        for (value,) in db.execute(select(Submission.file_path)).all()
-        if value
+    submission_ref = db.scalar(
+        select(Submission.id)
+        .where(Submission.file_path.in_(path_values))
+        .limit(1)
     )
-    if str(candidate) in {str(Path(value).resolve()) for value in referenced}:
+    if question_ref is not None or submission_ref is not None:
         return False
     candidate.unlink(missing_ok=True)
     return True
+
+
+def discard_stored_document(db, stored: StoredDocument, upload_dir: Path) -> bool:
+    """Discard a request-created blob when its database transaction did not commit.
+
+    Reused content-addressed blobs are never removed here. Newly created blobs are
+    still checked against every durable question/submission reference before unlinking.
+    """
+    if not stored.created:
+        return False
+    return remove_document_if_unreferenced(db, str(stored.path), upload_dir)
 
 
 async def save_document_as_pdf(
@@ -135,6 +157,10 @@ async def save_document_as_pdf(
             if not _same_file(saved_path, source, size):
                 raise RuntimeError(f"内容哈希冲突，拒绝覆盖已有文件：{saved_path}")
             source.unlink(missing_ok=True)
+            # A request may be about to create the first durable reference to an
+            # old orphaned blob. Refresh its age so concurrent retention cleanup
+            # cannot remove it before the surrounding transaction commits.
+            saved_path.touch()
             created = False
         else:
             try:
@@ -147,6 +173,7 @@ async def save_document_as_pdf(
                 if not _same_file(saved_path, source, size):
                     raise RuntimeError(f"内容哈希冲突，拒绝覆盖已有文件：{saved_path}")
                 source.unlink(missing_ok=True)
+                saved_path.touch()
                 created = False
         return StoredDocument(original_filename, saved_path, digest, created)
     finally:
@@ -278,10 +305,8 @@ async def save_code_files(
     if len(entrypoints) != len(upload_files):
         raise HTTPException(status_code=422, detail="代码入口标记数量不一致")
     filenames = validate_code_filenames([item.filename or "" for item in upload_files])
-    if len(set(question_numbers)) != len(question_numbers) or any(
-        number < 1 for number in question_numbers
-    ):
-        raise HTTPException(status_code=422, detail="小题编号必须为正整数且不能重复")
+    if any(number < 1 for number in question_numbers):
+        raise HTTPException(status_code=422, detail="小题编号必须为正整数")
 
     storage_dir = upload_dir / "code" / uuid.uuid4().hex
     storage_dir.mkdir(parents=True, exist_ok=True)

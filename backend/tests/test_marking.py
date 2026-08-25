@@ -223,14 +223,10 @@ async def test_submission_ocr_failure_marks_submission_failed(
 
 
 @pytest.mark.asyncio
-async def test_pipeline_marks_failed_immediately_on_ocr_error_without_dead_letter(
+async def test_pipeline_leaves_system_failure_for_worker_retry(
     monkeypatch, tmp_path, db_session, marking_session_factory
 ):
-    """B1: 无论 worker 重试上限如何,OCR 抛异常时流水线自身应立即落库 failed。
-
-    不依赖 worker 死信路径(那是 attempts 耗尽后的兜底),保证 UI 轮询在首次
-    失败即可见 failed,而非停留在 ocr_processing 直到死信。
-    """
+    """系统异常不得提前落库 failed，否则下次队列重试会被状态守卫跳过。"""
 
     async def fail_submission(file_path: str, api_url: str, token: str) -> str:
         if file_path.endswith("q.pdf"):
@@ -241,14 +237,12 @@ async def test_pipeline_marks_failed_immediately_on_ocr_error_without_dead_lette
 
     sub = await _make_submission(db_session, tmp_path)
 
-    # 流水线应 re-raise;此处只关心它已把 submission 标记为 failed
     with pytest.raises(RuntimeError, match="OCR service down"):
         await marking.run_marking_pipeline(sub.id)
 
     db_session.refresh(sub)
-    assert sub.status == SubmissionStatus.failed
-    assert sub.error_message is not None
-    assert "OCR" in sub.error_message
+    assert sub.status == SubmissionStatus.ocr_processing
+    assert sub.error_message is None
 
 
 @pytest.mark.asyncio

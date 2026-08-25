@@ -18,6 +18,7 @@ from fastapi import (
 )
 from fastapi.responses import FileResponse
 from sqlalchemy import func, or_, select
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session, selectinload
 
 from app.api.submissions import DELETABLE_SUBMISSION_STATUSES
@@ -47,6 +48,7 @@ from app.services.config import (
     get_profile,
 )
 from app.services.document_storage import (
+    discard_stored_document,
     remove_document_if_unreferenced,
     save_document_as_pdf,
     validate_document_upload,
@@ -55,12 +57,12 @@ from app.services.mcp_workflow import (
     build_grading_policy,
     resolve_submission_rubric,
 )
+from app.services.question_identity import build_question_id
 from app.services.queue import (
     new_question_ocr_job,
     reset_question_ocr_job,
     reset_question_replace_job,
 )
-from app.services.question_identity import build_question_id
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -77,6 +79,13 @@ def _upload_dir() -> Path:
         ) from exc
     upload_dir.mkdir(parents=True, exist_ok=True)
     return upload_dir
+
+
+def _discard_uncommitted_document(db: Session, stored, upload_dir: Path) -> None:
+    try:
+        discard_stored_document(db, stored, upload_dir)
+    except (OSError, SQLAlchemyError, ValueError) as exc:
+        logger.warning("清理未提交题目 PDF 失败 [%s]: %s", stored.path, exc)
 
 
 def _question_with_count(db: Session, question_id: str):
@@ -122,26 +131,30 @@ async def create_question(
     db: Session = Depends(get_db),
 ):
     validate_document_upload(file)
+    original_filename = file.filename or ""
+    display_name = (name or Path(original_filename).stem).strip()
+    if not display_name:
+        await file.close()
+        raise HTTPException(status_code=422, detail="题目名称不能为空")
+    question_id = build_question_id(original_filename)
+    if not question_id:
+        await file.close()
+        raise HTTPException(status_code=422, detail="无法从文件名生成题目 ID")
+    if db.get(Question, question_id) is not None:
+        await file.close()
+        raise HTTPException(
+            status_code=409, detail="同名题目已存在，请修改文件名后重新上传"
+        )
     # 未指定配置项目时使用默认项目(保证题目始终有可用配置)
     if config_profile_id is None:
         default = get_or_create_default_profile(db)
         config_profile_id = default.id
     elif get_profile(db, config_profile_id) is None:
+        await file.close()
         raise HTTPException(status_code=422, detail="配置项目不存在")
-    stored = await save_document_as_pdf(
-        file, _upload_dir(), suffix="_question"
-    )
+    upload_dir = _upload_dir()
+    stored = await save_document_as_pdf(file, upload_dir, suffix="_question")
     original_filename, path = stored.original_filename, stored.path
-    display_name = (name or Path(original_filename).stem).strip()
-    if not display_name:
-        raise HTTPException(status_code=422, detail="题目名称不能为空")
-    question_id = build_question_id(original_filename)
-    if not question_id:
-        raise HTTPException(status_code=422, detail="无法从文件名生成题目 ID")
-    if db.get(Question, question_id) is not None:
-        raise HTTPException(
-            status_code=409, detail="同名题目已存在，请修改文件名后重新上传"
-        )
     question = Question(
         id=question_id,
         name=display_name,
@@ -157,8 +170,17 @@ async def create_question(
         db.add(new_question_ocr_job(question.id))
         db.commit()
         db.refresh(question)
+    except IntegrityError as exc:
+        db.rollback()
+        _discard_uncommitted_document(db, stored, upload_dir)
+        if db.get(Question, question_id) is not None:
+            raise HTTPException(
+                status_code=409, detail="同名题目已存在，请修改文件名后重新上传"
+            ) from exc
+        raise
     except Exception:
         db.rollback()
+        _discard_uncommitted_document(db, stored, upload_dir)
         raise
     return _serialize(question, 0)
 
@@ -346,9 +368,8 @@ async def retry_question_ocr(
     if question.status != QuestionStatus.failed:
         raise HTTPException(status_code=409, detail="仅识别失败的题目可以重新上传")
 
-    stored = await save_document_as_pdf(
-        file, _upload_dir(), suffix="_question"
-    )
+    upload_dir = _upload_dir()
+    stored = await save_document_as_pdf(file, upload_dir, suffix="_question")
     original_filename, new_path = stored.original_filename, stored.path
     old_path = question.file_path
     question.original_filename = original_filename
@@ -363,6 +384,7 @@ async def retry_question_ocr(
         db.refresh(question)
     except Exception:
         db.rollback()
+        _discard_uncommitted_document(db, stored, upload_dir)
         raise
     if old_path != str(new_path):
         _unlink_after_commit(db, [old_path])
@@ -451,9 +473,8 @@ async def replace_question(
             },
         )
 
-    stored = await save_document_as_pdf(
-        file, _upload_dir(), suffix="_question"
-    )
+    upload_dir = _upload_dir()
+    stored = await save_document_as_pdf(file, upload_dir, suffix="_question")
     original_filename, new_path = stored.original_filename, stored.path
     current.replacement_status = QuestionReplacementStatus.pending
     current.replacement_file_path = str(new_path)
@@ -466,6 +487,7 @@ async def replace_question(
         db.commit()
     except Exception:
         db.rollback()
+        _discard_uncommitted_document(db, stored, upload_dir)
         raise
     return QuestionReplacementResponse(
         question_id=current.id,
