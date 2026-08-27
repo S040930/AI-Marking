@@ -146,3 +146,56 @@ async def test_async_job_explicit_parse_failure_is_business_error():
             b"%PDF-1.4",
             "token",
         )
+
+
+async def test_circuit_breaker_resets_failure_count_when_window_expires(monkeypatch):
+    """熔断窗口过期后必须清零失败计数，否则一次失败即重新开断、永久熔断。"""
+    monkeypatch.setattr(ocr, "_consecutive_failures", ocr._CIRCUIT_OPEN_THRESHOLD)
+    monkeypatch.setattr(
+        ocr, "_circuit_open_until", 0.0
+    )  # 窗口已过期
+    monkeypatch.setattr(ocr.time, "time", lambda: 10_000.0)
+    monkeypatch.setattr(ocr, "_CIRCUIT_OPEN_SECONDS", 300.0)
+
+    assert await ocr._check_circuit_open() is False
+    assert ocr._consecutive_failures == 0
+    assert ocr._circuit_open_until == 0.0
+
+
+async def test_circuit_breaker_reopens_after_single_failure_when_window_not_reset(
+    monkeypatch,
+):
+    """回归：若窗口过期时未清零计数，单次失败会把计数推到阈值、立刻再开断。"""
+    monkeypatch.setattr(ocr, "_consecutive_failures", ocr._CIRCUIT_OPEN_THRESHOLD)
+    monkeypatch.setattr(ocr, "_circuit_open_until", 0.0)
+    monkeypatch.setattr(ocr.time, "time", lambda: 10_000.0)
+    monkeypatch.setattr(ocr, "_CIRCUIT_OPEN_SECONDS", 300.0)
+
+    # 窗口已过期但未清零 -> 一次失败
+    await ocr._record_failure()
+    assert ocr._consecutive_failures == ocr._CIRCUIT_OPEN_THRESHOLD + 1
+    assert await ocr._check_circuit_open() is True
+
+
+class _MalformedJsonClient:
+    def __init__(self):
+        self.post_calls = 0
+
+    async def post(self, url, **kwargs):
+        self.post_calls += 1
+        return _response(
+            "https://x.com/layout-parsing", status=200, text="<html>error</html>"
+        )
+
+
+async def test_ocr_with_retry_malformed_json_is_business_error(monkeypatch):
+    """HTTP 200 但响应体非 JSON 应归为业务失败，不重试也不进熔断计数。"""
+    client = _MalformedJsonClient()
+
+    async def no_sleep(_seconds):
+        return None
+
+    monkeypatch.setattr(ocr.asyncio, "sleep", no_sleep)
+    with pytest.raises(BusinessError, match="返回内容无法解析"):
+        await ocr._ocr_with_retry(client, "https://x.com/layout-parsing", {}, {})
+    assert client.post_calls == 1

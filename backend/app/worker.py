@@ -109,13 +109,22 @@ async def _mark_target_failed(job: ClaimedJob, error: str) -> None:
                 target.status = QuestionStatus.failed
                 target.error_message = error[:1024]
         elif job.job_type == BackgroundJobType.question_replace and job.question_id:
-            target = db.get(Question, job.question_id)
+            target = db.get(Question, job.question_id, with_for_update=True)
             if target:
-                staged_path = target.replacement_file_path
-                target.replacement_status = QuestionReplacementStatus.failed
-                target.replacement_file_path = None
-                target.replacement_original_filename = None
-                target.replacement_error_message = error[:1024]
+                # 加行锁读,与 API 的替换/删除入口串行化。仅在题目仍处于
+                # 本轮替换(pending/processing)时才标记 failed:若并发执行
+                # 的另一份任务已成功切换,replacement_status 已被清为 None,
+                # 此时不得再把已成功的题目标成 failed 或删除文件。
+                if target.replacement_status in (
+                    QuestionReplacementStatus.pending,
+                    QuestionReplacementStatus.processing,
+                ):
+                    staged_path = target.replacement_file_path
+                    target.replacement_status = QuestionReplacementStatus.failed
+                    target.replacement_file_path = None
+                    target.replacement_file_sha256 = None
+                    target.replacement_original_filename = None
+                    target.replacement_error_message = error[:1024]
         elif job.job_type == BackgroundJobType.submission_ocr and job.submission_id:
             target = db.get(Submission, job.submission_id)
             if target:
@@ -156,7 +165,7 @@ async def _execute(job: ClaimedJob) -> None:
     ):
         await run_marking_pipeline(job.submission_id)
         return
-    raise RuntimeError(f"任务 {job.id} 缺少有效目标")
+    raise BusinessError(f"任务 {job.id} 缺少有效目标")
 
 
 async def _run_claimed(job: ClaimedJob) -> None:

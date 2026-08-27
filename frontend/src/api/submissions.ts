@@ -113,6 +113,12 @@ export function useSubmissionEvents(
           status?: SubmissionStatus;
         };
         if (data.submission_id !== id) return;
+        if (data.status && isTerminal(data.status)) {
+          // 终态:后端不会再推送本记录的新事件,立即关闭 EventSource,
+          // 避免浏览器在断开重连后为终态记录反复重开 LISTEN 连接、占满
+          // 服务端 SSE 槽位。完整详情由下方 invalidate 触发拉取。
+          es.close();
+        }
         queryClient.invalidateQueries({
           queryKey: ['submission-status', id],
         });

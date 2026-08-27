@@ -48,3 +48,38 @@ describe('useSubmissionEvents', () => {
     expect(FakeEventSource.instances).toHaveLength(1);
   });
 });
+
+describe('useSubmissionEvents close-on-terminal-event', () => {
+  afterEach(() => {
+    FakeEventSource.instances = [];
+    vi.unstubAllGlobals();
+  });
+
+  it('收到终态事件后立即关闭 EventSource', () => {
+    vi.stubGlobal('EventSource', FakeEventSource);
+    renderHook(() => useSubmissionEvents(7, true), { wrapper });
+    const source = FakeEventSource.instances[0];
+    expect(source.url).toBe('/api/submissions/7/events');
+
+    // 模拟 SSE 推送终态事件
+    const event = new MessageEvent('message', {
+      data: JSON.stringify({ submission_id: 7, status: 'reviewed' }),
+    });
+    source.onmessage?.(event);
+
+    expect(source.close).toHaveBeenCalledOnce();
+  });
+
+  it('收到非终态事件不关闭 EventSource', () => {
+    vi.stubGlobal('EventSource', FakeEventSource);
+    renderHook(() => useSubmissionEvents(7, true), { wrapper });
+    const source = FakeEventSource.instances[0];
+
+    const event = new MessageEvent('message', {
+      data: JSON.stringify({ submission_id: 7, status: 'ocr_processing' }),
+    });
+    source.onmessage?.(event);
+
+    expect(source.close).not.toHaveBeenCalled();
+  });
+});

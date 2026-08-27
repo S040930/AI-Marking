@@ -130,10 +130,19 @@ async def close_client() -> None:
 
 
 async def _check_circuit_open() -> bool:
-    """检查熔断器是否打开。打开则返回 True(调用方应直接 raise)。"""
-    global _circuit_open_until
+    """检查熔断器是否打开。打开则返回 True(调用方应直接 raise)。
+
+    熔断窗口过期时顺势清零失败计数：否则窗口过期后下一次单次失败
+    会因计数仍 ≥ 阈值立刻重新开断，健康服务在偶发抖动下被永久熔断。
+    """
+    global _consecutive_failures, _circuit_open_until
     async with _circuit_lock:
-        return time.time() < _circuit_open_until
+        if time.time() < _circuit_open_until:
+            return True
+        if _circuit_open_until != 0.0 or _consecutive_failures > 0:
+            _consecutive_failures = 0
+            _circuit_open_until = 0.0
+        return False
 
 
 async def _record_failure() -> None:
@@ -238,6 +247,11 @@ async def _ocr_with_retry(
                 break
             backoff = _BACKOFF_BASE_SECONDS * (2**attempt)
             await asyncio.sleep(backoff)
+        except (ValueError, json.JSONDecodeError) as exc:
+            # HTTP 200 但响应体不是合法 JSON(如代理返回 HTML 错误页):属于
+            # 确定性的响应格式问题,与异步路径分类一致归为业务失败,不重试。
+            ocr_calls.labels(result="failure").inc()
+            raise BusinessError(f"PaddleOCR-VL 返回内容无法解析: {exc}") from exc
 
     # 重试耗尽:记一次熔断失败(整个 _ocr_with_retry 算一次失败)
     await _record_failure()

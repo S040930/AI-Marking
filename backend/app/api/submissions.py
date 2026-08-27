@@ -307,6 +307,9 @@ async def retry_submission(
         code_file.visual_reviews = None
     sub.grading_revision = 0
     sub.status = SubmissionStatus.pending
+    # 与 finalize 一致:状态迁移在同一事务内 NOTIFY,SSE 订阅方立即感知,
+    # 不必等 30s 兜底轮询。
+    notify_submission_status(db, submission_id, SubmissionStatus.pending.value)
     reset_submission_ocr_job(db, submission_id)
     try:
         db.commit()

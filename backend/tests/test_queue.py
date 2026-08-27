@@ -276,3 +276,48 @@ async def test_dead_question_replace_keeps_old_question_usable(
     assert question.replacement_status == QuestionReplacementStatus.failed
     assert question.replacement_file_path is None
     assert not staged.exists()
+
+
+async def test_dead_question_replace_does_not_clobber_completed_switch(
+    db_session, monkeypatch, tmp_path
+):
+    """死信处理不得覆盖并发执行已完成切换的替换（replacement_status=None）。
+
+    模拟旧任务已死信，但另一份任务已成功切换题目（replacement_status 被清为
+    None、file_path 已指向新 PDF）。死信分支此时不得把题目标成 failed。
+    """
+    staged = tmp_path / "staged.pdf"
+    staged.write_bytes(b"%PDF-new")
+    question = Question(
+        name="旧题目",
+        original_filename="old.pdf",
+        file_path=str(tmp_path / "old.pdf"),
+        ocr_text="旧题目内容",
+        status=QuestionStatus.ready,
+        replacement_status=None,  # 并发成功切换后已复位
+        replacement_file_path=None,
+        replacement_original_filename=None,
+    )
+    db_session.add(question)
+    db_session.commit()
+    factory = sessionmaker(bind=db_session.bind, expire_on_commit=False)
+    monkeypatch.setattr(worker, "SessionLocal", factory)
+
+    await worker._mark_target_failed(
+        ClaimedJob(
+            id=3,
+            job_type=BackgroundJobType.question_replace,
+            question_id=question.id,
+            submission_id=None,
+            attempts=3,
+            claim_token="token",
+        ),
+        "worker crashed",
+    )
+
+    db_session.refresh(question)
+    assert question.status == QuestionStatus.ready
+    assert question.ocr_text == "旧题目内容"
+    assert question.replacement_status is None
+    # 暂存 PDF 属于已完成的替换,不应被删除
+    assert staged.exists()
