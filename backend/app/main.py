@@ -51,7 +51,7 @@ def create_app() -> FastAPI:
     """创建并配置 FastAPI 应用实例。"""
     app = FastAPI(
         title="AI 作业批改系统",
-        description="SURF-2026-0031 后端 API",
+        description="AI 作业批改系统后端 API",
         version="0.1.0",
         lifespan=lifespan,
         # 关闭 /docs、/redoc 与 /openapi.json：这些端点不在 /api 前缀下，

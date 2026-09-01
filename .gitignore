@@ -35,7 +35,6 @@ storage-migration*.json
 .codex/
 .zcode/
 .mimosa/
-SURF-2026-0031-AI-Agent-Marking.md
 
 # Build/generated artifacts
 .codex-build/

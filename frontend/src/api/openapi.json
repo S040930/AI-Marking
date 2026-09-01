@@ -3078,7 +3078,7 @@
     }
   },
   "info": {
-    "description": "SURF-2026-0031 后端 API",
+    "description": "AI 作业批改系统后端 API",
     "title": "AI 作业批改系统",
     "version": "0.1.0"
   },
