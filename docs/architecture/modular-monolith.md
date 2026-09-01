@@ -62,5 +62,5 @@ API 与 MCP 适配层（薄适配：参数解析、序列化；写编排不在�
 - 公开 `/openapi.json` 保持关闭。`backend/scripts/export_openapi.py` 离线导出 schema，
   `openapi-typescript@7.13.0` 生成 `frontend/src/api/generated.ts`；生成后工作树必须无差异。
 - PostgreSQL 专项测试只接受数据库名以 `_test` 结尾的 `TEST_DATABASE_URL`。
-- CI 的 `backend/scripts/check_runtime_migration.py` 在 `_test` 数据库中回退一版、
+- `backend/scripts/check_runtime_migration.py` 在 `_test` 数据库中回退一版、
   注入多个历史默认配置、升级并校验只保留最小 ID，随后再次回退和升级。
