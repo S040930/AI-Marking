@@ -19,6 +19,8 @@ import logging
 
 from sqlalchemy.orm import Session
 
+from app.application.lifecycle import transition_submission
+from app.application.locking import lock_submission_after_question
 from app.db.session import SessionLocal
 from app.models.submission import (
     Submission,
@@ -57,10 +59,10 @@ def _update_status(
     在同一事务内发送 PG NOTIFY,事务提交后监听方(P1 SSE)立即收到。
     非 PG 后端(SQLite 测试环境)为 no-op。
     """
-    sub = db.get(Submission, submission_id, with_for_update=True)
+    sub = lock_submission_after_question(db, submission_id)
     if sub is None:
         return None
-    sub.status = status
+    transition_submission(sub, status)
     for k, v in fields.items():
         setattr(sub, k, v)
     notify_submission_status(db, submission_id, status.value)
@@ -100,7 +102,7 @@ def _mark_failed(submission_id: int, message: str) -> None:
 
 def _is_final_state(db: Session, submission_id: int) -> bool:
     """加行锁重读提交，判断是否已进入教师侧终态（禁止流水线覆盖）。"""
-    current = db.get(Submission, submission_id, with_for_update=True)
+    current = lock_submission_after_question(db, submission_id)
     return current is not None and current.status in _PROTECTED_FINAL_STATES
 
 

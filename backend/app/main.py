@@ -8,15 +8,25 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.api.admin import router as admin_router
 from app.api.auth import AccessTokenMiddleware
 from app.api.auth import router as auth_router
 from app.api.config import router as config_router
+from app.api.events import router as events_router
 from app.api.health import router as health_router
 from app.api.mcp import router as mcp_router
 from app.api.questions import router as questions_router
 from app.api.submissions import router as submissions_router
+from app.application.errors import (
+    ApplicationError,
+    ConflictError,
+    NotFoundError,
+    PayloadTooLargeError,
+    ServiceUnavailableError,
+    ValidationError,
+)
 from app.core.config import settings
 from app.db.session import engine as _engine
 from app.services.ocr import close_client as close_ocr_client
@@ -62,11 +72,27 @@ def create_app() -> FastAPI:
     # 401 响应才带正确的 CORS 头，前端能读取到错误信息。
     app.add_middleware(AccessTokenMiddleware)
 
+    @app.exception_handler(ApplicationError)
+    async def application_error_handler(request, exc: ApplicationError):  # noqa: ANN001
+        status_code = 500
+        if isinstance(exc, NotFoundError):
+            status_code = 404
+        elif isinstance(exc, ConflictError):
+            status_code = 409
+        elif isinstance(exc, ValidationError):
+            status_code = 422
+        elif isinstance(exc, PayloadTooLargeError):
+            status_code = 413
+        elif isinstance(exc, ServiceUnavailableError):
+            status_code = 503
+        return JSONResponse(status_code=status_code, content={"detail": exc.detail})
+
     app.include_router(auth_router, prefix="/api", tags=["auth"])
     app.include_router(health_router, prefix="/api", tags=["health"])
     app.include_router(submissions_router, prefix="/api", tags=["submissions"])
     app.include_router(questions_router, prefix="/api", tags=["questions"])
     app.include_router(config_router, prefix="/api", tags=["config"])
+    app.include_router(events_router, prefix="/api")
     app.include_router(admin_router, prefix="/api", tags=["admin"])
     app.include_router(mcp_router, prefix="/api")
 

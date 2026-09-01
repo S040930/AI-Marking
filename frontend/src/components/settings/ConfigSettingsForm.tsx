@@ -158,7 +158,7 @@ export function ConfigSettingsForm({
                 <div>
                   <CardTitle className="text-lg">{t('评分标准(Rubric)')}</CardTitle>
                   <CardDescription>
-                    {t('配置的评分标准优先于题目提取结果；留空时由客户端从题目中提取')}
+                    {t('题目提取的评分标准优先；没有可信提取结果时使用当前配置')}
                   </CardDescription>
                 </div>
               </div>

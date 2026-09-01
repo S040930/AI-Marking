@@ -5,6 +5,7 @@ from pathlib import Path
 
 from sqlalchemy import select
 
+from app.application.lifecycle import transition_question_replacement
 from app.core.config import settings
 from app.core.time import utc_now_naive
 from app.db.session import SessionLocal
@@ -42,13 +43,18 @@ async def run_question_replace(question_id: str) -> None:
         if not staged_path or not staged_name:
             raise BusinessError("题目替换任务缺少暂存 PDF")
 
-        question.replacement_status = QuestionReplacementStatus.processing
+        transition_question_replacement(
+            question, QuestionReplacementStatus.processing
+        )
         question.replacement_error_message = None
         question.updated_at = utc_now_naive()
         # 题目主 status 不变(仍为 ready),通知里携带 replacement_status
         # 让前端 QuestionsPage 触发刷新获取最新状态。
         notify_question_status(
-            db, question_id, QuestionReplacementStatus.processing.value
+            db,
+            question_id,
+            question.status.value,
+            QuestionReplacementStatus.processing.value,
         )
         db.commit()
 
@@ -66,14 +72,19 @@ async def run_question_replace(question_id: str) -> None:
         with SessionLocal() as db:
             question = db.get(Question, question_id, with_for_update=True)
             if question is not None:
-                question.replacement_status = QuestionReplacementStatus.failed
+                transition_question_replacement(
+                    question, QuestionReplacementStatus.failed
+                )
                 question.replacement_file_path = None
                 question.replacement_file_sha256 = None
                 question.replacement_original_filename = None
                 question.replacement_error_message = message[:1024]
                 question.updated_at = utc_now_naive()
                 notify_question_status(
-                    db, question_id, QuestionReplacementStatus.failed.value
+                    db,
+                    question_id,
+                    question.status.value,
+                    QuestionReplacementStatus.failed.value,
                 )
                 db.commit()
         _unlink_paths([staged_path])
@@ -108,6 +119,7 @@ async def run_question_replace(question_id: str) -> None:
                 db.execute(
                     select(Submission)
                     .where(Submission.question_id == question_id)
+                    .order_by(Submission.id)
                     .with_for_update()
                 )
             )
@@ -126,13 +138,13 @@ async def run_question_replace(question_id: str) -> None:
         question.extracted_rubric_ocr_hash = None
         question.extracted_rubric_version = None
         question.extracted_rubric_at = None
-        question.replacement_status = None
+        transition_question_replacement(question, None)
         question.replacement_file_path = None
         question.replacement_file_sha256 = None
         question.replacement_original_filename = None
         question.replacement_error_message = None
         question.updated_at = utc_now_naive()
         # 切换完成,主 OCR 状态变为 ready;通知用 ready 让前端刷新题目列表。
-        notify_question_status(db, question_id, "ready")
+        notify_question_status(db, question_id, "ready", None)
         db.commit()
         _unlink_paths(old_paths)

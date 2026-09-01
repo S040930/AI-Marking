@@ -12,7 +12,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import delete, func, select, text
+from sqlalchemy import delete, select, text
 from sqlalchemy.orm import Session
 
 from app.core.config import AI_MARKING_SERVICE, MCP_API_VERSION, settings
@@ -52,6 +52,7 @@ from app.services.mcp_workflow import (
     build_context_parts,
     build_package_text,
     create_workflow_handle,
+    get_locked_submission_in_order,
     get_submission_or_404,
     load_workflow_handle,
     normalized_name,
@@ -60,10 +61,6 @@ from app.services.mcp_workflow import (
 )
 from app.services.mcp_workflow import (
     save_mcp_assessment as _save_mcp_assessment,
-)
-from app.services.metrics import (
-    mcp_assessment_saves,
-    mcp_waiting_submissions,
 )
 from app.services.question_rubric import (
     EXTRACTOR_VERSION,
@@ -84,15 +81,6 @@ def mcp_health(
         db.execute(text("SELECT 1"))
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=503, detail="数据库不可用") from exc
-    mcp_waiting_submissions.set(
-        db.scalar(
-            select(func.count(Submission.id)).where(
-                Submission.grading_mode == SubmissionGradingMode.external_agent,
-                Submission.status == SubmissionStatus.awaiting_mcp,
-            )
-        )
-        or 0
-    )
     return McpHealthResponse(
         status="ok",
         service=AI_MARKING_SERVICE,
@@ -375,10 +363,11 @@ def confirm_mcp_visual_review(
     payload: McpVisualConfirmationRequest,
     db: Session = Depends(get_db),
 ) -> McpVisualConfirmationResponse:
-    handle = load_workflow_handle(db, payload.grading_handle, kind="grading", lock=True)
+    handle = load_workflow_handle(db, payload.grading_handle, kind="grading")
     if handle.submission_id != submission_id or not handle.context_complete:
         raise HTTPException(status_code=409, detail="评分句柄与作业不匹配")
-    sub = get_submission_or_404(db, submission_id)
+    sub = get_locked_submission_in_order(db, submission_id)
+    handle = load_workflow_handle(db, payload.grading_handle, kind="grading", lock=True)
     _, _, context_hash, _ = build_context_parts(db, sub)
     if handle.context_hash != context_hash or handle.grading_revision != sub.grading_revision:
         raise HTTPException(status_code=409, detail="评分上下文已变化，请重新打开作业")
@@ -416,10 +405,11 @@ def save_mcp_assessment_review(
     - 复核结论写入 ``submissions.assessment_review`` 供教师在网页参考,
       不改变建议本身与状态;教师仍在网页确认最终成绩
     """
-    handle = load_workflow_handle(db, payload.grading_handle, kind="grading", lock=True)
+    handle = load_workflow_handle(db, payload.grading_handle, kind="grading")
     if handle.submission_id != submission_id or not handle.context_complete:
         raise HTTPException(status_code=409, detail="评分句柄与作业不匹配，请重新打开作业")
-    sub = get_submission_or_404(db, submission_id)
+    sub = get_locked_submission_in_order(db, submission_id)
+    handle = load_workflow_handle(db, payload.grading_handle, kind="grading", lock=True)
     if sub.status == SubmissionStatus.reviewed:
         raise HTTPException(status_code=409, detail="该作业已确认最终成绩，无需复核")
     if sub.status != SubmissionStatus.ready_for_review or not sub.assessment_suggestion:
@@ -504,12 +494,14 @@ def save_mcp_question_rubric(
     - 保存后旧评分句柄失效,客户端必须重新 ``open_ai_marking_assignment``
       以新 rubric 快照评分
     """
-    handle = load_workflow_handle(db, payload.handle, kind="rubric_extraction", lock=True)
+    handle = load_workflow_handle(db, payload.handle, kind="rubric_extraction")
     if handle.question_id != question_id:
         raise HTTPException(status_code=409, detail="rubric 提取句柄与题目不匹配")
     question = db.get(Question, question_id, with_for_update=True)
     if question is None or not question.ocr_text:
         raise HTTPException(status_code=409, detail="题目 OCR 内容不存在")
+    sub = db.get(Submission, handle.submission_id, with_for_update=True)
+    handle = load_workflow_handle(db, payload.handle, kind="rubric_extraction", lock=True)
     current_ocr_hash = "sha256:" + hashlib.sha256(
         question.ocr_text.encode()
     ).hexdigest()
@@ -518,7 +510,6 @@ def save_mcp_question_rubric(
             status_code=409, detail="题目 OCR 已变化，请重新打开作业提取 rubric"
         )
     # 绑定 submission 仍处于 awaiting_mcp(评分句柄未生成时才有提取句柄)
-    sub = db.get(Submission, handle.submission_id)
     if sub is None or sub.status != SubmissionStatus.awaiting_mcp:
         raise HTTPException(status_code=409, detail="作业状态已变化，请重新打开作业")
 
@@ -591,9 +582,8 @@ def save_mcp_assessment(
             raise HTTPException(status_code=409, detail="request_id 已用于另一份评分内容")
         saved = McpAssessmentResponse.model_validate(receipt.response)
         saved.idempotent = True
-        mcp_assessment_saves.labels(kind="idempotent").inc()
         return saved
-    handle = load_workflow_handle(db, payload.grading_handle, kind="grading", lock=True)
+    handle = load_workflow_handle(db, payload.grading_handle, kind="grading")
     if handle.submission_id != submission_id or not handle.context_complete:
         raise HTTPException(status_code=409, detail="评分句柄与作业不匹配，请重新打开作业")
     sub = get_submission_or_404(db, submission_id)

@@ -63,15 +63,14 @@
 
 ### 生产启动
 
-构建前端生产包并以多 worker 运行（无热重载）：
+构建前端生产包并以本机优化模式运行（无热重载）：
 
 ```bash
 ./start.prod.sh
 ```
 
-默认 worker 数等于 CPU 核数，可通过 `WORKERS` 环境变量覆盖（例如
-`WORKERS=4 ./start.prod.sh`）。脚本兼容 Linux（`nproc`）与 macOS
-（`sysctl -n hw.ncpu`）。
+脚本固定启动一个 API 进程和一个任务 worker；`WORKERS` 只能为 `1`，更大的值会
+直接拒绝启动，避免单机数据库连接池和本地配置语义随进程数放大。
 
 ### 1. 配置数据库
 
@@ -193,13 +192,15 @@ curl http://localhost:8000/api/config
 | `DATABASE_URL` | PostgreSQL 连接字符串 | `postgresql+psycopg2://postgres:postgres@localhost:5432/ai_marking` |
 | `CORS_ORIGINS` | 允许的前端跨域来源 | `["http://localhost:5173"]` |
 | `UPLOAD_DIR` | 上传 PDF 的存储目录 | `./uploads` |
-| `UPLOAD_RETENTION_DAYS` | 已进入终态或失败的 PDF 最多保留天数 | `7` |
+| `UPLOAD_RETENTION_DAYS` | 无数据库引用孤儿文件的清理宽限期（引用文件永不定期删除） | `7` |
 | `CLEANUP_INTERVAL_SECONDS` | 后台清理任务扫描间隔(秒) | `3600` |
-| `TASK_CONCURRENCY` | 独立任务 worker 最大并发数 | `4` |
+| `TASK_CONCURRENCY` | 独立任务 worker 最大并发数 | `2` |
 | `TASK_LEASE_SECONDS` | 任务租约秒数 | `90` |
 | `TASK_MAX_ATTEMPTS` | 非预期异常最大执行次数 | `3` |
-| `TASK_POLL_INTERVAL_SECONDS` | 空队列轮询间隔 | `1` |
+| `TASK_POLL_INTERVAL_SECONDS` | 空队列轮询起始间隔（指数退避至 5 秒） | `1` |
 | `MCP_MAX_GRADING_CONTEXT_CHARS` | MCP 评分上下文总字符硬上限；超过后需拆分作业或缩减提交内容 | `200000` |
+| `ACCESS_TOKEN` | 全站访问令牌；留空关闭鉴权，设置后网页、管理 API 与 MCP 均需认证 | 空 |
+| `MAX_SSE_CLIENTS` | PostgreSQL SSE LISTEN 连接上限 | `16` |
 ## 代码执行
 
 后端不编译、执行或上传学生代码产物，也不承担学生代码的 CPU、内存、进程或磁盘资源。
@@ -222,8 +223,7 @@ curl http://localhost:8000/api/config
 }
 ```
 
-上面是常见客户端的配置形状；若客户端字段名不同，只需填写同一条 `command` 和可选 `args`。`args` 可省略；如填写请使用小写客户端名称，省略时评分来源记录为“外部编程助手”。MCP 和 FastAPI 只绑定本机 loopback，
-不需要内部 token。完成配置后运行 `./start.sh`，再在编程助手新任务中拖入一份报告 PDF
+上面是常见客户端的配置形状；若客户端字段名不同，只需填写同一条 `command` 和可选 `args`。`args` 可省略；如填写请使用小写客户端名称，省略时评分来源记录为“外部编程助手”。MCP 和 FastAPI 只绑定本机 loopback；若 `ACCESS_TOKEN` 非空，STDIO MCP 会从 `backend/.env` 读取同一令牌并以 Bearer 认证，网页则通过登录页建立 httpOnly Cookie 会话。完成配置后运行 `./start.sh`，再在编程助手新任务中拖入一份报告 PDF
 和可选的多语言代码文件并输入：
 
 ```text
@@ -250,8 +250,8 @@ cd backend
 .venv/bin/python -m app.worker
 ```
 
-`start.sh` 与 `start.prod.sh` 已自动启动该 worker。生产环境可以运行多个 API
-worker，但任务 worker 保持一个进程，通过 `TASK_CONCURRENCY` 控制实际并发。
+`start.sh` 与 `start.prod.sh` 已自动启动该 worker。生产脚本固定一个 API 进程和
+一个任务 worker，通过 `TASK_CONCURRENCY` 控制 OCR 并发（默认 2）。
 进程异常退出后，运行中任务会在租约到期后被重新领取；执行容量满时新任务
 保持 `pending` 排队，不再返回队列繁忙 503。
 
@@ -341,7 +341,7 @@ OCR 与评分标准等**业务配置**通过前端设置页面(`/settings`)管�
 配置项包括:
 
 - **OCR**:PaddleOCR-VL API URL、Access Token
-- **评分标准**:在配置项目中维护结构化 rubric（条目、满分、说明）；配置优先于题目提取，题目提取优先于内置默认
+- **评分标准**:题目可信提取 rubric 优先，其次使用配置项目中的结构化 rubric（条目、满分、说明），最后回退内置默认
 - **MCP 自检开关**:是否要求编程助手在保存建议前完成第二遍反向自检（默认开启）
 
 ## 批改流程
@@ -362,6 +362,47 @@ MCP 打开评分包：
 
 后端不调用任何 LLM。编程助手保存的是待确认建议；教师确认后写入最终结果，
 系统保留建议与最终成绩用于审计。
+
+## 导出 Excel 成绩分析
+
+题目库中每张已有批改记录的题目卡片都提供“导出分析”按钮。点击后输入本次
+及格线（默认 `60%`），系统会读取该题目下所有已经由教师确认的 `reviewed`
+最终成绩，并立即下载一个 `.xlsx` 工作簿。界面为中文时生成中文工作簿，切换为
+English 后生成英文工作簿。
+
+工作簿包含三个工作表：
+
+- **结果分析**：已审阅人数、平均/中位/最高/最低得分率、及格率、固定五档分布、
+  评分项平均得分率、两张图表及基于这些统计值生成的客观说明。
+- **成绩总表**：学生文件名、最终得分、满分、公式计算的得分率和是否达标、审核
+  教师、审核时间、总体反馈及 rubric 快照 ID。
+- **评分项明细**：每名学生的逐项得分、逐项满分、公式计算的得分率、评语和证据。
+
+及格线只影响“是否达标”和及格率；分数段固定为 `90–100%`、`80–<90%`、
+`70–<80%`、`60–<70%`、`<60%`。统计统一使用“得分 ÷ 满分”，因此可以正确处理
+不同满分制。当前没有独立姓名/学号字段，学生暂以原始提交文件名识别。
+
+导出文件是点击时的数据快照，不会保存在服务器；成绩修改后应重新导出。导出只
+包含教师确认后的最终结果，不会包含待审阅建议、失败记录、OCR 原文、代码或 PDF。
+
+常见错误：
+
+- “该题目暂无已审阅成绩”：先进入评分工作台，由教师确认至少一份最终成绩。
+- “请输入大于 0 且不超过 100 的数值”：修正本次及格线后重试。
+- 下载失败或超时：确认后端仍在运行，再查看后端日志；导出不会改变任何成绩数据，
+  可以安全重试。
+
+Excel 生成功能使用 `XlsxWriter==3.2.9`，已同时锁定在生产和开发依赖文件中。
+依赖更新及安装命令见下方“更新后端依赖”，功能验证可运行：
+
+```bash
+cd backend
+pytest -q tests/test_result_export.py tests/test_result_export_api.py
+
+cd ../frontend
+npm run test:run -- src/api/__tests__/resultExport.test.tsx \
+  src/pages/__tests__/QuestionsPage.test.tsx
+```
 
 ## 前端设计
 

@@ -1,49 +1,21 @@
+import { useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/api/client';
+import type { components } from '@/api/generated';
+import { subscribeToQuestionEvents } from '@/api/questionEvents';
+import { queryKeys } from '@/api/queryKeys';
 
-export type QuestionStatus = 'pending' | 'ocr_processing' | 'ready' | 'failed';
-export type QuestionReplacementStatus = 'pending' | 'processing' | 'failed';
-
-export interface Question {
-  id: string;
-  config_profile_id: number;
-  name: string;
-  original_filename: string;
-  status: QuestionStatus;
-  error_message: string | null;
-  replacement_status: QuestionReplacementStatus | null;
-  replacement_error_message: string | null;
-  created_at: string;
-  updated_at: string;
-  last_used_at: string | null;
-  submission_count: number;
-}
-
-export interface PaginatedQuestions {
-  items: Question[];
-  total: number;
-  skip: number;
-  limit: number;
-}
+export type QuestionStatus = components['schemas']['QuestionStatus'];
+export type QuestionReplacementStatus = components['schemas']['QuestionReplacementStatus'];
+export type Question = components['schemas']['QuestionOut'];
+export type PaginatedQuestions = components['schemas']['PaginatedQuestions'];
 
 /** GET /questions/{id}/grading-prompt 返回的提示词素材（后端生成，与评分包同源）。 */
-export interface GradingPrompt {
-  question_id: string;
-  name: string;
-  grading_mode: string;
-  review_enabled: boolean;
-  source: string;
-  snapshot_id: string | null;
-  total_max_score: number;
-  needs_rubric: boolean;
-  ocr_text: string | null;
-  grading_policy: Record<string, unknown>;
-  text: string;
-}
+export type GradingPrompt = components['schemas']['GradingPromptOut'];
 
 export function useGradingPrompt(questionId: string | null) {
   return useQuery({
-    queryKey: ['questions', questionId, 'grading-prompt'],
+    queryKey: queryKeys.questions.gradingPrompt(questionId),
     queryFn: () =>
       apiClient
         .get<GradingPrompt>(`/questions/${questionId}/grading-prompt`, {
@@ -56,8 +28,15 @@ export function useGradingPrompt(questionId: string | null) {
 }
 
 export function useQuestions(search = '', limit = 50) {
+  const queryClient = useQueryClient();
+  useEffect(
+    () => subscribeToQuestionEvents(() => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.questions.all });
+    }),
+    [queryClient],
+  );
   return useQuery({
-    queryKey: ['questions', { search, limit }],
+    queryKey: queryKeys.questions.list(search, limit),
     queryFn: () =>
       apiClient
         .get<PaginatedQuestions>('/questions', {
@@ -73,7 +52,7 @@ export function useQuestions(search = '', limit = 50) {
           item.replacement_status === 'pending' ||
           item.replacement_status === 'processing',
       )
-        ? 2000
+        ? 30000
         : false,
   });
 }
@@ -93,7 +72,7 @@ export function useCreateQuestion() {
         })
         .then((response) => response.data);
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['questions'] }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.questions.all }),
   });
 }
 
@@ -104,7 +83,7 @@ export function useRenameQuestion() {
       apiClient
         .patch<Question>(`/questions/${id}`, { name })
         .then((response) => response.data),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['questions'] }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.questions.all }),
   });
 }
 
@@ -123,7 +102,7 @@ export function useRetryQuestionOcr() {
         .then((response) => response.data)
       );
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['questions'] }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.questions.all }),
   });
 }
 
@@ -136,7 +115,7 @@ export function useChangeQuestionConfigProfile() {
           config_profile_id: configProfileId,
         })
         .then((response) => response.data),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['questions'] }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.questions.all }),
   });
 }
 
@@ -155,9 +134,9 @@ export function useDeleteQuestion() {
         })
         .then((response) => response.data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['questions'] });
-      queryClient.invalidateQueries({ queryKey: ['submissions'] });
-      queryClient.invalidateQueries({ queryKey: ['submissions-count'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.questions.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.submissions.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.submissions.count });
     },
   });
 }
@@ -187,9 +166,9 @@ export function useReplaceQuestion() {
         .then((response) => response.data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['questions'] });
-      queryClient.invalidateQueries({ queryKey: ['submissions'] });
-      queryClient.invalidateQueries({ queryKey: ['submissions-count'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.questions.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.submissions.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.submissions.count });
     },
   });
 }

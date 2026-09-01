@@ -3,11 +3,10 @@
 配置按「配置项目」(``ConfigProfile``) 组织:每套 LLM/OCR/Rubric/提示词
 配置归属一个项目,题目通过 ``Question.config_profile_id`` 绑定使用的项目。
 从 ``system_config`` 表读取 key-value 配置项,提供给 OCR/LLM/prompt 等服务使用。
-带 15 秒进程内缓存(按 profile 分桶)以降低 DB 压力,PUT 后主动失效。
+配置表规模很小，所有进程直接读取数据库，确保 API 与 worker 立即看到同一配置。
 """
 
 import json
-import time
 from datetime import datetime
 
 from sqlalchemy import delete as sa_delete
@@ -30,29 +29,11 @@ CONFIG_KEYS: frozenset[str] = frozenset(
     }
 )
 
-# 缓存:15 秒 TTL(原 5s。PUT 已主动失效缓存,TTL 仅影响其他读路径的同步延迟,
-# 15s 内单实例 4 并发可减少 ~80% 的 config 查询往返,且不影响配置写入后立即生效)
-_CACHE_TTL = 15.0
-# 按 profile_id 分桶:{"data": {profile_id: {...}}, "expires_at": {profile_id: ts}}
-_cache: dict = {"data": {}, "expires_at": {}}
-
 DEFAULT_PROFILE_NAME = "默认配置"
 
 
 class ConfigError(Exception):
     """配置服务异常(未知 key 等)。"""
-
-
-def invalidate_config_cache() -> None:
-    """失效全部配置缓存。"""
-    _cache["data"] = {}
-    _cache["expires_at"] = {}
-
-
-def invalidate_profile_cache(profile_id: int) -> None:
-    """失效单个配置项目的缓存。"""
-    _cache["data"].pop(profile_id, None)
-    _cache["expires_at"].pop(profile_id, None)
 
 
 def get_default_profile(db: Session) -> ConfigProfile | None:
@@ -216,7 +197,6 @@ def delete_profile(db: Session, profile_id: int, *, question_count: int = 0) -> 
     db.execute(sa_delete(SystemConfig).where(SystemConfig.profile_id == profile_id))
     db.delete(profile)
     db.commit()
-    invalidate_profile_cache(profile_id)
 
 
 def get_config_dict(
@@ -234,19 +214,9 @@ def get_config_dict(
             return {}
         profile_id = profile.id
 
-    now = time.time()
-    data = _cache["data"].get(profile_id)
-    expires_at = _cache["expires_at"].get(profile_id, 0.0)
-    if data is not None and now < expires_at:
-        return data
-
     stmt = select(SystemConfig).where(SystemConfig.profile_id == profile_id)
     rows = db.execute(stmt).scalars().all()
-    result = {row.key: row.value for row in rows}
-
-    _cache["data"][profile_id] = result
-    _cache["expires_at"][profile_id] = now + _CACHE_TTL
-    return result
+    return {row.key: row.value for row in rows}
 
 
 def upsert_config(
@@ -303,6 +273,4 @@ def upsert_config(
 
     db.commit()
 
-    # 失效缓存并返回最新配置
-    invalidate_profile_cache(profile_id)
     return get_config_dict(db, profile_id=profile_id)

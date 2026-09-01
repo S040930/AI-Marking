@@ -2,6 +2,7 @@ import { useRef } from 'react';
 import {
   BookOpen,
   Copy,
+  Download,
   Eye,
   FileUp,
   Loader2,
@@ -33,6 +34,7 @@ interface QuestionCardProps {
   onReplace: (question: Question, file: File) => void;
   onDelete: (question: Question) => void;
   onCopyPrompt: (question: Question) => void;
+  onExportResults: (question: Question) => void;
 }
 
 export function QuestionCard({
@@ -45,6 +47,7 @@ export function QuestionCard({
   onReplace,
   onDelete,
   onCopyPrompt,
+  onExportResults,
 }: QuestionCardProps) {
   const { t } = useLanguage();
   const retryRef = useRef<HTMLInputElement>(null);
@@ -156,6 +159,19 @@ export function QuestionCard({
             onClick={() => onCopyPrompt(question)}
           >
             <Copy />{t('复制提示词')}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={question.submission_count === 0}
+            onClick={() => onExportResults(question)}
+            title={
+              question.submission_count === 0
+                ? t('该题目暂无批改记录')
+                : undefined
+            }
+          >
+            <Download />{t('导出分析')}
           </Button>
           <Button
             variant="ghost"

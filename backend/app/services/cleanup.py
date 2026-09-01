@@ -1,11 +1,9 @@
 """uploads/ 目录的定期清理服务。
 
-批改完成后 ``ocr_text`` 已入库,PDF 文件仅在理论上的"复评"场景需要——
-但当前无复评功能。为避免磁盘无限增长(50MB × 1000 = 50GB),按
-``UPLOAD_RETENTION_DAYS`` 删除过期 PDF,保留 DB 记录。
+``UPLOAD_RETENTION_DAYS`` 仅是无数据库引用孤儿文件的清理宽限期。
+任何仍被题目、替换暂存、作业或代码记录引用的文件都不会被删除。
 
 实现:
-- ``cleanup_uploads``:递归扫描 upload_dir,按 mtime 删除过期且无数据库引用的 PDF
 - ``cleanup_referenced_*``:将过期文件候选按固定批次查库,不全表加载引用
 - ``periodic_cleanup_loop``:在独立任务 worker 中以后台 task 运行,
   每隔 ``CLEANUP_INTERVAL_SECONDS`` 扫描一次
@@ -38,86 +36,6 @@ logger = logging.getLogger(__name__)
 # 250-file batch therefore stays below SQLite's common 999-parameter limit in
 # tests and keeps production memory bounded independently of table size.
 _REFERENCE_BATCH_SIZE = 250
-
-
-def cleanup_uploads(
-    upload_dir: Path,
-    retention_days: int,
-    protected_paths: set[Path] | None = None,
-) -> int:
-    """扫描 ``upload_dir``,删除修改时间早于 ``retention_days`` 天前的 PDF。
-
-    Args:
-        upload_dir: 上传目录(已校验存在)
-        retention_days: 保留天数,< 1 时不删除任何文件(安全阀)
-
-    Returns:
-        实际删除的文件数
-    """
-    if retention_days < 1:
-        logger.info("UPLOAD_RETENTION_DAYS=%s < 1,跳过清理", retention_days)
-        return 0
-    if not upload_dir.exists():
-        return 0
-
-    cutoff = time.time() - retention_days * 86400
-    protected = {path.resolve() for path in (protected_paths or set())}
-    deleted = 0
-    for entry in upload_dir.rglob("*.pdf"):
-        if not entry.is_file() or entry.suffix.lower() != ".pdf":
-            continue
-        if entry.resolve() in protected:
-            continue
-        try:
-            if entry.stat().st_mtime < cutoff:
-                entry.unlink(missing_ok=True)
-                deleted += 1
-        except OSError as exc:
-            logger.warning("删除 %s 失败: %s", entry, exc)
-    for directory in sorted(upload_dir.rglob("*"), reverse=True):
-        if directory.is_dir():
-            try:
-                directory.rmdir()
-            except OSError:
-                pass
-    if deleted:
-        logger.info("清理 uploads/ 完成,删除 %s 个过期 PDF", deleted)
-    return deleted
-
-
-def cleanup_code_artifacts(
-    upload_dir: Path,
-    retention_days: int,
-    protected_paths: set[Path] | None = None,
-) -> int:
-    """清理过期代码源文件与运行产物，同时保留数据库仍引用的路径。"""
-    if retention_days < 1:
-        return 0
-    roots = [
-        upload_dir / "code",
-        upload_dir / "code-inputs",
-        upload_dir / "code-artifacts",
-    ]
-    cutoff = time.time() - retention_days * 86400
-    protected = {path.resolve() for path in (protected_paths or set())}
-    deleted = 0
-    for root in roots:
-        if not root.exists():
-            continue
-        for path in sorted(root.rglob("*"), reverse=True):
-            if path.is_file():
-                try:
-                    if path.resolve() not in protected and path.stat().st_mtime < cutoff:
-                        path.unlink(missing_ok=True)
-                        deleted += 1
-                except OSError as exc:
-                    logger.warning("删除代码运行文件 %s 失败: %s", path, exc)
-            elif path.is_dir():
-                try:
-                    path.rmdir()
-                except OSError:
-                    pass
-    return deleted
 
 
 def _path_query_values(path: Path) -> set[str]:

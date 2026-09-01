@@ -13,6 +13,7 @@ from sqlalchemy import (
     String,
     Text,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -43,11 +44,25 @@ class BackgroundJob(Base):
             name="ck_background_jobs_single_target",
         ),
         Index(
-            "ix_background_jobs_claim",
-            "status",
+            "ix_background_jobs_queued",
             "available_at",
-            "lease_expires_at",
             "created_at",
+            postgresql_where=text("status = 'queued'"),
+            sqlite_where=text("status = 'queued'"),
+        ),
+        Index(
+            "ix_background_jobs_running_lease",
+            "lease_expires_at",
+            "available_at",
+            "created_at",
+            postgresql_where=text("status = 'running'"),
+            sqlite_where=text("status = 'running'"),
+        ),
+        Index(
+            "ix_background_jobs_dead_updated",
+            text("updated_at DESC"),
+            postgresql_where=text("status = 'dead'"),
+            sqlite_where=text("status = 'dead'"),
         ),
     )
 

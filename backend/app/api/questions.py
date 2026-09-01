@@ -18,13 +18,22 @@ from fastapi import (
 )
 from fastapi.responses import FileResponse
 from sqlalchemy import func, or_, select
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, selectinload
+from starlette.concurrency import run_in_threadpool
 
-from app.api.submissions import DELETABLE_SUBMISSION_STATUSES
+from app.application.uploads import (
+    DELETABLE_SUBMISSION_STATUSES,
+    commit_question_create,
+    commit_question_replace,
+    commit_question_retry,
+    preflight_question_create,
+    preflight_question_replace,
+    preflight_question_retry,
+)
 from app.core.config import settings
 from app.core.time import utc_now_naive
-from app.db.session import get_db
+from app.db.session import get_db, get_session_factory
 from app.models.question import (
     Question,
     QuestionReplacementStatus,
@@ -44,7 +53,6 @@ from app.schemas.question import (
 )
 from app.services.config import (
     get_config_dict,
-    get_or_create_default_profile,
     get_profile,
 )
 from app.services.document_storage import (
@@ -58,11 +66,6 @@ from app.services.mcp_workflow import (
     resolve_submission_rubric,
 )
 from app.services.question_identity import build_question_id
-from app.services.queue import (
-    new_question_ocr_job,
-    reset_question_ocr_job,
-    reset_question_replace_job,
-)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -128,7 +131,7 @@ async def create_question(
     file: UploadFile = File(...),
     name: str | None = Form(default=None, max_length=255),
     config_profile_id: int | None = Form(default=None),
-    db: Session = Depends(get_db),
+    session_factory=Depends(get_session_factory),
 ):
     validate_document_upload(file)
     original_filename = file.filename or ""
@@ -140,47 +143,26 @@ async def create_question(
     if not question_id:
         await file.close()
         raise HTTPException(status_code=422, detail="无法从文件名生成题目 ID")
-    if db.get(Question, question_id) is not None:
-        await file.close()
-        raise HTTPException(
-            status_code=409, detail="同名题目已存在，请修改文件名后重新上传"
-        )
-    # 未指定配置项目时使用默认项目(保证题目始终有可用配置)
-    if config_profile_id is None:
-        default = get_or_create_default_profile(db)
-        config_profile_id = default.id
-    elif get_profile(db, config_profile_id) is None:
-        await file.close()
-        raise HTTPException(status_code=422, detail="配置项目不存在")
+    config_profile_id = await run_in_threadpool(
+        preflight_question_create,
+        session_factory,
+        question_id,
+        config_profile_id,
+    )
     upload_dir = _upload_dir()
     stored = await save_document_as_pdf(file, upload_dir, suffix="_question")
-    original_filename, path = stored.original_filename, stored.path
-    question = Question(
-        id=question_id,
-        name=display_name,
-        original_filename=original_filename,
-        file_path=str(path),
-        file_sha256=stored.sha256,
-        status=QuestionStatus.pending,
-        config_profile_id=config_profile_id,
-    )
-    db.add(question)
     try:
-        db.flush()
-        db.add(new_question_ocr_job(question.id))
-        db.commit()
-        db.refresh(question)
-    except IntegrityError as exc:
-        db.rollback()
-        _discard_uncommitted_document(db, stored, upload_dir)
-        if db.get(Question, question_id) is not None:
-            raise HTTPException(
-                status_code=409, detail="同名题目已存在，请修改文件名后重新上传"
-            ) from exc
-        raise
+        question = await run_in_threadpool(
+            commit_question_create,
+            session_factory,
+            question_id=question_id,
+            name=display_name,
+            config_profile_id=config_profile_id,
+            stored=stored,
+        )
     except Exception:
-        db.rollback()
-        _discard_uncommitted_document(db, stored, upload_dir)
+        with session_factory() as cleanup_db:
+            _discard_uncommitted_document(cleanup_db, stored, upload_dir)
         raise
     return _serialize(question, 0)
 
@@ -293,10 +275,8 @@ def get_question_grading_prompt(question_id: str, db: Session = Depends(get_db))
     )
 
 
-@router.api_route(
-    "/questions/{question_id}/pdf",
-    methods=["GET", "HEAD"],
-)
+@router.get("/questions/{question_id}/pdf")
+@router.head("/questions/{question_id}/pdf", include_in_schema=False)
 def get_question_pdf(question_id: str, db: Session = Depends(get_db)):
     question = db.get(Question, question_id)
     if question is None:
@@ -358,38 +338,26 @@ def change_question_config_profile(
 async def retry_question_ocr(
     question_id: str,
     file: UploadFile = File(...),
-    db: Session = Depends(get_db),
+    session_factory=Depends(get_session_factory),
 ):
     """失败后由教师重新上传 PDF，再创建一次 OCR 任务。"""
     validate_document_upload(file)
-    question = db.get(Question, question_id, with_for_update=True)
-    if question is None:
-        raise HTTPException(status_code=404, detail="题目不存在")
-    if question.status != QuestionStatus.failed:
-        raise HTTPException(status_code=409, detail="仅识别失败的题目可以重新上传")
+    await run_in_threadpool(preflight_question_retry, session_factory, question_id)
 
     upload_dir = _upload_dir()
     stored = await save_document_as_pdf(file, upload_dir, suffix="_question")
-    original_filename, new_path = stored.original_filename, stored.path
-    old_path = question.file_path
-    question.original_filename = original_filename
-    question.file_path = str(new_path)
-    question.file_sha256 = stored.sha256
-    question.status = QuestionStatus.pending
-    question.error_message = None
-    question.updated_at = utc_now_naive()
-    reset_question_ocr_job(db, question.id)
     try:
-        db.commit()
-        db.refresh(question)
+        question, old_path, submission_count = await run_in_threadpool(
+            commit_question_retry, session_factory, question_id, stored
+        )
     except Exception:
-        db.rollback()
-        _discard_uncommitted_document(db, stored, upload_dir)
+        with session_factory() as cleanup_db:
+            _discard_uncommitted_document(cleanup_db, stored, upload_dir)
         raise
-    if old_path != str(new_path):
-        _unlink_after_commit(db, [old_path])
-    row = _question_with_count(db, question_id)
-    return _serialize(row[0], row[1])
+    if old_path != str(stored.path):
+        with session_factory() as cleanup_db:
+            _unlink_after_commit(cleanup_db, [old_path])
+    return _serialize(question, submission_count)
 
 
 def _locked_submissions(db: Session, question_id: str):
@@ -402,6 +370,7 @@ def _locked_submissions(db: Session, question_id: str):
                     selectinload(Submission.code_input_files),
                 )
                 .where(Submission.question_id == question_id)
+                .order_by(Submission.id)
                 .with_for_update()
             )
         )
@@ -434,61 +403,35 @@ async def replace_question(
     file: UploadFile = File(...),
     confirmation_name: str = Form(..., max_length=255),
     acknowledge_deletion: bool = Form(False),
-    db: Session = Depends(get_db),
+    session_factory=Depends(get_session_factory),
 ):
     validate_document_upload(file)
-    current = db.get(Question, question_id, with_for_update=True)
-    if current is None:
-        raise HTTPException(status_code=404, detail="题目不存在")
-    if confirmation_name != current.name:
-        raise HTTPException(status_code=422, detail="题目名称确认不匹配")
-    if current.status != QuestionStatus.ready or not current.ocr_text:
-        raise HTTPException(status_code=409, detail="只有可使用的题目可以上传新版")
-    if current.replacement_status in (
-        QuestionReplacementStatus.pending,
-        QuestionReplacementStatus.processing,
-    ):
-        raise HTTPException(status_code=409, detail="题目新版正在处理中")
-
-    submissions = _locked_submissions(db, question_id)
-    blocked = _blocked_ids(submissions)
-    if blocked:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "message": "存在正在处理的批改记录，无法更新题目",
-                "blocked_submission_ids": blocked,
-            },
-        )
-
-    affected_count = len(submissions)
-    if affected_count > 0 and not acknowledge_deletion:
-        # 历史作业将被永久删除,要求调用方显式确认
-        raise HTTPException(
-            status_code=422,
-            detail={
-                "message": "替换题目将永久删除关联的历史批改记录,需二次确认",
-                "affected_submission_count": affected_count,
-                "acknowledge_required": True,
-            },
-        )
+    await run_in_threadpool(
+        preflight_question_replace,
+        session_factory,
+        question_id,
+        confirmation_name,
+        acknowledge_deletion=acknowledge_deletion,
+    )
 
     upload_dir = _upload_dir()
     stored = await save_document_as_pdf(file, upload_dir, suffix="_question")
-    original_filename, new_path = stored.original_filename, stored.path
-    current.replacement_status = QuestionReplacementStatus.pending
-    current.replacement_file_path = str(new_path)
-    current.replacement_file_sha256 = stored.sha256
-    current.replacement_original_filename = original_filename
-    current.replacement_error_message = None
-    current.updated_at = utc_now_naive()
-    reset_question_replace_job(db, current.id)
     try:
-        db.commit()
+        current, affected_count, previous_staged = await run_in_threadpool(
+            commit_question_replace,
+            session_factory,
+            question_id=question_id,
+            confirmation_name=confirmation_name,
+            acknowledge_deletion=acknowledge_deletion,
+            stored=stored,
+        )
     except Exception:
-        db.rollback()
-        _discard_uncommitted_document(db, stored, upload_dir)
+        with session_factory() as cleanup_db:
+            _discard_uncommitted_document(cleanup_db, stored, upload_dir)
         raise
+    if previous_staged and previous_staged != str(stored.path):
+        with session_factory() as cleanup_db:
+            _unlink_after_commit(cleanup_db, [previous_staged])
     return QuestionReplacementResponse(
         question_id=current.id,
         replacement_status=QuestionReplacementStatus.pending,

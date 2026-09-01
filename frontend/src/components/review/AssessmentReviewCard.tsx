@@ -6,7 +6,7 @@ import type { AssessmentReview, SubmissionDetail } from '@/api/submissions';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useLanguage } from '@/i18n';
-import { CLIENT_LABELS } from './McpAuditBanner';
+import { CLIENT_LABELS } from '@/lib/mcpClients';
 
 const REVIEW_VERDICT_META: Record<
   AssessmentReview['verdict'],

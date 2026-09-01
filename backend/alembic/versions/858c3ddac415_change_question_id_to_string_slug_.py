@@ -17,9 +17,9 @@ original_filename 去扩展名生成)。存量数据按 created_at 顺序逐行�
 """
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 from app.services.question_identity import MAX_QUESTION_ID_LEN, build_question_id
 
 # revision identifiers, used by Alembic.

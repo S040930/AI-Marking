@@ -1,7 +1,6 @@
 """MCP 工作流业务逻辑：句柄管理、评分策略、上下文打包与评分持久化。
 
-从 ``app/api/mcp.py`` 迁移的纯业务函数；继续抛 ``HTTPException``（FastAPI
-任意层抛出均会被异常处理器捕获，行为与迁移前一致）。
+从 ``app/api/mcp.py`` 迁移的业务函数；错误由 API 适配层统一映射。
 """
 
 from __future__ import annotations
@@ -14,24 +13,21 @@ import secrets
 import unicodedata
 from datetime import datetime, timedelta, timezone
 
-from fastapi import HTTPException
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
+from app.application.errors import ConflictError, NotFoundError, ValidationError
+from app.application.lifecycle import transition_submission
 from app.core.config import settings
 from app.core.time import utc_now_naive
 from app.models.mcp_assessment_receipt import McpAssessmentReceipt
 from app.models.mcp_workflow_handle import McpWorkflowHandle
+from app.models.question import Question
 from app.models.submission import Submission, SubmissionGradingMode, SubmissionStatus
 from app.schemas.mcp import McpAssessmentRequest, McpAssessmentResponse
 from app.services.config import get_config_dict
 from app.services.events import notify_submission_status
-from app.services.metrics import (
-    mcp_assessment_conflicts,
-    mcp_assessment_saves,
-    mcp_waiting_submissions,
-)
 from app.services.rubric import (
     RUBRIC_PRIORITY,
     RUBRIC_VERSION,
@@ -84,11 +80,12 @@ def load_workflow_handle(db: Session, value: str, *, kind: str, lock: bool = Fal
         query = query.with_for_update()
     payload = db.execute(query).scalar_one_or_none()
     if payload is None:
-        raise HTTPException(status_code=409, detail="MCP 工作流令牌无效，请重新打开作业")
+        raise ConflictError("MCP 工作流令牌无效，请重新打开作业")
     if payload.expires_at < utc_now_naive():
-        db.delete(payload)
-        db.flush()
-        raise HTTPException(status_code=409, detail="MCP 工作流令牌已过期，请重新打开作业")
+        if lock:
+            db.delete(payload)
+            db.flush()
+        raise ConflictError("MCP 工作流令牌已过期，请重新打开作业")
     payload._plaintext_token = value
     return payload
 
@@ -132,9 +129,9 @@ def get_submission_or_404(db: Session, submission_id: int) -> Submission:
         ],
     )
     if sub is None:
-        raise HTTPException(status_code=404, detail="提交记录不存在")
+        raise NotFoundError("提交记录不存在")
     if sub.grading_mode != SubmissionGradingMode.external_agent:
-        raise HTTPException(status_code=409, detail="该提交不是外部编程助手评分模式")
+        raise ConflictError("该提交不是外部编程助手评分模式")
     return sub
 
 
@@ -148,10 +145,23 @@ def get_locked_submission_or_404(db: Session, submission_id: int) -> Submission:
         .with_for_update()
     ).scalar_one_or_none()
     if sub is None:
-        raise HTTPException(status_code=404, detail="提交记录不存在")
+        raise NotFoundError("提交记录不存在")
     if sub.grading_mode != SubmissionGradingMode.external_agent:
-        raise HTTPException(status_code=409, detail="该提交不是外部编程助手评分模式")
+        raise ConflictError("该提交不是外部编程助手评分模式")
     return sub
+
+
+def get_locked_submission_in_order(db: Session, submission_id: int) -> Submission:
+    """Lock Question before Submission, the global order for grading writes."""
+    snapshot = db.get(Submission, submission_id)
+    if snapshot is None:
+        raise NotFoundError("提交记录不存在")
+    db.execute(
+        select(Question)
+        .where(Question.id == snapshot.question_id)
+        .with_for_update()
+    ).scalar_one()
+    return get_locked_submission_or_404(db, submission_id)
 
 
 def normalize_for_evidence(value: str) -> str:
@@ -246,9 +256,8 @@ def validate_code_evidence(sub: Submission, payload: McpAssessmentRequest) -> No
             else:
                 invalid.append(f"{detail.criterion}: 不支持的 evidence_refs 类型")
     if invalid:
-        raise HTTPException(
-            status_code=422,
-            detail={"message": "代码评分证据无法在服务端上下文中定位", "evidence": invalid[:20]},
+        raise ValidationError(
+            {"message": "代码评分证据无法在服务端上下文中定位", "evidence": invalid[:20]}
         )
 
 
@@ -278,25 +287,31 @@ def save_mcp_assessment(
         submission_id,
         payload.request_id,
     )
-    sub = get_locked_submission_or_404(db, submission_id)
+    sub = get_locked_submission_in_order(db, submission_id)
+    if handle is not None:
+        plaintext = getattr(handle, "_plaintext_token", None)
+        if not plaintext:
+            raise ConflictError("评分句柄无效，请重新打开作业")
+        handle = load_workflow_handle(db, plaintext, kind="grading", lock=True)
+        if handle.submission_id != submission_id or not handle.context_complete:
+            raise ConflictError("评分句柄与作业不匹配，请重新打开作业")
     question_text, submission_text, current_hash, resolved = build_context_parts(db, sub)
     source_text = build_code_context(sub)
     if (
         len(question_text) + len(submission_text) + len(source_text)
         > settings.MCP_MAX_GRADING_CONTEXT_CHARS
     ):
-        raise HTTPException(
-            status_code=422,
-            detail="评分上下文超过 MCP_MAX_GRADING_CONTEXT_CHARS，请拆分作业或缩减提交内容后重试",
+        raise ValidationError(
+            "评分上下文超过 MCP_MAX_GRADING_CONTEXT_CHARS，请拆分作业或缩减提交内容后重试"
         )
     if sub.status not in (
         SubmissionStatus.awaiting_mcp,
         SubmissionStatus.ready_for_review,
     ):
-        raise HTTPException(status_code=409, detail="该作业当前不可保存外部评分建议")
+        raise ConflictError("该作业当前不可保存外部评分建议")
     requires_visual_confirmation = bool(sub.code_files)
     if requires_visual_confirmation and (handle is None or not handle.visual_confirmation):
-        raise HTTPException(status_code=409, detail="含代码的评分必须先完成运行结果与报告一致性确认")
+        raise ConflictError("含代码的评分必须先完成运行结果与报告一致性确认")
     review_enabled = sub.review_enabled
     if review_enabled is None:
         config = get_config_dict(db, profile_id=sub.question.config_profile_id if sub.question else None)
@@ -305,35 +320,30 @@ def save_mcp_assessment(
         not payload.self_check.second_pass_completed
         or not payload.self_check.rubric_items_reviewed
     ):
-        raise HTTPException(status_code=422, detail="复核开启时必须完成第二遍复核并填写 rubric_items_reviewed")
+        raise ValidationError("复核开启时必须完成第二遍复核并填写 rubric_items_reviewed")
 
     request_id = str(payload.request_id)
     payload_hash = assessment_payload_hash(payload)
 
     if expected_revision != sub.grading_revision:
-        mcp_assessment_conflicts.labels(reason="revision").inc()
-        raise HTTPException(
-            status_code=409,
-            detail={
+        raise ConflictError(
+            {
                 "message": "评分建议版本已变化，请重新读取 assessment",
                 "current_revision": sub.grading_revision,
-            },
+            }
         )
     if context_hash != current_hash:
-        mcp_assessment_conflicts.labels(reason="context").inc()
-        raise HTTPException(
-            status_code=409, detail="评分上下文已变化，请重新读取 manifest"
-        )
+        raise ConflictError("评分上下文已变化，请重新读取 manifest")
     if payload.rubric_snapshot_id != resolved.snapshot_id:
-        raise HTTPException(status_code=409, detail="rubric 快照已变化，请重新读取评分包")
+        raise ConflictError("rubric 快照已变化，请重新读取评分包")
     if payload.rubric_source != resolved.source:
-        raise HTTPException(status_code=422, detail="rubric 来源与服务端解析结果不一致")
+        raise ValidationError("rubric 来源与服务端解析结果不一致")
     try:
         validate_assessment_details(payload.details, resolved)
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise ValidationError(str(exc)) from exc
     if abs(payload.max_score - resolved.total_max_score) > 0.01:
-        raise HTTPException(status_code=422, detail="总满分与当前 rubric 不一致")
+        raise ValidationError("总满分与当前 rubric 不一致")
 
     normalized_submission = normalize_for_evidence(
         "\n".join((submission_text, source_text))
@@ -345,12 +355,11 @@ def save_mcp_assessment(
             if normalized and normalized not in normalized_submission:
                 invalid_evidence.append(f"{detail.criterion}: {evidence}")
     if invalid_evidence:
-        raise HTTPException(
-            status_code=422,
-            detail={
+        raise ValidationError(
+            {
                 "message": "评分证据无法在报告、源代码或运行证据中找到",
                 "evidence": invalid_evidence[:10],
-            },
+            }
         )
     if sub.code_files:
         validate_code_evidence(sub, payload)
@@ -413,10 +422,7 @@ def save_mcp_assessment(
     }
     sub.graded_at = now
     sub.grading_revision = next_revision
-    sub.status = SubmissionStatus.ready_for_review
-    mcp_assessment_saves.labels(
-        kind="initial" if next_revision == 1 else "revision"
-    ).inc()
+    transition_submission(sub, SubmissionStatus.ready_for_review)
     notify_submission_status(db, sub.id, SubmissionStatus.ready_for_review.value)
     response = McpAssessmentResponse(
         submission_id=sub.id,
@@ -448,16 +454,7 @@ def save_mcp_assessment(
             replay = McpAssessmentResponse.model_validate(existing.response)
             replay.idempotent = True
             return replay
-        raise HTTPException(status_code=409, detail="request_id 已用于另一份评分内容")
-    mcp_waiting_submissions.set(
-        db.scalar(
-            select(func.count(Submission.id)).where(
-                Submission.grading_mode == SubmissionGradingMode.external_agent,
-                Submission.status == SubmissionStatus.awaiting_mcp,
-            )
-        )
-        or 0
-    )
+        raise ConflictError("request_id 已用于另一份评分内容")
     db.refresh(sub)
     logger.info(
         "MCP assessment saved [submission=%s, revision=%s, status=%s]",
@@ -503,13 +500,13 @@ def validate_resolved_rubric(
 ) -> ResolvedRubric:
     resolved = resolve_submission_rubric(db, sub)
     if assessment.rubric_snapshot_id != resolved.snapshot_id:
-        raise HTTPException(status_code=409, detail="rubric 快照已变化，请重新读取评分包")
+        raise ConflictError("rubric 快照已变化，请重新读取评分包")
     if assessment.rubric_source != resolved.source:
-        raise HTTPException(status_code=422, detail="rubric 来源与服务端解析结果不一致")
+        raise ValidationError("rubric 来源与服务端解析结果不一致")
     try:
         validate_assessment_details(assessment.details, resolved)
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise ValidationError(str(exc)) from exc
     if abs(assessment.max_score - resolved.total_max_score) > 0.01:
-        raise HTTPException(status_code=422, detail="总满分与当前 rubric 不一致")
+        raise ValidationError("总满分与当前 rubric 不一致")
     return resolved

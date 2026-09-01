@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { isAxiosError } from 'axios';
 import {
   type QueryClient,
   useMutation,
@@ -6,6 +7,7 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import { apiClient } from './client';
+import { queryKeys } from './queryKeys';
 import {
   type BatchDeleteResponse,
   type FinalizePayload,
@@ -21,11 +23,65 @@ import {
 // 统一出口:类型与状态函数定义在 ./submissionTypes.ts
 export * from './submissionTypes';
 
+export interface ExportQuestionResultsInput {
+  questionId: string;
+  passThreshold: number;
+  locale: 'zh-CN' | 'en-US';
+}
+
+function downloadFilename(contentDisposition: string | undefined): string {
+  if (!contentDisposition) return 'grade_analysis.xlsx';
+  const encoded = contentDisposition.match(/filename\*=utf-8''([^;]+)/i)?.[1];
+  if (encoded) return decodeURIComponent(encoded);
+  return contentDisposition.match(/filename="?([^";]+)"?/i)?.[1] ?? 'grade_analysis.xlsx';
+}
+
+async function exportError(error: unknown): Promise<Error> {
+  if (isAxiosError(error) && error.response?.data instanceof Blob) {
+    try {
+      const payload = JSON.parse(await error.response.data.text()) as { detail?: string };
+      if (payload.detail) return new Error(payload.detail);
+    } catch {
+      // Fall through to the normalized Axios message.
+    }
+  }
+  return error instanceof Error ? error : new Error('Excel export failed');
+}
+
+export function useExportQuestionResults() {
+  return useMutation<void, Error, ExportQuestionResultsInput>({
+    mutationFn: async ({ questionId, passThreshold, locale }) => {
+      try {
+        const response = await apiClient.get<Blob>('/submissions/export.xlsx', {
+          params: {
+            question_id: questionId,
+            pass_threshold: passThreshold,
+            locale,
+          },
+          responseType: 'blob',
+          timeout: 120_000,
+          skipErrorToast: true,
+        });
+        const url = URL.createObjectURL(response.data);
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = downloadFilename(response.headers['content-disposition']);
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        URL.revokeObjectURL(url);
+      } catch (error) {
+        throw await exportError(error);
+      }
+    },
+  });
+}
+
 // hooks
 export function useSubmissions({ page, pageSize }: { page: number; pageSize: number }) {
   const skip = (page - 1) * pageSize;
   return useQuery<PaginatedSubmissions>({
-    queryKey: ['submissions', { page, pageSize }],
+    queryKey: queryKeys.submissions.list(page, pageSize),
     queryFn: () =>
       apiClient
         .get<PaginatedSubmissions>('/submissions', {
@@ -52,7 +108,7 @@ export function useSubmissions({ page, pageSize }: { page: number; pageSize: num
  */
 export function useSubmissionsCount() {
   return useQuery<{ total: number }>({
-    queryKey: ['submissions-count'],
+    queryKey: queryKeys.submissions.count,
     queryFn: () =>
       apiClient.get<{ total: number }>('/submissions/count').then((r) => r.data),
     staleTime: 30_000,
@@ -75,7 +131,7 @@ export function useSubmission(
   return useQuery<SubmissionDetail>({
     // 状态变化时切换详情 key，避免 fallback 轮询更新 status 后仍复用
     // 旧状态的建议；同时保留 ['submission', id] 前缀供 SSE 失效缓存。
-    queryKey: ['submission', id, status ?? 'detail'],
+    queryKey: queryKeys.submissions.detail(id, status ?? 'detail'),
     queryFn: () =>
       apiClient.get<SubmissionDetail>(`/submissions/${id}`).then((r) => r.data),
     enabled: id !== undefined && !isNaN(id) && enabled,
@@ -120,11 +176,11 @@ export function useSubmissionEvents(
           es.close();
         }
         queryClient.invalidateQueries({
-          queryKey: ['submission-status', id],
+          queryKey: queryKeys.submissions.status(id),
         });
         if (data.status && isTerminal(data.status)) {
           // 终态:刷新完整详情,供 ResultPage 渲染 ocr_text/feedback 等
-          queryClient.invalidateQueries({ queryKey: ['submission', id] });
+          queryClient.invalidateQueries({ queryKey: queryKeys.submissions.detailPrefix(id) });
         }
       } catch {
         // ignore parse errors(包括 keepalive 注释行,虽然 EventSource 不会
@@ -148,7 +204,7 @@ export function useSubmissionEvents(
  */
 export function useSubmissionStatus(id: number | undefined) {
   const query = useQuery<SubmissionStatusOut>({
-    queryKey: ['submission-status', id],
+    queryKey: queryKeys.submissions.status(id),
     queryFn: () =>
       apiClient
         .get<SubmissionStatusOut>(`/submissions/${id}/status`)
@@ -184,11 +240,11 @@ export function useRetrySubmission(submissionId: number) {
         .then((response) => response.data);
     },
     onSuccess: () => {
-      queryClient.removeQueries({ queryKey: ['submission', submissionId] });
+      queryClient.removeQueries({ queryKey: queryKeys.submissions.detailPrefix(submissionId) });
       queryClient.invalidateQueries({
-        queryKey: ['submission-status', submissionId],
+        queryKey: queryKeys.submissions.status(submissionId),
       });
-      queryClient.invalidateQueries({ queryKey: ['submissions'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.submissions.all });
     },
   });
 }
@@ -204,8 +260,8 @@ export function useFinalizeSubmission(submissionId: number) {
         .then((r) => r.data),
     onSuccess: (data) => {
       cacheFinalizedSubmission(queryClient, submissionId, data);
-      queryClient.invalidateQueries({ queryKey: ['submissions'] });
-      queryClient.invalidateQueries({ queryKey: ['submissions-count'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.submissions.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.submissions.count });
     },
   });
 }
@@ -215,13 +271,13 @@ export function cacheFinalizedSubmission(
   submissionId: number,
   data: SubmissionDetail,
 ) {
-  queryClient.removeQueries({ queryKey: ['submission', submissionId] });
+  queryClient.removeQueries({ queryKey: queryKeys.submissions.detailPrefix(submissionId) });
   queryClient.setQueryData(
-    ['submission', submissionId, data.status],
+    queryKeys.submissions.detail(submissionId, data.status),
     data,
   );
   queryClient.setQueryData<SubmissionStatusOut>(
-    ['submission-status', submissionId],
+    queryKeys.submissions.status(submissionId),
     data,
   );
 }
@@ -237,8 +293,8 @@ export function useBatchDeleteSubmissions() {
         })
         .then((r) => r.data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['submissions'] });
-      queryClient.invalidateQueries({ queryKey: ['submissions-count'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.submissions.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.submissions.count });
     },
   });
 }

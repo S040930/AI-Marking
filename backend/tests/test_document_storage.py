@@ -3,9 +3,10 @@
 import io
 
 import pytest
-from fastapi import HTTPException, UploadFile
+from fastapi import UploadFile
 from starlette.datastructures import Headers
 
+from app.application.errors import PayloadTooLargeError, ValidationError
 from app.services import document_storage
 
 
@@ -58,34 +59,32 @@ async def test_same_filename_with_different_content_keeps_two_blobs(tmp_path):
 
 
 @pytest.mark.parametrize(
-    ("filename", "content", "content_type", "status_code"),
+    ("filename", "content", "content_type"),
     [
-        ("answer.txt", b"text", "text/plain", 422),
-        ("answer.docx", b"not-a-zip", document_storage.PDF_MIME_TYPE, 422),
-        ("empty.pdf", b"", document_storage.PDF_MIME_TYPE, 422),
+        ("answer.txt", b"text", "text/plain"),
+        ("answer.docx", b"not-a-zip", document_storage.PDF_MIME_TYPE),
+        ("empty.pdf", b"", document_storage.PDF_MIME_TYPE),
     ],
 )
 async def test_invalid_documents_are_rejected_and_cleaned(
-    tmp_path, filename, content, content_type, status_code
+    tmp_path, filename, content, content_type
 ):
-    with pytest.raises(HTTPException) as caught:
+    with pytest.raises(ValidationError):
         await document_storage.save_document_as_pdf(
             _upload(filename, content, content_type), tmp_path
         )
 
-    assert caught.value.status_code == status_code
     assert list(tmp_path.iterdir()) == []
 
 
 async def test_oversized_upload_is_rejected_and_cleaned(tmp_path):
-    with pytest.raises(HTTPException) as caught:
+    with pytest.raises(PayloadTooLargeError):
         await document_storage.save_document_as_pdf(
             _upload("large.pdf", b"1234", document_storage.PDF_MIME_TYPE),
             tmp_path,
             max_size_bytes=3,
         )
 
-    assert caught.value.status_code == 413
     assert list(tmp_path.iterdir()) == []
 
 

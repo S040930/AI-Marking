@@ -6,8 +6,11 @@
 
 import logging
 import shutil
+import tempfile
 import unicodedata
+from datetime import datetime
 from pathlib import Path
+from typing import Literal
 
 from fastapi import (
     APIRouter,
@@ -24,14 +27,23 @@ from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import exists, func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, selectinload
+from starlette.background import BackgroundTask
+from starlette.concurrency import run_in_threadpool
 
+from app.application.lifecycle import transition_submission
+from app.application.locking import lock_submission_after_question
+from app.application.uploads import (
+    DELETABLE_SUBMISSION_STATUSES,
+    commit_submission_create,
+    commit_submission_retry,
+    preflight_submission_create,
+    preflight_submission_retry,
+)
 from app.core.config import settings
 from app.core.time import utc_now_naive
-from app.db.session import get_db
+from app.db.session import get_db, get_session_factory
 from app.models.question import (
     Question,
-    QuestionReplacementStatus,
-    QuestionStatus,
 )
 from app.models.submission import (
     Submission,
@@ -63,21 +75,15 @@ from app.services.events import (
     notify_submission_status,
     submission_event_stream,
 )
-from app.services.queue import (
-    new_submission_ocr_job,
-    reset_submission_ocr_job,
+from app.services.result_export import (
+    XLSX_MEDIA_TYPE,
+    build_results_workbook,
+    delete_export_file,
+    safe_export_filename,
 )
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-
-DELETABLE_SUBMISSION_STATUSES = {
-    SubmissionStatus.awaiting_mcp,
-    SubmissionStatus.ready_for_review,
-    SubmissionStatus.reviewed,
-    SubmissionStatus.failed,
-}
-
 
 def _discard_uncommitted_document(db: Session, stored, upload_dir: Path) -> None:
     try:
@@ -108,7 +114,7 @@ async def create_submission(
         max_length=50_000,
         description="代码文件小题映射 JSON",
     ),
-    db: Session = Depends(get_db),
+    session_factory=Depends(get_session_factory),
 ):
     """上传学生报告 PDF 及可选的多语言代码文件。
 
@@ -116,24 +122,15 @@ async def create_submission(
     进入 ``awaiting_mcp``，由 MCP 客户端评分。
     """
     validate_document_upload(file)
-    question = db.get(Question, question_id, with_for_update=True)
-    if question is None:
-        raise HTTPException(status_code=404, detail="题目不存在")
-    if question.status != QuestionStatus.ready or not question.ocr_text:
-        raise HTTPException(status_code=409, detail="题目尚未完成 OCR，暂不可用于批改")
-    if question.replacement_status in (
-        QuestionReplacementStatus.pending,
-        QuestionReplacementStatus.processing,
-    ):
-        raise HTTPException(
-            status_code=409, detail="题目新版正在处理中，暂不可用于批改"
-        )
+    preflight = await run_in_threadpool(
+        preflight_submission_create, session_factory, question_id
+    )
     if len(code_files) > MAX_CODE_FILES:
         raise HTTPException(status_code=413, detail=f"代码文件最多 {MAX_CODE_FILES} 个")
     code_mapping = _parse_code_manifest(
         code_manifest,
         [item.filename or "" for item in code_files],
-        question.ocr_text or "",
+        preflight.question_text,
     )
 
     # 解析并校验上传目录(必须位于后端根目录下,防止任意目录写入)
@@ -148,7 +145,6 @@ async def create_submission(
     upload_dir.mkdir(parents=True, exist_ok=True)
 
     stored = await save_document_as_pdf(file, upload_dir)
-    original_filename, saved_path = stored.original_filename, stored.path
     code_metadata: list[dict] = []
     try:
         if code_files:
@@ -166,38 +162,18 @@ async def create_submission(
             )
             validate_independent_code_entries(code_metadata)
 
-        # 创建记录
-        submission = Submission(
-            original_filename=original_filename,
-            file_path=str(saved_path),
-            file_sha256=stored.sha256,
-            question_id=question.id,
-            status=SubmissionStatus.pending,
+        submission = await run_in_threadpool(
+            commit_submission_create,
+            session_factory,
+            question_id=question_id,
+            stored=stored,
+            code_metadata=code_metadata,
         )
-        question.last_used_at = utc_now_naive()
-        db.add(submission)
-        db.flush()
-        for metadata in code_metadata:
-            db.add(
-                SubmissionCodeFile(
-                    submission_id=submission.id,
-                    question_number=metadata["question_number"],
-                    entrypoint=metadata.get("entrypoint", True),
-                    original_filename=metadata["filename"],
-                    file_path=metadata["path"],
-                    file_kind=metadata["kind"],
-                    source_sha256=metadata["source_sha256"],
-                    source_text=metadata["source_text"],
-                )
-            )
-        db.add(new_submission_ocr_job(submission.id))
-        db.commit()
     except Exception:
-        db.rollback()
         _discard_code_storage(code_metadata)
-        _discard_uncommitted_document(db, stored, upload_dir)
+        with session_factory() as cleanup_db:
+            _discard_uncommitted_document(cleanup_db, stored, upload_dir)
         raise
-    db.refresh(submission)
 
     return submission
 
@@ -223,50 +199,19 @@ def _parse_code_manifest(
 async def retry_submission(
     submission_id: int,
     file: UploadFile | None = File(default=None),
-    db: Session = Depends(get_db),
+    session_factory=Depends(get_session_factory),
 ):
     """在原记录上重试失败作业，可选替换学生 PDF。"""
     if file is not None:
         validate_document_upload(file)
-    sub = db.get(Submission, submission_id, with_for_update=True)
-    if sub is None:
-        raise HTTPException(status_code=404, detail="提交记录不存在")
-    if sub.status != SubmissionStatus.failed:
-        raise HTTPException(status_code=409, detail="仅失败的作业可以重新批改")
-    question = db.get(Question, sub.question_id, with_for_update=True)
-    if (
-        question is None
-        or question.status != QuestionStatus.ready
-        or not question.ocr_text
-    ):
-        raise HTTPException(status_code=409, detail="关联题目当前不可用于批改")
-    if question.replacement_status in (
-        QuestionReplacementStatus.pending,
-        QuestionReplacementStatus.processing,
-    ):
-        raise HTTPException(status_code=409, detail="题目新版正在处理中，暂不可重试")
-
-    if file is None and not Path(sub.file_path).exists():
-        raise HTTPException(
-            status_code=409,
-            detail="原学生作业文件已过期，请重新选择 PDF 后重试",
-        )
-    if sub.code_files and any(not Path(item.file_path).exists() for item in sub.code_files):
-        raise HTTPException(
-            status_code=409,
-            detail="原代码文件已过期，请通过编程助手（MCP）重新提交 PDF 与全部代码文件",
-        )
-    if sub.code_input_files and any(
-        not Path(item.file_path).exists() for item in sub.code_input_files
-    ):
-        raise HTTPException(
-            status_code=409,
-            detail="原数据集文件已过期，请通过编程助手（MCP）重新提交 PDF、代码与数据集",
-        )
+    preflight = await run_in_threadpool(
+        preflight_submission_retry,
+        session_factory,
+        submission_id,
+        replacing_file=file is not None,
+    )
 
     stored = None
-    new_path: Path | None = None
-    original_filename = sub.original_filename
     upload_dir = Path(settings.UPLOAD_DIR).resolve()
     if file is not None:
         backend_root = Path(__file__).resolve().parent.parent.parent
@@ -277,55 +222,25 @@ async def retry_submission(
                 status_code=500, detail="UPLOAD_DIR 配置非法,必须位于后端根目录下"
             ) from exc
         stored = await save_document_as_pdf(file, upload_dir)
-        original_filename, new_path = stored.original_filename, stored.path
-
-    old_path = sub.file_path
-    if new_path is not None:
-        sub.file_path = str(new_path)
-        sub.file_sha256 = stored.sha256
-        sub.original_filename = original_filename
-    for field in (
-        "ocr_text",
-        "score",
-        "max_score",
-        "confidence",
-        "feedback",
-        "details",
-        "assessment_suggestion",
-        "assessment_review",
-        "reviewed_by",
-        "reviewed_at",
-        "completed_at",
-        "error_message",
-        "graded_at",
-    ):
-        setattr(sub, field, None)
-    for code_file in sub.code_files:
-        code_file.execution_status = "pending"
-        code_file.execution_result = None
-        code_file.artifacts = None
-        code_file.visual_reviews = None
-    sub.grading_revision = 0
-    sub.status = SubmissionStatus.pending
-    # 与 finalize 一致:状态迁移在同一事务内 NOTIFY,SSE 订阅方立即感知,
-    # 不必等 30s 兜底轮询。
-    notify_submission_status(db, submission_id, SubmissionStatus.pending.value)
-    reset_submission_ocr_job(db, submission_id)
     try:
-        db.commit()
-        db.refresh(sub)
+        sub, old_path = await run_in_threadpool(
+            commit_submission_retry,
+            session_factory,
+            submission_id=submission_id,
+            question_id=preflight.question_id,
+            stored=stored,
+        )
     except Exception:
-        db.rollback()
         if stored is not None:
-            _discard_uncommitted_document(db, stored, upload_dir)
+            with session_factory() as cleanup_db:
+                _discard_uncommitted_document(cleanup_db, stored, upload_dir)
         raise
-    if new_path is not None and stored is not None and old_path != str(new_path):
-        try:
-            remove_document_if_unreferenced(
-                db, old_path, Path(settings.UPLOAD_DIR)
-            )
-        except (OSError, ValueError) as exc:
-            logger.warning("清理旧学生作业 PDF 失败 [%s]: %s", old_path, exc)
+    if stored is not None and old_path != str(stored.path):
+        with session_factory() as cleanup_db:
+            try:
+                remove_document_if_unreferenced(cleanup_db, old_path, upload_dir)
+            except (OSError, ValueError) as exc:
+                logger.warning("清理旧学生作业 PDF 失败 [%s]: %s", old_path, exc)
     shutil.rmtree(
         Path(settings.UPLOAD_DIR).resolve() / "code-artifacts" / str(submission_id),
         ignore_errors=True,
@@ -406,6 +321,81 @@ def count_submissions(db: Session = Depends(get_db)) -> dict[str, int]:
     return {"total": total}
 
 
+@router.get("/submissions/export.xlsx")
+def export_submission_results(
+    question_id: str = Query(..., min_length=1, description="题目 ID"),
+    pass_threshold: float = Query(
+        ..., gt=0, le=100, description="本次导出的及格得分率百分比"
+    ),
+    locale: Literal["zh-CN", "en-US"] = Query(
+        "zh-CN", description="工作簿标题语言"
+    ),
+    db: Session = Depends(get_db),
+):
+    """Export teacher-reviewed results for one question as an Excel workbook."""
+    question = db.get(Question, question_id)
+    if question is None:
+        raise HTTPException(status_code=404, detail="题目不存在")
+
+    reviewed_count = db.execute(
+        select(func.count())
+        .select_from(Submission)
+        .where(
+            Submission.question_id == question_id,
+            Submission.status == SubmissionStatus.reviewed,
+        )
+    ).scalar_one()
+    if reviewed_count == 0:
+        raise HTTPException(status_code=409, detail="该题目暂无已审阅成绩，无法导出")
+
+    rows = db.execute(
+        select(
+            Submission.id,
+            Submission.original_filename,
+            Submission.score,
+            Submission.max_score,
+            Submission.feedback,
+            Submission.details,
+            Submission.assessment_suggestion,
+            Submission.reviewed_by,
+            Submission.reviewed_at,
+            Submission.uploaded_at,
+        )
+        .where(
+            Submission.question_id == question_id,
+            Submission.status == SubmissionStatus.reviewed,
+        )
+        .order_by(func.lower(Submission.original_filename), Submission.id)
+        .execution_options(yield_per=500)
+    ).yield_per(500)
+
+    generated_at = datetime.now().astimezone()
+    temp_file = tempfile.NamedTemporaryFile(
+        prefix="ai-marking-grade-export-", suffix=".xlsx", delete=False
+    )
+    temp_path = Path(temp_file.name)
+    temp_file.close()
+    try:
+        build_results_workbook(
+            temp_path,
+            question_name=question.name,
+            rows=rows,
+            pass_threshold=pass_threshold,
+            locale=locale,
+            generated_at=generated_at,
+        )
+    except Exception:
+        delete_export_file(str(temp_path))
+        raise
+
+    return FileResponse(
+        temp_path,
+        media_type=XLSX_MEDIA_TYPE,
+        filename=safe_export_filename(question.id, generated_at),
+        background=BackgroundTask(delete_export_file, str(temp_path)),
+    )
+
+
 @router.delete(
     "/submissions",
     response_model=BatchDeleteResponse,
@@ -424,6 +414,19 @@ def batch_delete_submissions(
     - 文件删除失败不阻断流程(如文件已被清理),仅记录日志
     """
     unique_ids = list(dict.fromkeys(payload.ids))
+    snapshots = db.execute(
+        select(Submission.id, Submission.question_id).where(
+            Submission.id.in_(unique_ids)
+        )
+    ).all()
+    question_ids = sorted({row.question_id for row in snapshots})
+    if question_ids:
+        db.execute(
+            select(Question.id)
+            .where(Question.id.in_(question_ids))
+            .order_by(Question.id)
+            .with_for_update()
+        ).all()
     stmt = (
         select(Submission)
         .options(
@@ -431,6 +434,7 @@ def batch_delete_submissions(
             selectinload(Submission.code_input_files),
         )
         .where(Submission.id.in_(unique_ids))
+        .order_by(Submission.id)
         .with_for_update()
     )
     subs = db.execute(stmt).scalars().all()
@@ -553,10 +557,8 @@ async def submission_events(submission_id: int):
     )
 
 
-@router.api_route(
-    "/submissions/{submission_id}/pdf",
-    methods=["GET", "HEAD"],
-)
+@router.get("/submissions/{submission_id}/pdf")
+@router.head("/submissions/{submission_id}/pdf", include_in_schema=False)
 def get_submission_pdf(
     submission_id: int,
     type: str = Query("submission", description="PDF 类型: submission 或 question"),
@@ -608,7 +610,7 @@ def get_submission_pdf(
     "/submissions/{submission_id}/finalize",
     response_model=SubmissionDetail,
 )
-async def finalize_submission(
+def finalize_submission(
     submission_id: int,
     payload: FinalizeRequest,
     db: Session = Depends(get_db),
@@ -620,7 +622,7 @@ async def finalize_submission(
     - 写入 score/max_score/feedback/details/reviewed_by/reviewed_at
     - 状态置为 reviewed
     """
-    sub = db.get(Submission, submission_id, with_for_update=True)
+    sub = lock_submission_after_question(db, submission_id)
     if sub is None:
         raise HTTPException(status_code=404, detail="提交记录不存在")
     if sub.status == SubmissionStatus.reviewed:
@@ -639,7 +641,7 @@ async def finalize_submission(
     sub.reviewed_by = payload.reviewer_name
     sub.reviewed_at = now
     sub.completed_at = now
-    sub.status = SubmissionStatus.reviewed
+    transition_submission(sub, SubmissionStatus.reviewed)
     notify_submission_status(db, submission_id, SubmissionStatus.reviewed.value)
     db.commit()
     db.refresh(sub)

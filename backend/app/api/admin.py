@@ -5,19 +5,38 @@
 - ``POST /api/admin/dead-jobs/{id}/retry`` 重置 attempts 并重新入队
 - ``DELETE /api/admin/dead-jobs/{id}`` 永久删除死信记录
 
-MVP 内部工具,不做鉴权。前端管理页留待后续迭代,当前用 curl/SQL 验证。
+所有端点均受全局访问令牌中间件保护。前端管理页留待后续迭代。
 """
 
 from __future__ import annotations
 
+from datetime import datetime
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.application.lifecycle import (
+    transition_question,
+    transition_question_replacement,
+    transition_submission,
+)
 from app.core.time import utc_now_naive
 from app.db.session import get_db
-from app.models.background_job import BackgroundJob, BackgroundJobStatus
+from app.models.background_job import (
+    BackgroundJob,
+    BackgroundJobStatus,
+    BackgroundJobType,
+)
+from app.models.question import (
+    Question,
+    QuestionReplacementStatus,
+    QuestionStatus,
+)
+from app.models.submission import Submission, SubmissionStatus
+from app.services.events import notify_question_status, notify_submission_status
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -43,6 +62,61 @@ class DeadJobRetryResponse(BaseModel):
 
 class DeadJobDeleteResponse(BaseModel):
     deleted: int
+
+
+class QueueRuntimeOut(BaseModel):
+    status_counts: dict[str, int]
+    expired_leases: int
+    oldest_queued_at: datetime | None
+
+
+class RuntimeOut(BaseModel):
+    checked_at: datetime
+    queue: QueueRuntimeOut
+    question_status_counts: dict[str, int]
+    replacement_status_counts: dict[str, int]
+    submission_status_counts: dict[str, int]
+
+
+def _enum_counts(db: Session, column, enum_type) -> dict[str, int]:
+    rows = db.execute(select(column, func.count()).group_by(column)).all()
+    counts = {item.value: 0 for item in enum_type}
+    counts.update({status_.value: count for status_, count in rows if status_ is not None})
+    return counts
+
+
+@router.get("/runtime", response_model=RuntimeOut)
+def runtime_summary(db: Session = Depends(get_db)) -> RuntimeOut:
+    """Return bounded operational counts without filenames or student content."""
+    now = utc_now_naive()
+    queue_counts = _enum_counts(db, BackgroundJob.status, BackgroundJobStatus)
+    expired = db.scalar(
+        select(func.count(BackgroundJob.id)).where(
+            BackgroundJob.status == BackgroundJobStatus.running,
+            BackgroundJob.lease_expires_at.is_not(None),
+            BackgroundJob.lease_expires_at <= now,
+        )
+    ) or 0
+    oldest = db.scalar(
+        select(func.min(BackgroundJob.available_at)).where(
+            BackgroundJob.status == BackgroundJobStatus.queued
+        )
+    )
+    return RuntimeOut(
+        checked_at=now,
+        queue=QueueRuntimeOut(
+            status_counts=queue_counts,
+            expired_leases=expired,
+            oldest_queued_at=oldest,
+        ),
+        question_status_counts=_enum_counts(db, Question.status, QuestionStatus),
+        replacement_status_counts=_enum_counts(
+            db, Question.replacement_status, QuestionReplacementStatus
+        ),
+        submission_status_counts=_enum_counts(
+            db, Submission.status, SubmissionStatus
+        ),
+    )
 
 
 @router.get("/dead-jobs", response_model=list[DeadJobOut])
@@ -79,14 +153,82 @@ def list_dead_jobs(db: Session = Depends(get_db)) -> list[DeadJobOut]:
 def retry_dead_job(
     job_id: int, db: Session = Depends(get_db)
 ) -> DeadJobRetryResponse:
-    """重试死信任务:重置 attempts 与 status,立即重新入队。
+    """Atomically restore the target state and dead job using global lock order."""
+    snapshot = db.get(BackgroundJob, job_id)
+    if snapshot is None or snapshot.status != BackgroundJobStatus.dead:
+        raise HTTPException(status_code=404, detail="死信任务不存在")
 
-    注意:仅重置队列状态,不会自动恢复业务对象(Submission/Question)的状态。
-    若死信已导致业务对象标记为 ``failed``,需走对应的业务重试接口。
-    """
+    submission_snapshot = (
+        db.get(Submission, snapshot.submission_id)
+        if snapshot.submission_id is not None
+        else None
+    )
+    question_id = snapshot.question_id or (
+        submission_snapshot.question_id if submission_snapshot is not None else None
+    )
+    question = (
+        db.get(Question, question_id, with_for_update=True) if question_id else None
+    )
+    submission = (
+        db.get(Submission, snapshot.submission_id, with_for_update=True)
+        if snapshot.submission_id is not None
+        else None
+    )
     job = db.get(BackgroundJob, job_id, with_for_update=True)
     if job is None or job.status != BackgroundJobStatus.dead:
-        raise HTTPException(status_code=404, detail="死信任务不存在")
+        raise HTTPException(status_code=409, detail="死信任务状态已变化")
+
+    if job.job_type == BackgroundJobType.question_ocr:
+        if question is None:
+            raise HTTPException(status_code=409, detail="关联题目不存在")
+        if not Path(question.file_path).is_file():
+            raise HTTPException(
+                status_code=409, detail="题目源文件缺失，请删除题目后重新上传"
+            )
+        if question.status != QuestionStatus.failed:
+            raise HTTPException(status_code=409, detail="题目当前状态不可恢复")
+        transition_question(question, QuestionStatus.pending)
+        question.error_message = None
+        notify_question_status(db, question.id, question.status.value, None)
+    elif job.job_type == BackgroundJobType.question_replace:
+        if question is None:
+            raise HTTPException(status_code=409, detail="关联题目不存在")
+        staged = question.replacement_file_path
+        if not staged or not Path(staged).is_file():
+            raise HTTPException(
+                status_code=409,
+                detail="题目替换暂存文件缺失，请从题目替换入口重新上传",
+            )
+        if question.replacement_status != QuestionReplacementStatus.failed:
+            raise HTTPException(status_code=409, detail="题目替换当前状态不可恢复")
+        transition_question_replacement(question, QuestionReplacementStatus.pending)
+        question.replacement_error_message = None
+        notify_question_status(
+            db,
+            question.id,
+            question.status.value,
+            question.replacement_status.value,
+        )
+    elif job.job_type == BackgroundJobType.submission_ocr:
+        if submission is None or question is None:
+            raise HTTPException(status_code=409, detail="关联作业或题目不存在")
+        if not Path(submission.file_path).is_file():
+            raise HTTPException(
+                status_code=409, detail="作业源文件缺失，请从作业重试入口重新上传"
+            )
+        if submission.status != SubmissionStatus.failed:
+            raise HTTPException(status_code=409, detail="作业当前状态不可恢复")
+        if (
+            question.status != QuestionStatus.ready
+            or question.replacement_status is not None
+        ):
+            raise HTTPException(status_code=409, detail="关联题目当前不可用于批改")
+        transition_submission(submission, SubmissionStatus.pending)
+        submission.error_message = None
+        notify_submission_status(db, submission.id, submission.status.value)
+    else:
+        raise HTTPException(status_code=409, detail="不支持的任务类型")
+
     job.status = BackgroundJobStatus.queued
     job.attempts = 0
     job.available_at = utc_now_naive()

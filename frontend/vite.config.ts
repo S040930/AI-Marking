@@ -9,7 +9,8 @@ const apiProxy = {
   '/api': {
     // 后端仅监听 IPv4；使用 127.0.0.1 避免部分系统将 localhost 优先
     // 解析为 ::1，导致浏览器虽能加载 Vite 页面但所有 API 请求被拒绝。
-    target: 'http://127.0.0.1:8000',
+    // 测试时可通过环境变量改用备用端口，默认生产接口保持 8000。
+    target: process.env.AI_MARKING_API_PROXY_TARGET ?? 'http://127.0.0.1:8000',
     changeOrigin: true,
   },
 }

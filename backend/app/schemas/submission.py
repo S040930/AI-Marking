@@ -4,11 +4,91 @@
 """
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models.submission import SubmissionGradingMode, SubmissionStatus
 from app.schemas.scoring import ScoreDetail
+
+
+class McpVisualConfirmationOut(BaseModel):
+    verdict: Literal["consistent", "mismatch"]
+    note: str | None = None
+    confirmed_at: str | None = None
+
+
+class McpQualityChecksOut(BaseModel):
+    arithmetic_valid: bool
+    evidence_valid: bool
+    code_evidence_valid: bool
+    client_self_check: dict[str, object]
+    second_pass_valid: bool
+    visual_confirmation_valid: bool
+
+
+class McpMetadataOut(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    source: Literal["mcp"] = "mcp"
+    client: str | None = None
+    rubric_source: Literal["configured", "question_extracted", "built_in_default"]
+    rubric_snapshot_id: str
+    rubric_snapshot: str | None = None
+    context_hash: str
+    grading_revision: int
+    request_id: str
+    payload_hash: str
+    quality_checks: McpQualityChecksOut
+    generated_at: str
+    review_required: bool
+    visual_confirmation: McpVisualConfirmationOut | None = None
+
+
+class AssessmentSuggestionOut(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    score: float
+    max_score: float
+    feedback: str
+    details: list[ScoreDetail]
+    confidence: float
+    outcome: str | None = None
+    review_reason: str | None = None
+    mcp_metadata: McpMetadataOut | None = None
+
+
+class ScoreDetailOut(BaseModel):
+    """Typed output compatible with legacy rows that predate max_score."""
+
+    model_config = ConfigDict(extra="allow")
+
+    criterion: str
+    rubric_item_id: str | None = None
+    score: float
+    max_score: float | None = None
+    comment: str
+    evidence: list[str] = Field(default_factory=list)
+    evidence_refs: list[dict] = Field(default_factory=list)
+
+
+class AssessmentReviewItemOut(BaseModel):
+    rubric_item_id: str
+    criterion: str
+    max_score: float
+    verdict: Literal["agree", "disagree"]
+    comment: str
+    suggested_score: float | None = None
+
+
+class AssessmentReviewOut(BaseModel):
+    verdict: Literal["agree", "partial", "disagree"]
+    summary: str
+    confidence: float
+    items: list[AssessmentReviewItemOut]
+    reviewed_revision: int
+    client: str | None = None
+    created_at: str
 
 
 class SubmissionOut(BaseModel):
@@ -62,9 +142,9 @@ class SubmissionDetail(SubmissionOut):
     ocr_text: str | None = None
     question_ocr_text: str | None = None
     feedback: str | None = None
-    assessment_suggestion: dict | None = None
-    assessment_review: dict | None = None
-    details: list[dict] | None = None
+    assessment_suggestion: AssessmentSuggestionOut | None = None
+    assessment_review: AssessmentReviewOut | None = None
+    details: list[ScoreDetailOut] | None = None
     reviewed_by: str | None = None
     reviewed_at: datetime | None = None
     error_message: str | None = None

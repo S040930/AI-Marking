@@ -3,7 +3,7 @@
 设计要点:
 - ``notify_*`` 在业务事务内 ``EXECUTE NOTIFY``,事务提交后监听方才收到,
   与状态写入保持原子语义。非 PG 后端(SQLite 测试环境)为 no-op。
-- ``submission_event_stream`` / ``question_event_stream`` 是 async generator,
+- ``submission_event_stream`` / ``question_collection_event_stream`` 是 async generator,
   供 ``StreamingResponse`` 直接消费;每条 ``yield`` 输出符合 SSE 规范的事件块。
 - LISTEN 使用独立 psycopg2 连接(非 SQLAlchemy 池),AUTOCOMMIT 隔离级别,
   避免 LISTEN 长连接占用业务连接池的 ``pool_size=5`` 配额。
@@ -20,11 +20,11 @@ import time
 from collections.abc import AsyncIterator
 
 import psycopg2
-from fastapi import HTTPException
 from psycopg2 import extensions as pg_ext
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.application.errors import ServiceUnavailableError
 from app.core.config import settings
 from app.db.session import SessionLocal
 
@@ -58,9 +58,7 @@ async def acquire_sse_slot() -> None:
     之间不存在可被其他协程插入的挂起点，整段保持原子。
     """
     if _sse_slots.locked():
-        raise HTTPException(
-            status_code=503, detail="实时事件连接数已达上限，请稍后重试"
-        )
+        raise ServiceUnavailableError("实时事件连接数已达上限，请稍后重试")
     await _sse_slots.acquire()
 
 
@@ -113,12 +111,22 @@ def notify_submission_status(
 
 
 def notify_question_status(
-    db: Session, question_id: str, status: str
+    db: Session,
+    question_id: str,
+    status: str,
+    replacement_status: str | None = None,
 ) -> None:
     """在当前事务内发送 question 状态变更 NOTIFY。"""
     if not _is_postgres(db):
         return
-    payload = json.dumps({"question_id": question_id, "status": status})
+    payload = json.dumps(
+        {
+            "type": "question.changed",
+            "question_id": question_id,
+            "status": status,
+            "replacement_status": replacement_status,
+        }
+    )
     db.execute(
         text(_notify_sql(CHANNEL_QUESTION)),
         {"payload": payload},
@@ -175,8 +183,8 @@ def _drain_notifies(
 
 async def _event_loop(
     conn: "psycopg2.extensions.connection",
-    match_key: str,
-    match_value: int | str,
+    match_key: str | None,
+    match_value: int | str | None,
     initial_payload: str | None,
 ) -> AsyncIterator[str]:
     """通用 SSE 事件循环:先推初始状态,再持续 poll NOTIFY 并过滤匹配 ID。
@@ -194,7 +202,7 @@ async def _event_loop(
                 data = json.loads(payload)
             except json.JSONDecodeError:
                 continue
-            if data.get(match_key) == match_value:
+            if match_key is None or data.get(match_key) == match_value:
                 yield _sse_format(payload)
         now = time.monotonic()
         if now - last_keepalive >= _KEEPALIVE_INTERVAL_SECONDS:
@@ -236,30 +244,16 @@ async def submission_event_stream(submission_id: int) -> AsyncIterator[str]:
         _sse_slots.release()
 
 
-async def question_event_stream(question_id: str) -> AsyncIterator[str]:
-    """SSE 流:推送指定 question 的状态变更事件。"""
-    from app.models.question import Question  # 延迟导入避免循环依赖
-
+async def question_collection_event_stream() -> AsyncIterator[str]:
+    """SSE 流:推送所有题目状态变化，供题目列表共享一条连接。"""
     conn: "psycopg2.extensions.connection | None" = None
     try:
-        initial_payload: str | None = None
-        with SessionLocal() as db:
-            question = db.get(Question, question_id)
-            if question is not None:
-                initial_payload = json.dumps(
-                    {
-                        "question_id": question_id,
-                        "status": question.status.value,
-                    }
-                )
         conn = await asyncio.to_thread(
             _listen,
             _parse_pg_dsn(settings.DATABASE_URL),
             CHANNEL_QUESTION,
         )
-        async for chunk in _event_loop(
-            conn, "question_id", question_id, initial_payload
-        ):
+        async for chunk in _event_loop(conn, None, None, None):
             yield chunk
     finally:
         if conn is not None:

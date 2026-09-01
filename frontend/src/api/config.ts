@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from './client';
+import { queryKeys } from './queryKeys';
 
 // 配置项类型
 export interface ConfigOut {
@@ -28,7 +29,7 @@ export interface ConfigProfile {
 // hooks
 export function useConfig(profileId?: number) {
   return useQuery<ConfigOut>({
-    queryKey: ['config', profileId ?? 'default'],
+    queryKey: queryKeys.config.profile(profileId),
     queryFn: () =>
       apiClient
         .get<ConfigOut>('/config', {
@@ -50,7 +51,7 @@ export function useUpdateConfig(profileId?: number) {
     onSuccess: (data) => {
       // 直接写入缓存并 invalidate,确保 UI 立即同步
       queryClient.setQueryData(['config', profileId ?? 'default'], data);
-      queryClient.invalidateQueries({ queryKey: ['config'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.config.all });
     },
   });
 }
@@ -58,7 +59,7 @@ export function useUpdateConfig(profileId?: number) {
 // 配置项目 CRUD hooks
 export function useConfigProfiles() {
   return useQuery<ConfigProfile[]>({
-    queryKey: ['config-profiles'],
+    queryKey: queryKeys.config.profiles,
     queryFn: () =>
       apiClient
         .get<ConfigProfile[]>('/config/profiles')
@@ -78,7 +79,7 @@ export function useCreateConfigProfile() {
         .post<ConfigProfile>('/config/profiles', payload)
         .then((r) => r.data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['config-profiles'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.config.profiles });
     },
   });
 }
@@ -91,7 +92,7 @@ export function useRenameConfigProfile() {
         .patch<ConfigProfile>(`/config/profiles/${id}`, { name })
         .then((r) => r.data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['config-profiles'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.config.profiles });
     },
   });
 }
@@ -104,7 +105,7 @@ export function useSetDefaultConfigProfile() {
         .post<ConfigProfile>(`/config/profiles/${id}/default`)
         .then((r) => r.data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['config-profiles'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.config.profiles });
     },
   });
 }
@@ -115,7 +116,7 @@ export function useDeleteConfigProfile() {
     mutationFn: (id) =>
       apiClient.delete(`/config/profiles/${id}`).then(() => undefined),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['config-profiles'] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.config.profiles });
     },
   });
 }

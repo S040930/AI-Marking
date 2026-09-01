@@ -4,7 +4,6 @@
 评分建议由 MCP 客户端写入,教师最终确认写入最终成绩。
 """
 
-import enum
 from datetime import datetime
 
 from sqlalchemy import (
@@ -23,31 +22,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.time import utc_now_naive
 from app.db.base import Base
-
-
-class SubmissionStatus(str, enum.Enum):
-    """作业批改流程状态。
-
-    继承 ``str`` 便于 Pydantic 序列化与 JSON 输出。
-
-    流程:pending → ocr_processing → ocr_done → awaiting_mcp
-    → ready_for_review → reviewed
-    任何阶段失败:status=failed。
-    """
-
-    pending = "pending"
-    ocr_processing = "ocr_processing"
-    ocr_done = "ocr_done"
-    awaiting_mcp = "awaiting_mcp"
-    ready_for_review = "ready_for_review"
-    reviewed = "reviewed"
-    failed = "failed"
-
-
-class SubmissionGradingMode(str, enum.Enum):
-    """评分来源。收敛为 MCP-only 后固定为 external_agent。"""
-
-    external_agent = "external_agent"
+from app.domain.lifecycle import SubmissionGradingMode, SubmissionStatus
 
 
 class Submission(Base):

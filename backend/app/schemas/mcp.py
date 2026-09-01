@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models.submission import SubmissionGradingMode, SubmissionStatus
 from app.schemas.scoring import ScoreDetail
+from app.schemas.submission import AssessmentSuggestionOut, McpQualityChecksOut
 
 
 class McpSelfCheck(BaseModel):
@@ -22,7 +23,7 @@ class McpAssessmentResponse(BaseModel):
     status: SubmissionStatus
     grading_revision: int
     grading_mode: SubmissionGradingMode
-    quality_checks: dict
+    quality_checks: McpQualityChecksOut
     idempotent: bool = False
 
 
@@ -68,7 +69,7 @@ class McpPackageResponse(BaseModel):
     status: SubmissionStatus
     review_url: str | None = None
     error_message: str | None = None
-    assessment: dict | None = None
+    assessment: AssessmentSuggestionOut | None = None
     content: str | None = None
     context_complete: bool = False
     continuation_token: str | None = None

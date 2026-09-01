@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# 生产环境启动脚本:多 worker + 无 reload + 前端生产构建预览。
+# 本机优化启动脚本:单 API 进程 + 单任务 worker + 前端生产构建预览。
 # 使用方式:bash start.prod.sh
-# 可通过 WORKERS 环境变量覆盖默认 worker 数(默认 nproc)。
+# 为保证进程内资源与配置语义一致，WORKERS 只允许为 1。
 
 set -Eeuo pipefail
 
@@ -17,6 +17,7 @@ BACKEND_PID=""
 WORKER_PID=""
 FRONTEND_PID=""
 STOPPED=0
+WORKERS="${WORKERS:-1}"
 
 info() {
   printf '\033[1;34m%s\033[0m\n' "$1"
@@ -25,6 +26,11 @@ info() {
 error() {
   printf '\033[1;31m%s\033[0m\n' "$1" >&2
 }
+
+if [ "$WORKERS" != "1" ]; then
+  error "本机优化模式仅允许 WORKERS=1；请使用默认值或显式设置为 1。"
+  exit 1
+fi
 
 backend_port_is_open() {
   "$PYTHON_BIN" - <<'PY'
@@ -149,18 +155,6 @@ info "正在构建前端生产包..."
   npm run build
 )
 
-# 默认 worker 数 = CPU 核数,可通过 WORKERS 环境变量覆盖
-# 跨平台检测:优先 nproc(Linux),其次 sysctl -n hw.ncpu(macOS),再次 getconf
-detect_workers() {
-  if command -v nproc >/dev/null 2>&1; then
-    nproc
-  elif command -v sysctl >/dev/null 2>&1; then
-    sysctl -n hw.ncpu
-  else
-    getconf NPROCESSORS_ONLN 2>/dev/null || echo 1
-  fi
-}
-WORKERS="${WORKERS:-$(detect_workers)}"
 info "WORKERS=$WORKERS"
 
 info "正在启动后端(生产模式,$WORKERS workers):http://localhost:8000"
@@ -171,7 +165,7 @@ info "正在启动后端(生产模式,$WORKERS workers):http://localhost:8000"
 BACKEND_PID=$!
 wait_for_backend
 
-info "正在启动持久化任务 worker(并发 ${TASK_CONCURRENCY:-4})"
+info "正在启动持久化任务 worker(并发 ${TASK_CONCURRENCY:-2})"
 (
   cd "$BACKEND_DIR"
   exec "$PYTHON_BIN" -m app.worker

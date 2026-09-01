@@ -4,8 +4,8 @@ from types import SimpleNamespace
 from uuid import UUID
 
 import pytest
-from fastapi import HTTPException
 
+from app.application.errors import ValidationError
 from app.schemas.mcp import McpAssessmentRequest
 from app.services.mcp_workflow import validate_code_evidence
 
@@ -40,10 +40,9 @@ def test_empty_report_quote_is_rejected():
         ],
     )
 
-    with pytest.raises(HTTPException) as caught:
+    with pytest.raises(ValidationError) as caught:
         validate_code_evidence(submission, _assessment_with_report_quote(""))
 
-    assert caught.value.status_code == 422
     assert "报告证据无法定位" in str(caught.value.detail)
 
 

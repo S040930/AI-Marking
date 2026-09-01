@@ -31,14 +31,14 @@ class Settings(BaseSettings):
     # 文件上传目录
     UPLOAD_DIR: str = "./uploads"
 
-    # uploads/ 清理策略:批改完成后 PDF 文本已入库,文件仅在复评场景需要
-    # (当前无复评功能)。retention 天数后自动删除,保留 DB 记录。
+    # uploads/ 清理策略:retention 仅是无数据库引用孤儿文件的宽限期。
+    # 题目、替换暂存、作业或代码记录仍引用的文件永不被定期清理。
     UPLOAD_RETENTION_DAYS: int = 7
     # 清理任务扫描间隔(秒)。默认 1 小时。
     CLEANUP_INTERVAL_SECONDS: int = 3600
 
     # PostgreSQL 持久化任务 worker
-    TASK_CONCURRENCY: int = 4
+    TASK_CONCURRENCY: int = 2
     TASK_LEASE_SECONDS: int = 90
     TASK_MAX_ATTEMPTS: int = 3
     TASK_POLL_INTERVAL_SECONDS: float = 1.0

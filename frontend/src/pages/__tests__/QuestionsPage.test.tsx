@@ -5,6 +5,14 @@ import { MemoryRouter } from 'react-router-dom';
 const mocks = vi.hoisted(() => ({
   retry: vi.fn(),
   remove: vi.fn(),
+  exportResults: vi.fn(),
+}));
+
+vi.mock('@/api/submissions', () => ({
+  useExportQuestionResults: () => ({
+    mutate: mocks.exportResults,
+    isPending: false,
+  }),
 }));
 
 vi.mock('@/api/questions', () => ({
@@ -93,5 +101,37 @@ describe('QuestionsPage', () => {
       target: { value: '期末作文' },
     });
     expect(action).toBeEnabled();
+  });
+
+  it('按题目输入及格线并触发 Excel 导出', () => {
+    renderPage();
+    fireEvent.click(screen.getByRole('button', { name: '导出分析' }));
+    const threshold = screen.getByLabelText('本次及格线（得分率 %）');
+    expect(threshold).toHaveValue(60);
+    fireEvent.change(threshold, { target: { value: '72.5' } });
+    fireEvent.click(screen.getByRole('button', { name: '生成并下载 Excel' }));
+
+    expect(mocks.exportResults).toHaveBeenCalledWith(
+      {
+        questionId: 'DTS208TC_CW1_Paper',
+        passThreshold: 72.5,
+        locale: 'zh-CN',
+      },
+      expect.objectContaining({
+        onSuccess: expect.any(Function),
+        onError: expect.any(Function),
+      }),
+    );
+  });
+
+  it('拒绝超出范围的及格线', () => {
+    renderPage();
+    fireEvent.click(screen.getByRole('button', { name: '导出分析' }));
+    fireEvent.change(screen.getByLabelText('本次及格线（得分率 %）'), {
+      target: { value: '101' },
+    });
+
+    expect(screen.getByText('请输入大于 0 且不超过 100 的数值')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '生成并下载 Excel' })).toBeDisabled();
   });
 });

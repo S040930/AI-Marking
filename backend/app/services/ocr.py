@@ -27,7 +27,6 @@ import aiofiles
 import httpx
 
 from app.services.errors import BusinessError
-from app.services.metrics import ocr_calls
 
 # PaddleOCR-VL layout-parsing 接口超时(秒)
 # 大 PDF + 复杂版面可能耗时较长,这里给到 120s
@@ -187,7 +186,6 @@ async def _request_with_retry(
 ) -> httpx.Response:
     """Run one OCR HTTP operation with the shared retry classification."""
     if await _check_circuit_open():
-        ocr_calls.labels(result="circuit_open").inc()
         raise OCRError("PaddleOCR-VL 熔断中(连续失败过多),请稍后再试")
 
     last_exc: httpx.HTTPError | None = None
@@ -196,18 +194,15 @@ async def _request_with_retry(
             response = await request()
             response.raise_for_status()
             await _record_success()
-            ocr_calls.labels(result="success").inc()
             return response
         except httpx.HTTPError as exc:
             if not _is_retryable(exc):
-                ocr_calls.labels(result="failure").inc()
                 raise BusinessError(f"PaddleOCR-VL {operation}失败: {exc}") from exc
             last_exc = exc
             if attempt + 1 < _MAX_ATTEMPTS:
                 await asyncio.sleep(_BACKOFF_BASE_SECONDS * (2**attempt))
 
     await _record_failure()
-    ocr_calls.labels(result="failure").inc()
     status_code = _http_status_for_retry(last_exc) if last_exc else None
     detail = f"HTTP {status_code}" if status_code else type(last_exc).__name__
     raise OCRError(
@@ -222,7 +217,6 @@ async def _ocr_with_retry(
     """调用 PaddleOCR-VL,带指数退避的重试与熔断。"""
     # 熔断打开时直接 raise,避免无谓重试占用信号量
     if await _check_circuit_open():
-        ocr_calls.labels(result="circuit_open").inc()
         raise OCRError(
             "PaddleOCR-VL 熔断中(连续失败过多),请稍后再试"
         )
@@ -234,14 +228,12 @@ async def _ocr_with_retry(
             resp.raise_for_status()
             data = resp.json()
             await _record_success()
-            ocr_calls.labels(result="success").inc()
             return data
         except httpx.HTTPError as exc:
             last_exc = exc
             if not _is_retryable(exc):
                 # 不可重试错误(如 4xx 配置错误):业务失败,不记入熔断计数,
                 # 直接抛出 BusinessError 由 worker 标记终态且不重试。
-                ocr_calls.labels(result="failure").inc()
                 raise BusinessError(f"PaddleOCR-VL 调用失败: {exc}") from exc
             if attempt + 1 >= _MAX_ATTEMPTS:
                 break
@@ -250,12 +242,10 @@ async def _ocr_with_retry(
         except (ValueError, json.JSONDecodeError) as exc:
             # HTTP 200 但响应体不是合法 JSON(如代理返回 HTML 错误页):属于
             # 确定性的响应格式问题,与异步路径分类一致归为业务失败,不重试。
-            ocr_calls.labels(result="failure").inc()
             raise BusinessError(f"PaddleOCR-VL 返回内容无法解析: {exc}") from exc
 
     # 重试耗尽:记一次熔断失败(整个 _ocr_with_retry 算一次失败)
     await _record_failure()
-    ocr_calls.labels(result="failure").inc()
     status_code = _http_status_for_retry(last_exc) if last_exc else None
     detail = f"HTTP {status_code}" if status_code else type(last_exc).__name__
     raise OCRError(

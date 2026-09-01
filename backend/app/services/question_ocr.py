@@ -2,6 +2,7 @@
 
 import logging
 
+from app.application.lifecycle import transition_question
 from app.core.time import utc_now_naive
 from app.db.session import SessionLocal
 from app.models.question import Question, QuestionStatus
@@ -19,9 +20,11 @@ async def run_question_ocr(question_id: str) -> None:
         question = db.get(Question, question_id)
         if question is None:
             return
-        question.status = QuestionStatus.ocr_processing
+        transition_question(question, QuestionStatus.ocr_processing)
         question.error_message = None
-        notify_question_status(db, question_id, QuestionStatus.ocr_processing.value)
+        notify_question_status(
+            db, question_id, QuestionStatus.ocr_processing.value, None
+        )
         db.commit()
 
     with SessionLocal() as db:
@@ -38,10 +41,10 @@ async def run_question_ocr(question_id: str) -> None:
         with SessionLocal() as db:
             question = db.get(Question, question_id, with_for_update=True)
             if question is not None:
-                question.status = QuestionStatus.failed
+                transition_question(question, QuestionStatus.failed)
                 question.error_message = message[:1024]
                 question.updated_at = utc_now_naive()
-                notify_question_status(db, question_id, QuestionStatus.failed.value)
+                notify_question_status(db, question_id, QuestionStatus.failed.value, None)
                 db.commit()
         raise BusinessError(message) from exc
     except OCRError as exc:
@@ -54,8 +57,8 @@ async def run_question_ocr(question_id: str) -> None:
         question = db.get(Question, question_id, with_for_update=True)
         if question is not None:
             question.ocr_text = text
-            question.status = QuestionStatus.ready
+            transition_question(question, QuestionStatus.ready)
             question.error_message = None
             question.updated_at = utc_now_naive()
-            notify_question_status(db, question_id, QuestionStatus.ready.value)
+            notify_question_status(db, question_id, QuestionStatus.ready.value, None)
             db.commit()

@@ -1,6 +1,5 @@
 """可复用作业题目 ORM 模型。"""
 
-import enum
 from datetime import datetime
 
 from sqlalchemy import (
@@ -18,19 +17,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.time import utc_now_naive
 from app.db.base import Base
-
-
-class QuestionStatus(str, enum.Enum):
-    pending = "pending"
-    ocr_processing = "ocr_processing"
-    ready = "ready"
-    failed = "failed"
-
-
-class QuestionReplacementStatus(str, enum.Enum):
-    pending = "pending"
-    processing = "processing"
-    failed = "failed"
+from app.domain.lifecycle import QuestionReplacementStatus, QuestionStatus
 
 
 class Question(Base):

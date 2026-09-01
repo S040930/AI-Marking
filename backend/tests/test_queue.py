@@ -274,8 +274,8 @@ async def test_dead_question_replace_keeps_old_question_usable(
     assert question.status == QuestionStatus.ready
     assert question.ocr_text == "旧题目内容"
     assert question.replacement_status == QuestionReplacementStatus.failed
-    assert question.replacement_file_path is None
-    assert not staged.exists()
+    assert question.replacement_file_path == str(staged)
+    assert staged.exists()
 
 
 async def test_dead_question_replace_does_not_clobber_completed_switch(

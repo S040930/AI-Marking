@@ -20,6 +20,7 @@ import {
   type QuestionDanger,
 } from '@/components/questions/QuestionDangerDialog';
 import { QuestionPromptDialog } from '@/components/questions/QuestionPromptDialog';
+import { ResultExportDialog } from '@/components/questions/ResultExportDialog';
 import { errorMessage } from '@/lib/questionErrors';
 import { useLanguage } from '@/i18n';
 
@@ -30,6 +31,7 @@ export default function QuestionsPage() {
   const { t } = useLanguage();
   const [acknowledgedDeletion, setAcknowledgedDeletion] = useState(false);
   const [promptQuestion, setPromptQuestion] = useState<Question | null>(null);
+  const [exportQuestion, setExportQuestion] = useState<Question | null>(null);
   const switchProfileMutation = useChangeQuestionConfigProfile();
   const { data: profiles } = useConfigProfiles();
   const renameMutation = useRenameQuestion();
@@ -159,6 +161,7 @@ export default function QuestionsPage() {
               onReplace={(q, file) => setDanger({ type: 'replace', question: q, file })}
               onDelete={(q) => setDanger({ type: 'delete', question: q })}
               onCopyPrompt={setPromptQuestion}
+              onExportResults={setExportQuestion}
             />
           ))}
         </div>
@@ -189,6 +192,14 @@ export default function QuestionsPage() {
           if (!open) setPromptQuestion(null);
         }}
       />
+      {exportQuestion && (
+        <ResultExportDialog
+          question={exportQuestion}
+          onOpenChange={(open) => {
+            if (!open) setExportQuestion(null);
+          }}
+        />
+      )}
     </div>
   );
 }

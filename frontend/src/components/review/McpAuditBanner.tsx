@@ -1,12 +1,7 @@
 import { Badge } from '@/components/ui/badge';
 import type { SubmissionDetail } from '@/api/submissions';
 import { useLanguage } from '@/i18n';
-
-export const CLIENT_LABELS: Record<string, string> = {
-  codex: 'Codex',
-  'claude-code': 'Claude Code',
-  opencode: 'Opencode',
-};
+import { CLIENT_LABELS } from '@/lib/mcpClients';
 
 export function McpAuditBanner({ data }: { data: SubmissionDetail }) {
   const { t } = useLanguage();

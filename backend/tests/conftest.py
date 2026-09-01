@@ -11,16 +11,13 @@ from app.db.base import Base
 from app.db.session import get_db, get_session_factory
 from app.main import create_app
 from app.models.config_profile import ConfigProfile
-from app.services.config import invalidate_config_cache
 from app.services.ocr import reset_circuit_breaker
 
 
 @pytest.fixture(autouse=True)
-def _clear_config_cache():
-    invalidate_config_cache()
+def _reset_process_state():
     reset_circuit_breaker()
     yield
-    invalidate_config_cache()
     reset_circuit_breaker()
 
 

@@ -34,12 +34,12 @@ AI-Marking/
       ├─ React Router：页面路由
       ├─ TanStack Query：服务端状态、缓存与轮询
       ├─ Axios：/api 请求
-  └─ EventSource：/api/submissions/{id}/events SSE 实时推送
+  └─ EventSource：题目集合与单作业 SSE 实时推送，30 秒兜底轮询
            ↓
-FastAPI API workers
+FastAPI API（本机固定单进程）
   ├─ API：questions / submissions / config / admin / health / mcp
-  ├─ SQLAlchemy 同步 Session（路由 def，含 await 的路由 async def）
-  ├─ Prometheus 指标：/metrics
+  ├─ 应用用例层统一事务、锁顺序与状态迁移
+  ├─ reviewed 最终成绩 → 按题目流式生成 Excel 分析快照
   └─ 本地 uploads 文件存储（仅 loopback 部署）
            ↓
 PostgreSQL 持久化队列
@@ -50,10 +50,10 @@ PostgreSQL 持久化队列
            ↑
 独立任务 worker
   ├─ 租约、心跳、崩溃恢复与限次重试
-  ├─ 并发上限（默认 4）
+  ├─ 并发上限（默认 2）
   ├─ 首次题目 OCR / 题目新版 OCR / 作业 OCR
   ├─ uploads/ 定期清理
-  └─ Prometheus 业务指标埋点（队列深度、任务时长、重试/死信计数、OCR 调用）
+  └─ 结构化任务日志、运行摘要与死信恢复
            ↑
 本机编程助手 MCP（STDIO，任意兼容客户端）
   ├─ run-ai-marking-mcp → FastAPI /api/mcp（loopback），按可选 client 记录评分来源
@@ -69,17 +69,17 @@ PostgreSQL 持久化队列
 - **批改域**：编程助手提交学生作业、失败原记录重试、作业 OCR、等待 MCP 评分、人工复核和状态流转。
 - **审核域**：教师人工核对评分建议、表单式改分、确认最终结果。
 - **配置域**：OCR、rubric 与 MCP 自检开关配置。
-- **运维域**：Prometheus 指标、死信任务管理（`/api/admin/dead-jobs`）。
-- **文件生命周期**：题目和学生 PDF 永久保留并按内容哈希共享；只有记录删除且无其他引用时才清理实体文件。PDF 预览接口同时支持 `GET` 与 `HEAD`，供浏览器预检后再加载。
+- **运维域**：运行摘要（`/api/admin/runtime`）与死信任务管理（`/api/admin/dead-jobs`），均受访问令牌保护。
+- **文件生命周期**：题目和学生 PDF 按内容哈希共享；定期清理仅删除超过宽限期且无数据库引用的孤儿文件。PDF 预览接口同时支持 `GET` 与 `HEAD`。
 
 ### 运行模型
 
 - API worker 只在事务内创建业务记录与 `background_jobs` 队列记录。
 - 单独的 `python -m app.worker` 进程原子领取任务，并以租约和心跳恢复崩溃任务。
-- 任务 worker 内部限制 OCR 并发，默认上限为 4。
+- 任务 worker 内部限制 OCR 并发，默认上限为 2；空闲轮询从 1 秒退避至 5 秒。
 - OCR 请求内部仅重试短暂网络错误；最终失败后保留原因，由编程助手重新提交作业。
 - 前端通过 SSE 实时推送感知后台任务进度，30s 兜底轮询仅在 SSE 断开时触发；`awaiting_mcp` 保持低频状态刷新直到编程助手保存建议。
-- 多个 API worker 不会放大后台执行并发；当前部署仍要求所有进程共享 PostgreSQL 与本地上传目录。
+- 本机优化部署固定一个 API 进程和一个任务 worker，`WORKERS>1` 拒绝启动。
 
 ## 架构升级 (P0-P5)
 
@@ -91,7 +91,7 @@ PostgreSQL 持久化队列
 | P1 | 前端 2s 轮询 | 基于 PG LISTEN/NOTIFY 的 SSE 推送（`/submissions/{id}/events`），轮询降级为 30s 兜底 |
 | P2 | LLM 客户端缓存无失效 | 后端不再持有 LLM 客户端，配置项移除 LLM 相关字段 |
 | P3 | 文件存储本地耦合 | 本地部署直接使用 uploads 目录，移除远端 StorageBackend 抽象 |
-| P4 | 可观测性缺失 | Prometheus 指标（`/metrics`）+ 死信管理 API（`/api/admin/dead-jobs` 列出/重试/删除） |
+| P4 | 可观测性缺失 | 结构化日志 + 运行摘要 + 死信管理 API |
 | P5 | cleanup 全表加载 / 截断引用 | 按 250 个过期文件候选分批反查 DB 引用，内存有界且不遗漏大表后续记录 |
 
 ## 后台任务失败语义
@@ -105,8 +105,9 @@ OCR 在内部对超时 / 限流 / 5xx 进行最多 3 次短暂重试；网络重
 
 ## 运行时与资源边界
 
-- **OCR**：单次 HTTP 尝试超时 120s，可重试错误最多 3 次并指数退避；异步任务最长等待 10 分钟。PDF 单文件上限 50MB，worker 默认并发 4，应为 OCR 请求体、base64 转换与 HTTP 缓冲预留低于 1GB 内存。
+- **OCR**：单次 HTTP 尝试超时 120s，可重试错误最多 3 次并指数退避；异步任务最长等待 10 分钟。PDF 单文件上限 50MB，单任务预计峰值 200–250MB，worker 默认并发 2，目标峰值低于 1GB。
 - **uploads 清理**：时间为 O(F)（F 为上传目录文件数），只保留 250 个候选路径的内存批次；每批执行 4 次受路径集合约束的引用查询，不全表加载。磁盘额外占用为 O(1)，超过 5 分钟时应通过日志分析文件数和查询耗时。
+- **Excel 成绩导出**：按题目以 500 行游标批次读取已审阅记录，时间为 O(N + D)（N 为作业数、D 为评分项明细数）；XlsxWriter 使用 constant-memory 写入，内存只保留 N 个得分率和按评分项聚合的 O(C) 统计，临时磁盘为最终 `.xlsx` 文件大小。常规数千份作业预计在数秒内完成且使用数十 MB 以内额外内存；若超过 5 分钟或 1GB，应记录数据规模并分析查询、JSON 明细和压缩阶段。
 
 ## 关键设计决策
 
@@ -130,12 +131,14 @@ OCR 在内部对超时 / 限流 / 5xx 进行最多 3 次短暂重试；网络重
 18. **MCP v10 协议收敛**：编程助手正常评分使用预检、提交、打开、待办列表、rubric 提取、人工确认与保存工具；不接受视觉比较输入、自由 rubric 文本、运行日志或代码产物。预检计划仅保留文件元数据并主动清理过期项，服务端评分句柄持久化于 PostgreSQL 并绑定文件/上下文，评分包不包含后端执行信息，评分政策只由评分包提供。题目 rubric 不再由后端 LLM 生成：`open_ai_marking_assignment` 返回 `needs_rubric` 时由客户端从题目 OCR 提取，服务端以「引用必须是 OCR 原文子串且包含满分、各项满分之和等于总分、评分项不重复」确定性校验后写入权威快照。
 19. **本地文件按内容寻址**：PDF 使用 SHA-256 作为共享实体路径，原始文件名只作为记录元数据保留；清理和题目替换删除前会查询题目、作业及替换引用，永不删除仍被引用的文件。开发依赖由 `scripts/clean-local` 和 `scripts/bootstrap` 按需清理、恢复。
 20. **题目 ID 为文件名 slug**：`questions.id` 由上传文件名去扩展名生成稳定 slug 字符串（如 `DTS208TC_CW1_Paper`），不再使用自增整数；id 在创建时确定且不随替换/重试 OCR 变化，同名重复上传返回 409 拒绝，避免 ID 跳号与删除复用歧义。
+21. **成绩导出只读快照**：`GET /api/submissions/export.xlsx` 只读取指定题目的 `reviewed` 最终成绩，以用户输入的及格线和当前界面语言生成三表 Excel；不读取 OCR/PDF/代码、不写数据库、不持久化导出文件，响应结束即删除临时文件。得分率和达标状态保留为工作簿公式，统计文字不调用模型。
 
 ## 子文档索引
 
 | 主题 | 路径 | 说明 |
 |---|---|---|
-| 架构升级 P0-P5 | [docs/architecture/upgrade-p0-p5.md](docs/architecture/upgrade-p0-p5.md) | async 路由改造、SSE 推送、Prometheus 指标、cleanup 优化 |
+| 模块化单体架构 | [docs/architecture/modular-monolith.md](docs/architecture/modular-monolith.md) | 分层边界、事务与锁、运行模型、SSE、契约及资源边界 |
+| 历史架构升级 P0-P5 | [docs/architecture/upgrade-p0-p5.md](docs/architecture/upgrade-p0-p5.md) | 早期演进记录；当前决策以模块化单体文档为准 |
 | 协同评分页设计 | [docs/frontend/review-page.md](docs/frontend/review-page.md) | 左右分栏布局、等待 MCP 面板、表单式人工改分、finalize 确认流程 |
 | 编程助手 MCP 评分 | [docs/architecture/mcp-grading.md](docs/architecture/mcp-grading.md) | STDIO 连接、状态机、PDF+代码证据、工具契约、安全边界与排错 |
 | 编程助手评分 skill | [.agents/skills/ai-marking-grader/SKILL.md](.agents/skills/ai-marking-grader/SKILL.md) | 预检、提交、打开评分包、rubric 提取、双遍精评与教师复核；评分政策由服务端评分包提供 |
@@ -145,7 +148,7 @@ OCR 在内部对超时 / 限流 / 5xx 进行最多 3 次短暂重试；网络重
 
 - **编程助手首次接入**：在客户端 MCP 配置中填写 `scripts/run-ai-marking-mcp` 的绝对路径和可选客户端名称参数；代码只由当前编程助手任务在临时目录中尝试运行，后端不执行学生代码。
 - **本地开发**：配置好数据库后运行 `./start.sh`（自动安装依赖、迁移数据库、校验后端身份并启动前后端与 worker，热重载）。前端严格使用 `5173`，后端严格使用 `8000`；端口被占用时直接报错，避免误连到错误应用。
-- **生产部署**：运行 `./start.prod.sh`（多 worker、无 reload、前端生产构建预览），可通过 `WORKERS` 环境变量覆盖 worker 数。启动前确保 `5173` 和 `8000` 未被其他项目占用。
+- **生产部署**：运行 `./start.prod.sh`（单 API 进程、单任务 worker、无 reload、前端生产构建预览）；`WORKERS` 仅允许为 1。启动前确保 `5173` 和 `8000` 未被其他项目占用。
 
 详细运行、配置与排错说明见 [README.md](README.md)。
 
@@ -155,7 +158,7 @@ OCR 在内部对超时 / 限流 / 5xx 进行最多 3 次短暂重试；网络重
 
 | 改动域 | 工作目录与现有入口 | 成功信号 | 停止边界 |
 |---|---|---|---|
-| 后端 `backend/` | `cd backend && ruff check app tests`；后端跨模块改动运行 `pytest -q` | 命令退出码为 0；pytest 输出 `passed` | Ruff 或任一相关 pytest 失败时停止，修复后从最终改动重新运行对应命令 |
+| 后端 `backend/` | `ruff check backend`；后端跨模块改动运行 `cd backend && pytest -q` | 命令退出码为 0；pytest 输出 `passed` | Ruff 或任一相关 pytest 失败时停止，修复后从最终改动重新运行对应命令 |
 | 前端 `frontend/` | `cd frontend && npm run lint`；组件/交互改动追加 `npm run test:run`；构建或路由改动追加 `npm run build` | 各命令退出码为 0；build 完成且无 TypeScript/Vite 错误 | 任一 lint、test 或 build 失败时停止，不以 dev server 或人工点选结果替代 |
 | 数据库迁移 `backend/` | `cd backend && .venv/bin/alembic upgrade head`，随后 `.venv/bin/alembic current` | upgrade 退出码为 0；current 能输出当前迁移版本 | 数据库不可连接、迁移失败或版本未更新时停止，不继续运行依赖新 schema 的服务检查 |
 | MCP 与编程助手接入（仓库根目录） | 核对客户端 MCP 配置中的启动器绝对路径；MCP API/STDIO 改动追加 `cd backend && pytest -q tests/test_mcp_api.py tests/test_mcp_server.py` | 启动器路径正确；相关 pytest 全部通过 | 配置核对或任一 MCP 测试失败时停止，不以网页成功打开或手工调用替代 |

@@ -1,71 +1,27 @@
+import type { components } from './generated';
+
 // 作业提交相关类型定义与纯状态判断函数。
 // hooks 与请求逻辑在 ./submissions.ts 中,并通过 re-export 保持统一出口。
 
-export type SubmissionStatus =
-  | 'pending'
-  | 'ocr_processing'
-  | 'ocr_done'
-  | 'awaiting_mcp'
-  | 'ready_for_review'
-  | 'reviewed'
-  | 'failed';
+export type SubmissionStatus = components['schemas']['SubmissionStatus'];
 
-export interface AiSuggestionDetail {
-  criterion: string;
-  score: number;
-  max_score: number;
-  comment: string;
-  evidence?: string[];
-}
+export type AiSuggestionDetail = components['schemas']['ScoreDetail'];
 
+export type AiSuggestionDto = components['schemas']['AssessmentSuggestionOut'];
 export interface AiSuggestion {
   score: number;
   max_score: number;
   feedback: string;
   details: AiSuggestionDetail[];
   confidence: number;
-  mcp_metadata?: {
-    client?: string;
-    generated_at?: string;
-    [key: string]: unknown;
-  };
+  mcp_metadata?: components['schemas']['McpMetadataOut'];
 }
 
-export interface AssessmentReviewItem {
-  rubric_item_id: string;
-  criterion: string;
-  max_score: number;
-  verdict: 'agree' | 'disagree';
-  comment: string;
-  suggested_score: number | null;
-}
+export type AssessmentReviewItem = components['schemas']['AssessmentReviewItemOut'];
 
-export interface AssessmentReview {
-  verdict: 'agree' | 'partial' | 'disagree';
-  summary: string;
-  confidence: number;
-  items: AssessmentReviewItem[];
-  // 被复核的 grading_revision；与当前 revision 不一致时视为过期
-  reviewed_revision: number;
-  client?: string | null;
-  created_at: string;
-}
+export type AssessmentReview = components['schemas']['AssessmentReviewOut'];
 
-export interface SubmissionOut {
-  id: number;
-  original_filename: string;
-  question_original_filename: string | null;
-  status: SubmissionStatus;
-  grading_mode: 'external_agent';
-  grading_revision: number;
-  graded_at: string | null;
-  score: number | null;
-  max_score: number | null;
-  confidence: number | null;
-  uploaded_at: string;
-  completed_at: string | null;
-  has_code?: boolean;
-}
+export type SubmissionOut = components['schemas']['SubmissionOut'];
 
 export interface SubmissionCodeFile {
   id: number;
@@ -123,49 +79,15 @@ export interface SubmissionDetail extends SubmissionOut {
 
 // 轻量状态:处理中轮询用,字段集合刻意比 SubmissionOut 小
 // 含 original_filename/uploaded_at 供 processing UI 显示,避免处理中拉完整详情
-export interface SubmissionStatusOut {
-  id: number;
-  status: SubmissionStatus;
-  grading_mode: 'external_agent';
-  grading_revision: number;
-  original_filename: string;
-  score: number | null;
-  max_score: number | null;
-  confidence: number | null;
-  uploaded_at: string;
-  completed_at: string | null;
-  error_message: string | null;
-}
+export type SubmissionStatusOut = components['schemas']['SubmissionStatusOut'];
 
-export interface SubmissionCreateResponse {
-  id: number;
-  status: SubmissionStatus;
-}
+export type SubmissionCreateResponse = components['schemas']['SubmissionCreateResponse'];
 
-export interface PaginatedSubmissions {
-  items: SubmissionOut[];
-  total: number;
-  skip: number;
-  limit: number;
-}
+export type PaginatedSubmissions = components['schemas']['PaginatedSubmissions'];
 
-export interface FinalizePayload {
-  reviewer_name: string;
-  score: number;
-  max_score: number;
-  feedback: string;
-  details: Array<{
-    criterion: string;
-    score: number;
-    max_score: number;
-    comment: string;
-    evidence: string[];
-  }>;
-}
+export type FinalizePayload = components['schemas']['FinalizeRequest'];
 
-export interface BatchDeleteResponse {
-  deleted_count: number;
-}
+export type BatchDeleteResponse = components['schemas']['BatchDeleteResponse'];
 
 // 终态判断：awaiting_mcp 仍需要等待 MCP 客户端保存建议，不能停止状态刷新。
 const TERMINAL_STATUSES: SubmissionStatus[] = [

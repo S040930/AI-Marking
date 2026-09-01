@@ -137,6 +137,7 @@ async def test_create_and_retry_question_use_one_durable_job(client, db_session)
     )
     assert retried.status_code == 200
 
+    db_session.expire_all()
     jobs = (
         (
             db_session.execute(
@@ -367,7 +368,9 @@ async def test_replace_question_failure_keeps_old_version(
     assert question.replacement_status == QuestionReplacementStatus.failed
     assert "无法识别新版" in question.replacement_error_message
     assert old_path.exists()
-    assert not staged_path.exists()
+    # 系统级死信保留暂存文件，管理端可原子恢复目标状态并真正重试。
+    assert staged_path.exists()
+    assert question.replacement_file_path == str(staged_path)
 
 
 async def test_replace_requires_acknowledge_deletion_when_submissions_exist(

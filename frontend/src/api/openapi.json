@@ -1,0 +1,5107 @@
+{
+  "components": {
+    "schemas": {
+      "AssessmentReviewItemOut": {
+        "properties": {
+          "comment": {
+            "title": "Comment",
+            "type": "string"
+          },
+          "criterion": {
+            "title": "Criterion",
+            "type": "string"
+          },
+          "max_score": {
+            "title": "Max Score",
+            "type": "number"
+          },
+          "rubric_item_id": {
+            "title": "Rubric Item Id",
+            "type": "string"
+          },
+          "suggested_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suggested Score"
+          },
+          "verdict": {
+            "enum": [
+              "agree",
+              "disagree"
+            ],
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "rubric_item_id",
+          "criterion",
+          "max_score",
+          "verdict",
+          "comment"
+        ],
+        "title": "AssessmentReviewItemOut",
+        "type": "object"
+      },
+      "AssessmentReviewOut": {
+        "properties": {
+          "client": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client"
+          },
+          "confidence": {
+            "title": "Confidence",
+            "type": "number"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AssessmentReviewItemOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "reviewed_revision": {
+            "title": "Reviewed Revision",
+            "type": "integer"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          },
+          "verdict": {
+            "enum": [
+              "agree",
+              "partial",
+              "disagree"
+            ],
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "verdict",
+          "summary",
+          "confidence",
+          "items",
+          "reviewed_revision",
+          "created_at"
+        ],
+        "title": "AssessmentReviewOut",
+        "type": "object"
+      },
+      "AssessmentSuggestionOut": {
+        "additionalProperties": true,
+        "properties": {
+          "confidence": {
+            "title": "Confidence",
+            "type": "number"
+          },
+          "details": {
+            "items": {
+              "$ref": "#/components/schemas/ScoreDetail"
+            },
+            "title": "Details",
+            "type": "array"
+          },
+          "feedback": {
+            "title": "Feedback",
+            "type": "string"
+          },
+          "max_score": {
+            "title": "Max Score",
+            "type": "number"
+          },
+          "mcp_metadata": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/McpMetadataOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome"
+          },
+          "review_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Reason"
+          },
+          "score": {
+            "title": "Score",
+            "type": "number"
+          }
+        },
+        "required": [
+          "score",
+          "max_score",
+          "feedback",
+          "details",
+          "confidence"
+        ],
+        "title": "AssessmentSuggestionOut",
+        "type": "object"
+      },
+      "BatchDeleteRequest": {
+        "description": "批量删除请求。",
+        "properties": {
+          "ids": {
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "ids"
+        ],
+        "title": "BatchDeleteRequest",
+        "type": "object"
+      },
+      "BatchDeleteResponse": {
+        "description": "批量删除响应。",
+        "properties": {
+          "deleted_count": {
+            "title": "Deleted Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "deleted_count"
+        ],
+        "title": "BatchDeleteResponse",
+        "type": "object"
+      },
+      "Body_create_question_api_questions_post": {
+        "properties": {
+          "config_profile_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Config Profile Id"
+          },
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_create_question_api_questions_post",
+        "type": "object"
+      },
+      "Body_create_submission_api_submissions_post": {
+        "properties": {
+          "code_files": {
+            "default": [],
+            "description": "可选多语言代码文件",
+            "items": {
+              "contentMediaType": "application/octet-stream",
+              "type": "string"
+            },
+            "title": "Code Files",
+            "type": "array"
+          },
+          "code_manifest": {
+            "anyOf": [
+              {
+                "maxLength": 50000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "代码文件小题映射 JSON",
+            "title": "Code Manifest"
+          },
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "description": "学生作业 PDF",
+            "title": "File",
+            "type": "string"
+          },
+          "question_id": {
+            "description": "题目 ID(文件名 slug)",
+            "title": "Question Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file",
+          "question_id"
+        ],
+        "title": "Body_create_submission_api_submissions_post",
+        "type": "object"
+      },
+      "Body_replace_question_api_questions__question_id__replace_post": {
+        "properties": {
+          "acknowledge_deletion": {
+            "default": false,
+            "title": "Acknowledge Deletion",
+            "type": "boolean"
+          },
+          "confirmation_name": {
+            "maxLength": 255,
+            "title": "Confirmation Name",
+            "type": "string"
+          },
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file",
+          "confirmation_name"
+        ],
+        "title": "Body_replace_question_api_questions__question_id__replace_post",
+        "type": "object"
+      },
+      "Body_retry_question_ocr_api_questions__question_id__retry_ocr_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_retry_question_ocr_api_questions__question_id__retry_ocr_post",
+        "type": "object"
+      },
+      "Body_retry_submission_api_submissions__submission_id__retry_post": {
+        "properties": {
+          "file": {
+            "anyOf": [
+              {
+                "contentMediaType": "application/octet-stream",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File"
+          }
+        },
+        "title": "Body_retry_submission_api_submissions__submission_id__retry_post",
+        "type": "object"
+      },
+      "ConfigOut": {
+        "description": "配置完整输出结构。",
+        "properties": {
+          "paddleocr_api_url": {
+            "default": "",
+            "title": "Paddleocr Api Url",
+            "type": "string"
+          },
+          "paddleocr_token": {
+            "default": "",
+            "title": "Paddleocr Token",
+            "type": "string"
+          },
+          "review_enabled": {
+            "default": true,
+            "title": "Review Enabled",
+            "type": "boolean"
+          },
+          "rubric_definition": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RubricDefinition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "ConfigOut",
+        "type": "object"
+      },
+      "ConfigProfileCreate": {
+        "additionalProperties": false,
+        "description": "新建配置项目入参。",
+        "properties": {
+          "copy_from_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "非空时复制该项目的全部配置值",
+            "title": "Copy From Id"
+          },
+          "name": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "ConfigProfileCreate",
+        "type": "object"
+      },
+      "ConfigProfileOut": {
+        "description": "配置项目元信息输出。",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_default": {
+            "title": "Is Default",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "is_default",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ConfigProfileOut",
+        "type": "object"
+      },
+      "ConfigProfileRename": {
+        "additionalProperties": false,
+        "description": "重命名配置项目入参。",
+        "properties": {
+          "name": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "ConfigProfileRename",
+        "type": "object"
+      },
+      "ConfigUpdate": {
+        "additionalProperties": false,
+        "description": "配置更新入参(任一字段子集)。\n\n未知字段会被 Pydantic 拒绝(extra=forbid)，返回 422。",
+        "properties": {
+          "paddleocr_api_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "PaddleOCR-VL 文档解析 API URL",
+            "title": "Paddleocr Api Url"
+          },
+          "paddleocr_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "PaddleOCR-VL Access Token(AI Studio 令牌)",
+            "title": "Paddleocr Token"
+          },
+          "review_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "是否要求 MCP 客户端在保存建议前完成第二遍反向自检(默认开启)",
+            "title": "Review Enabled"
+          },
+          "rubric_definition": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RubricDefinition"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "结构化评分标准；每个条目包含 criterion、max_score、details"
+          }
+        },
+        "title": "ConfigUpdate",
+        "type": "object"
+      },
+      "DeadJobDeleteResponse": {
+        "properties": {
+          "deleted": {
+            "title": "Deleted",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "deleted"
+        ],
+        "title": "DeadJobDeleteResponse",
+        "type": "object"
+      },
+      "DeadJobOut": {
+        "description": "死信任务展示模型。",
+        "properties": {
+          "attempts": {
+            "description": "已重试次数",
+            "title": "Attempts",
+            "type": "integer"
+          },
+          "id": {
+            "description": "任务 ID",
+            "title": "Id",
+            "type": "integer"
+          },
+          "job_type": {
+            "description": "任务类型",
+            "title": "Job Type",
+            "type": "string"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "最近一次错误信息",
+            "title": "Last Error"
+          },
+          "question_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "关联题目 ID",
+            "title": "Question Id"
+          },
+          "submission_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "关联提交 ID",
+            "title": "Submission Id"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "最近更新时间(ISO)",
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "id",
+          "job_type",
+          "attempts"
+        ],
+        "title": "DeadJobOut",
+        "type": "object"
+      },
+      "DeadJobRetryResponse": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status"
+        ],
+        "title": "DeadJobRetryResponse",
+        "type": "object"
+      },
+      "FinalizeRequest": {
+        "description": "教师确认最终评分。",
+        "properties": {
+          "details": {
+            "items": {
+              "$ref": "#/components/schemas/ScoreDetail"
+            },
+            "minItems": 1,
+            "title": "Details",
+            "type": "array"
+          },
+          "feedback": {
+            "minLength": 1,
+            "title": "Feedback",
+            "type": "string"
+          },
+          "max_score": {
+            "exclusiveMinimum": 0.0,
+            "title": "Max Score",
+            "type": "number"
+          },
+          "reviewer_name": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Reviewer Name",
+            "type": "string"
+          },
+          "score": {
+            "minimum": 0.0,
+            "title": "Score",
+            "type": "number"
+          }
+        },
+        "required": [
+          "reviewer_name",
+          "score",
+          "max_score",
+          "feedback",
+          "details"
+        ],
+        "title": "FinalizeRequest",
+        "type": "object"
+      },
+      "GradingPromptOut": {
+        "description": "按题目生成的可审计批改提示词：与运行时评分包中的 grading_policy 同源。",
+        "properties": {
+          "grading_mode": {
+            "title": "Grading Mode",
+            "type": "string"
+          },
+          "grading_policy": {
+            "additionalProperties": true,
+            "title": "Grading Policy",
+            "type": "object"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "needs_rubric": {
+            "title": "Needs Rubric",
+            "type": "boolean"
+          },
+          "ocr_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ocr Text"
+          },
+          "question_id": {
+            "title": "Question Id",
+            "type": "string"
+          },
+          "review_enabled": {
+            "title": "Review Enabled",
+            "type": "boolean"
+          },
+          "snapshot_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Snapshot Id"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "total_max_score": {
+            "title": "Total Max Score",
+            "type": "number"
+          }
+        },
+        "required": [
+          "question_id",
+          "name",
+          "grading_mode",
+          "review_enabled",
+          "source",
+          "total_max_score",
+          "needs_rubric",
+          "grading_policy",
+          "text"
+        ],
+        "title": "GradingPromptOut",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "LoginRequest": {
+        "description": "登录请求体：待校验的访问令牌。",
+        "properties": {
+          "token": {
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "title": "LoginRequest",
+        "type": "object"
+      },
+      "McpAssessmentRequest": {
+        "additionalProperties": false,
+        "description": "外部编程助手提交的评分建议(对外唯一请求模型)。\n\n``expected_revision``/``context_hash`` 由服务端在保存时从作业当前状态\n补全,不在对外请求中出现;它们是防呆用的版本校验字段。",
+        "properties": {
+          "confidence": {
+            "default": 0,
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Confidence",
+            "type": "number"
+          },
+          "details": {
+            "items": {
+              "$ref": "#/components/schemas/ScoreDetail"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Details",
+            "type": "array"
+          },
+          "feedback": {
+            "maxLength": 20000,
+            "minLength": 1,
+            "title": "Feedback",
+            "type": "string"
+          },
+          "max_score": {
+            "exclusiveMinimum": 0.0,
+            "title": "Max Score",
+            "type": "number"
+          },
+          "request_id": {
+            "format": "uuid",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "rubric_snapshot_id": {
+            "maxLength": 128,
+            "minLength": 8,
+            "title": "Rubric Snapshot Id",
+            "type": "string"
+          },
+          "rubric_source": {
+            "enum": [
+              "configured",
+              "question_extracted",
+              "built_in_default"
+            ],
+            "title": "Rubric Source",
+            "type": "string"
+          },
+          "score": {
+            "minimum": 0.0,
+            "title": "Score",
+            "type": "number"
+          },
+          "self_check": {
+            "$ref": "#/components/schemas/McpSelfCheck"
+          }
+        },
+        "required": [
+          "rubric_source",
+          "rubric_snapshot_id",
+          "request_id",
+          "score",
+          "max_score",
+          "feedback",
+          "details"
+        ],
+        "title": "McpAssessmentRequest",
+        "type": "object"
+      },
+      "McpAssessmentResponse": {
+        "properties": {
+          "grading_mode": {
+            "$ref": "#/components/schemas/SubmissionGradingMode"
+          },
+          "grading_revision": {
+            "title": "Grading Revision",
+            "type": "integer"
+          },
+          "idempotent": {
+            "default": false,
+            "title": "Idempotent",
+            "type": "boolean"
+          },
+          "quality_checks": {
+            "$ref": "#/components/schemas/McpQualityChecksOut"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SubmissionStatus"
+          },
+          "submission_id": {
+            "title": "Submission Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "submission_id",
+          "status",
+          "grading_revision",
+          "grading_mode",
+          "quality_checks"
+        ],
+        "title": "McpAssessmentResponse",
+        "type": "object"
+      },
+      "McpHealthResponse": {
+        "properties": {
+          "database": {
+            "title": "Database",
+            "type": "string"
+          },
+          "mcp_api_version": {
+            "title": "Mcp Api Version",
+            "type": "string"
+          },
+          "service": {
+            "title": "Service",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "worker_required": {
+            "default": true,
+            "title": "Worker Required",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "status",
+          "service",
+          "database",
+          "mcp_api_version"
+        ],
+        "title": "McpHealthResponse",
+        "type": "object"
+      },
+      "McpMetadataOut": {
+        "additionalProperties": true,
+        "properties": {
+          "client": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client"
+          },
+          "context_hash": {
+            "title": "Context Hash",
+            "type": "string"
+          },
+          "generated_at": {
+            "title": "Generated At",
+            "type": "string"
+          },
+          "grading_revision": {
+            "title": "Grading Revision",
+            "type": "integer"
+          },
+          "payload_hash": {
+            "title": "Payload Hash",
+            "type": "string"
+          },
+          "quality_checks": {
+            "$ref": "#/components/schemas/McpQualityChecksOut"
+          },
+          "request_id": {
+            "title": "Request Id",
+            "type": "string"
+          },
+          "review_required": {
+            "title": "Review Required",
+            "type": "boolean"
+          },
+          "rubric_snapshot": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rubric Snapshot"
+          },
+          "rubric_snapshot_id": {
+            "title": "Rubric Snapshot Id",
+            "type": "string"
+          },
+          "rubric_source": {
+            "enum": [
+              "configured",
+              "question_extracted",
+              "built_in_default"
+            ],
+            "title": "Rubric Source",
+            "type": "string"
+          },
+          "source": {
+            "const": "mcp",
+            "default": "mcp",
+            "title": "Source",
+            "type": "string"
+          },
+          "visual_confirmation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/McpVisualConfirmationOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "rubric_source",
+          "rubric_snapshot_id",
+          "context_hash",
+          "grading_revision",
+          "request_id",
+          "payload_hash",
+          "quality_checks",
+          "generated_at",
+          "review_required"
+        ],
+        "title": "McpMetadataOut",
+        "type": "object"
+      },
+      "McpPackageResponse": {
+        "properties": {
+          "assessment": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AssessmentSuggestionOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "content": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content"
+          },
+          "context_complete": {
+            "default": false,
+            "title": "Context Complete",
+            "type": "boolean"
+          },
+          "continuation_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Continuation Token"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "grading_handle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grading Handle"
+          },
+          "needs_rubric": {
+            "default": false,
+            "title": "Needs Rubric",
+            "type": "boolean"
+          },
+          "question_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Question Id"
+          },
+          "question_ocr_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Question Ocr Text"
+          },
+          "review_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Url"
+          },
+          "rubric_handle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rubric Handle"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SubmissionStatus"
+          },
+          "submission_id": {
+            "title": "Submission Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "submission_id",
+          "status"
+        ],
+        "title": "McpPackageResponse",
+        "type": "object"
+      },
+      "McpPendingAssignment": {
+        "description": "待评分作业列表项。",
+        "properties": {
+          "original_filename": {
+            "title": "Original Filename",
+            "type": "string"
+          },
+          "question_name": {
+            "title": "Question Name",
+            "type": "string"
+          },
+          "submission_id": {
+            "title": "Submission Id",
+            "type": "integer"
+          },
+          "uploaded_at": {
+            "format": "date-time",
+            "title": "Uploaded At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "submission_id",
+          "original_filename",
+          "question_name",
+          "uploaded_at"
+        ],
+        "title": "McpPendingAssignment",
+        "type": "object"
+      },
+      "McpPendingAssignmentsResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/McpPendingAssignment"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "title": "McpPendingAssignmentsResponse",
+        "type": "object"
+      },
+      "McpPreflightFile": {
+        "properties": {
+          "entrypoint": {
+            "default": true,
+            "title": "Entrypoint",
+            "type": "boolean"
+          },
+          "filename": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Filename",
+            "type": "string"
+          },
+          "question_number": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Question Number"
+          }
+        },
+        "required": [
+          "filename"
+        ],
+        "title": "McpPreflightFile",
+        "type": "object"
+      },
+      "McpPreflightRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "code_files": {
+            "items": {
+              "$ref": "#/components/schemas/McpPreflightFile"
+            },
+            "maxItems": 20,
+            "title": "Code Files",
+            "type": "array"
+          },
+          "question_name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Question Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "question_name"
+        ],
+        "title": "McpPreflightRequest",
+        "type": "object"
+      },
+      "McpPreflightResponse": {
+        "properties": {
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/McpQuestionCandidate"
+            },
+            "title": "Candidates",
+            "type": "array"
+          },
+          "code_manifest": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Code Manifest",
+            "type": "array"
+          },
+          "question_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Question Id"
+          },
+          "question_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Question Name"
+          },
+          "status": {
+            "enum": [
+              "ready_to_submit",
+              "needs_question_choice"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "McpPreflightResponse",
+        "type": "object"
+      },
+      "McpQualityChecksOut": {
+        "properties": {
+          "arithmetic_valid": {
+            "title": "Arithmetic Valid",
+            "type": "boolean"
+          },
+          "client_self_check": {
+            "additionalProperties": true,
+            "title": "Client Self Check",
+            "type": "object"
+          },
+          "code_evidence_valid": {
+            "title": "Code Evidence Valid",
+            "type": "boolean"
+          },
+          "evidence_valid": {
+            "title": "Evidence Valid",
+            "type": "boolean"
+          },
+          "second_pass_valid": {
+            "title": "Second Pass Valid",
+            "type": "boolean"
+          },
+          "visual_confirmation_valid": {
+            "title": "Visual Confirmation Valid",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "arithmetic_valid",
+          "evidence_valid",
+          "code_evidence_valid",
+          "client_self_check",
+          "second_pass_valid",
+          "visual_confirmation_valid"
+        ],
+        "title": "McpQualityChecksOut",
+        "type": "object"
+      },
+      "McpQuestionCandidate": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "original_filename": {
+            "title": "Original Filename",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "original_filename"
+        ],
+        "title": "McpQuestionCandidate",
+        "type": "object"
+      },
+      "McpReviewItem": {
+        "additionalProperties": false,
+        "description": "复核者对单个评分项的结论。",
+        "properties": {
+          "comment": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Comment",
+            "type": "string"
+          },
+          "rubric_item_id": {
+            "maxLength": 100,
+            "minLength": 5,
+            "title": "Rubric Item Id",
+            "type": "string"
+          },
+          "suggested_score": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suggested Score"
+          },
+          "verdict": {
+            "enum": [
+              "agree",
+              "disagree"
+            ],
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "rubric_item_id",
+          "verdict",
+          "comment"
+        ],
+        "title": "McpReviewItem",
+        "type": "object"
+      },
+      "McpRubricExtractionItem": {
+        "additionalProperties": false,
+        "description": "客户端从题目 OCR 中提取的单个评分项。",
+        "properties": {
+          "criterion": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Criterion",
+            "type": "string"
+          },
+          "details": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Details",
+            "type": "string"
+          },
+          "max_score": {
+            "exclusiveMinimum": 0.0,
+            "title": "Max Score",
+            "type": "number"
+          },
+          "source_quote": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Source Quote",
+            "type": "string"
+          }
+        },
+        "required": [
+          "criterion",
+          "max_score",
+          "details",
+          "source_quote"
+        ],
+        "title": "McpRubricExtractionItem",
+        "type": "object"
+      },
+      "McpSaveAssessmentRequest": {
+        "properties": {
+          "assessment": {
+            "$ref": "#/components/schemas/McpAssessmentRequest"
+          },
+          "client": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "pattern": "^[a-z0-9][a-z0-9._-]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client"
+          },
+          "grading_handle": {
+            "maxLength": 2000,
+            "minLength": 20,
+            "title": "Grading Handle",
+            "type": "string"
+          }
+        },
+        "required": [
+          "grading_handle",
+          "assessment"
+        ],
+        "title": "McpSaveAssessmentRequest",
+        "type": "object"
+      },
+      "McpSaveReviewRequest": {
+        "additionalProperties": false,
+        "description": "独立复核任务提交的对当前评分建议的复核结论。\n\n``grading_handle`` 来自对 ``ready_for_review`` 作业调用\n``open_ai_marking_assignment`` 后的评分包;服务端校验建议版本\n(grading_revision)未变化后写入 ``submissions.assessment_review``。\n``items`` 必须逐项引用当前 rubric 的全部 item,与评分建议相同。",
+        "properties": {
+          "client": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "pattern": "^[a-z0-9][a-z0-9._-]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client"
+          },
+          "confidence": {
+            "default": 0,
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Confidence",
+            "type": "number"
+          },
+          "grading_handle": {
+            "maxLength": 2000,
+            "minLength": 20,
+            "title": "Grading Handle",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/McpReviewItem"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Items",
+            "type": "array"
+          },
+          "summary": {
+            "maxLength": 20000,
+            "minLength": 1,
+            "title": "Summary",
+            "type": "string"
+          },
+          "verdict": {
+            "enum": [
+              "agree",
+              "partial",
+              "disagree"
+            ],
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "grading_handle",
+          "verdict",
+          "summary",
+          "items"
+        ],
+        "title": "McpSaveReviewRequest",
+        "type": "object"
+      },
+      "McpSaveReviewResponse": {
+        "properties": {
+          "reviewed_revision": {
+            "title": "Reviewed Revision",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SubmissionStatus"
+          },
+          "submission_id": {
+            "title": "Submission Id",
+            "type": "integer"
+          },
+          "verdict": {
+            "enum": [
+              "agree",
+              "partial",
+              "disagree"
+            ],
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "submission_id",
+          "status",
+          "reviewed_revision",
+          "verdict"
+        ],
+        "title": "McpSaveReviewResponse",
+        "type": "object"
+      },
+      "McpSaveRubricRequest": {
+        "additionalProperties": false,
+        "description": "保存客户端提取的题目 rubric。\n\n``handle`` 为 ``open_ai_marking_assignment`` 返回的 rubric 提取句柄;\n``status`` 为 ``complete``（有明确 rubric）或 ``absent_or_ambiguous``\n（无明确 rubric）。``complete`` 时逐项 ``source_quote`` 必须是题目 OCR\n原文子串且包含该项满分,服务端确定性校验后写入题目级权威快照。",
+        "properties": {
+          "handle": {
+            "maxLength": 2000,
+            "minLength": 20,
+            "title": "Handle",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/McpRubricExtractionItem"
+            },
+            "maxItems": 100,
+            "title": "Items",
+            "type": "array"
+          },
+          "status": {
+            "enum": [
+              "complete",
+              "absent_or_ambiguous"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "total_max_score": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Max Score"
+          }
+        },
+        "required": [
+          "handle",
+          "status"
+        ],
+        "title": "McpSaveRubricRequest",
+        "type": "object"
+      },
+      "McpSaveRubricResponse": {
+        "properties": {
+          "question_id": {
+            "title": "Question Id",
+            "type": "string"
+          },
+          "question_name": {
+            "title": "Question Name",
+            "type": "string"
+          },
+          "rubric_snapshot_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rubric Snapshot Id"
+          },
+          "status": {
+            "enum": [
+              "complete",
+              "absent_or_ambiguous"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "question_id",
+          "question_name"
+        ],
+        "title": "McpSaveRubricResponse",
+        "type": "object"
+      },
+      "McpSelfCheck": {
+        "properties": {
+          "changes_made": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Changes Made",
+            "type": "array"
+          },
+          "issues_found": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Issues Found",
+            "type": "array"
+          },
+          "rubric_items_reviewed": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "title": "Rubric Items Reviewed",
+            "type": "array"
+          },
+          "second_pass_completed": {
+            "default": false,
+            "title": "Second Pass Completed",
+            "type": "boolean"
+          }
+        },
+        "title": "McpSelfCheck",
+        "type": "object"
+      },
+      "McpVisualConfirmationOut": {
+        "properties": {
+          "confirmed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirmed At"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "verdict": {
+            "enum": [
+              "consistent",
+              "mismatch"
+            ],
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "verdict"
+        ],
+        "title": "McpVisualConfirmationOut",
+        "type": "object"
+      },
+      "McpVisualConfirmationRequest": {
+        "properties": {
+          "grading_handle": {
+            "maxLength": 2000,
+            "minLength": 20,
+            "title": "Grading Handle",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "verdict": {
+            "enum": [
+              "consistent",
+              "mismatch"
+            ],
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "grading_handle",
+          "verdict"
+        ],
+        "title": "McpVisualConfirmationRequest",
+        "type": "object"
+      },
+      "McpVisualConfirmationResponse": {
+        "properties": {
+          "confirmed_at": {
+            "title": "Confirmed At",
+            "type": "string"
+          },
+          "grading_handle": {
+            "title": "Grading Handle",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "submission_id": {
+            "title": "Submission Id",
+            "type": "integer"
+          },
+          "verdict": {
+            "enum": [
+              "consistent",
+              "mismatch"
+            ],
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "submission_id",
+          "grading_handle",
+          "verdict",
+          "confirmed_at"
+        ],
+        "title": "McpVisualConfirmationResponse",
+        "type": "object"
+      },
+      "PaginatedQuestions": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/QuestionOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "skip": {
+            "title": "Skip",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "skip",
+          "limit"
+        ],
+        "title": "PaginatedQuestions",
+        "type": "object"
+      },
+      "PaginatedSubmissions": {
+        "description": "分页列表响应:items + 分页元信息。",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SubmissionOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "skip": {
+            "title": "Skip",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "skip",
+          "limit"
+        ],
+        "title": "PaginatedSubmissions",
+        "type": "object"
+      },
+      "QuestionConfigProfileRequest": {
+        "properties": {
+          "config_profile_id": {
+            "description": "配置项目 ID",
+            "minimum": 1.0,
+            "title": "Config Profile Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "config_profile_id"
+        ],
+        "title": "QuestionConfigProfileRequest",
+        "type": "object"
+      },
+      "QuestionConfirmRequest": {
+        "properties": {
+          "confirmation_name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Confirmation Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "confirmation_name"
+        ],
+        "title": "QuestionConfirmRequest",
+        "type": "object"
+      },
+      "QuestionDetail": {
+        "properties": {
+          "config_profile_id": {
+            "title": "Config Profile Id",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used At"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "ocr_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ocr Text"
+          },
+          "original_filename": {
+            "title": "Original Filename",
+            "type": "string"
+          },
+          "replacement_error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Replacement Error Message"
+          },
+          "replacement_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuestionReplacementStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/QuestionStatus"
+          },
+          "submission_count": {
+            "default": 0,
+            "title": "Submission Count",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "config_profile_id",
+          "name",
+          "original_filename",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "QuestionDetail",
+        "type": "object"
+      },
+      "QuestionMutationResponse": {
+        "properties": {
+          "deleted_submission_count": {
+            "title": "Deleted Submission Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "deleted_submission_count"
+        ],
+        "title": "QuestionMutationResponse",
+        "type": "object"
+      },
+      "QuestionOut": {
+        "properties": {
+          "config_profile_id": {
+            "title": "Config Profile Id",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used At"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "original_filename": {
+            "title": "Original Filename",
+            "type": "string"
+          },
+          "replacement_error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Replacement Error Message"
+          },
+          "replacement_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuestionReplacementStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/QuestionStatus"
+          },
+          "submission_count": {
+            "default": 0,
+            "title": "Submission Count",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "config_profile_id",
+          "name",
+          "original_filename",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "QuestionOut",
+        "type": "object"
+      },
+      "QuestionRenameRequest": {
+        "properties": {
+          "name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "QuestionRenameRequest",
+        "type": "object"
+      },
+      "QuestionReplacementResponse": {
+        "properties": {
+          "affected_submission_count": {
+            "title": "Affected Submission Count",
+            "type": "integer"
+          },
+          "question_id": {
+            "title": "Question Id",
+            "type": "string"
+          },
+          "replacement_status": {
+            "$ref": "#/components/schemas/QuestionReplacementStatus"
+          }
+        },
+        "required": [
+          "question_id",
+          "replacement_status",
+          "affected_submission_count"
+        ],
+        "title": "QuestionReplacementResponse",
+        "type": "object"
+      },
+      "QuestionReplacementStatus": {
+        "enum": [
+          "pending",
+          "processing",
+          "failed"
+        ],
+        "title": "QuestionReplacementStatus",
+        "type": "string"
+      },
+      "QuestionStatus": {
+        "enum": [
+          "pending",
+          "ocr_processing",
+          "ready",
+          "failed"
+        ],
+        "title": "QuestionStatus",
+        "type": "string"
+      },
+      "QueueRuntimeOut": {
+        "properties": {
+          "expired_leases": {
+            "title": "Expired Leases",
+            "type": "integer"
+          },
+          "oldest_queued_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oldest Queued At"
+          },
+          "status_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Status Counts",
+            "type": "object"
+          }
+        },
+        "required": [
+          "status_counts",
+          "expired_leases",
+          "oldest_queued_at"
+        ],
+        "title": "QueueRuntimeOut",
+        "type": "object"
+      },
+      "RubricDefinition": {
+        "additionalProperties": false,
+        "description": "结构化 rubric；ID 和规范文本由服务端重新生成。",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RubricItem"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Items",
+            "type": "array"
+          },
+          "total_max_score": {
+            "exclusiveMinimum": 0.0,
+            "title": "Total Max Score",
+            "type": "number"
+          }
+        },
+        "required": [
+          "items",
+          "total_max_score"
+        ],
+        "title": "RubricDefinition",
+        "type": "object"
+      },
+      "RubricItem": {
+        "additionalProperties": false,
+        "description": "一个可评分的权威 rubric 条目。",
+        "properties": {
+          "criterion": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Criterion",
+            "type": "string"
+          },
+          "details": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Details",
+            "type": "string"
+          },
+          "max_score": {
+            "exclusiveMinimum": 0.0,
+            "title": "Max Score",
+            "type": "number"
+          },
+          "rubric_item_id": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 5,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rubric Item Id"
+          },
+          "source_quote": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Quote"
+          }
+        },
+        "required": [
+          "criterion",
+          "max_score",
+          "details"
+        ],
+        "title": "RubricItem",
+        "type": "object"
+      },
+      "RuntimeOut": {
+        "properties": {
+          "checked_at": {
+            "format": "date-time",
+            "title": "Checked At",
+            "type": "string"
+          },
+          "question_status_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Question Status Counts",
+            "type": "object"
+          },
+          "queue": {
+            "$ref": "#/components/schemas/QueueRuntimeOut"
+          },
+          "replacement_status_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Replacement Status Counts",
+            "type": "object"
+          },
+          "submission_status_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Submission Status Counts",
+            "type": "object"
+          }
+        },
+        "required": [
+          "checked_at",
+          "queue",
+          "question_status_counts",
+          "replacement_status_counts",
+          "submission_status_counts"
+        ],
+        "title": "RuntimeOut",
+        "type": "object"
+      },
+      "ScoreDetail": {
+        "description": "单项评分:MCP 与教师最终确认共用。",
+        "properties": {
+          "comment": {
+            "minLength": 1,
+            "title": "Comment",
+            "type": "string"
+          },
+          "criterion": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Criterion",
+            "type": "string"
+          },
+          "evidence": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
+          "evidence_refs": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Evidence Refs",
+            "type": "array"
+          },
+          "max_score": {
+            "exclusiveMinimum": 0.0,
+            "title": "Max Score",
+            "type": "number"
+          },
+          "rubric_item_id": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 5,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rubric Item Id"
+          },
+          "score": {
+            "minimum": 0.0,
+            "title": "Score",
+            "type": "number"
+          }
+        },
+        "required": [
+          "criterion",
+          "score",
+          "max_score",
+          "comment"
+        ],
+        "title": "ScoreDetail",
+        "type": "object"
+      },
+      "ScoreDetailOut": {
+        "additionalProperties": true,
+        "description": "Typed output compatible with legacy rows that predate max_score.",
+        "properties": {
+          "comment": {
+            "title": "Comment",
+            "type": "string"
+          },
+          "criterion": {
+            "title": "Criterion",
+            "type": "string"
+          },
+          "evidence": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
+          "evidence_refs": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Evidence Refs",
+            "type": "array"
+          },
+          "max_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Score"
+          },
+          "rubric_item_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rubric Item Id"
+          },
+          "score": {
+            "title": "Score",
+            "type": "number"
+          }
+        },
+        "required": [
+          "criterion",
+          "score",
+          "comment"
+        ],
+        "title": "ScoreDetailOut",
+        "type": "object"
+      },
+      "SubmissionCodeFileOut": {
+        "properties": {
+          "artifacts": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artifacts"
+          },
+          "entrypoint": {
+            "default": true,
+            "title": "Entrypoint",
+            "type": "boolean"
+          },
+          "execution_result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Execution Result"
+          },
+          "execution_status": {
+            "title": "Execution Status",
+            "type": "string"
+          },
+          "file_kind": {
+            "title": "File Kind",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "original_filename": {
+            "title": "Original Filename",
+            "type": "string"
+          },
+          "question_number": {
+            "title": "Question Number",
+            "type": "integer"
+          },
+          "source_sha256": {
+            "title": "Source Sha256",
+            "type": "string"
+          },
+          "source_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Text"
+          },
+          "visual_reviews": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visual Reviews"
+          }
+        },
+        "required": [
+          "id",
+          "question_number",
+          "original_filename",
+          "file_kind",
+          "source_sha256",
+          "execution_status"
+        ],
+        "title": "SubmissionCodeFileOut",
+        "type": "object"
+      },
+      "SubmissionCodeInputFileOut": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "original_filename": {
+            "title": "Original Filename",
+            "type": "string"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          },
+          "size_bytes": {
+            "title": "Size Bytes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "original_filename",
+          "size_bytes",
+          "sha256"
+        ],
+        "title": "SubmissionCodeInputFileOut",
+        "type": "object"
+      },
+      "SubmissionCreateResponse": {
+        "description": "上传成功后返回最小信息。",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SubmissionStatus"
+          }
+        },
+        "required": [
+          "id",
+          "status"
+        ],
+        "title": "SubmissionCreateResponse",
+        "type": "object"
+      },
+      "SubmissionDetail": {
+        "description": "完整版:详情页展示用。",
+        "properties": {
+          "assessment_review": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AssessmentReviewOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "assessment_suggestion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AssessmentSuggestionOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "code_files": {
+            "items": {
+              "$ref": "#/components/schemas/SubmissionCodeFileOut"
+            },
+            "title": "Code Files",
+            "type": "array"
+          },
+          "code_input_files": {
+            "items": {
+              "$ref": "#/components/schemas/SubmissionCodeInputFileOut"
+            },
+            "title": "Code Input Files",
+            "type": "array"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "details": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ScoreDetailOut"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Details"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "feedback": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feedback"
+          },
+          "graded_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Graded At"
+          },
+          "grading_mode": {
+            "$ref": "#/components/schemas/SubmissionGradingMode",
+            "default": "external_agent"
+          },
+          "grading_revision": {
+            "default": 0,
+            "title": "Grading Revision",
+            "type": "integer"
+          },
+          "has_code": {
+            "default": false,
+            "title": "Has Code",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "max_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Score"
+          },
+          "ocr_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ocr Text"
+          },
+          "original_filename": {
+            "title": "Original Filename",
+            "type": "string"
+          },
+          "question_ocr_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Question Ocr Text"
+          },
+          "question_original_filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Question Original Filename"
+          },
+          "reviewed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed At"
+          },
+          "reviewed_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed By"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SubmissionStatus"
+          },
+          "uploaded_at": {
+            "format": "date-time",
+            "title": "Uploaded At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "original_filename",
+          "status",
+          "uploaded_at"
+        ],
+        "title": "SubmissionDetail",
+        "type": "object"
+      },
+      "SubmissionGradingMode": {
+        "enum": [
+          "external_agent"
+        ],
+        "title": "SubmissionGradingMode",
+        "type": "string"
+      },
+      "SubmissionOut": {
+        "description": "列表精简版:列表与摘要展示用。",
+        "properties": {
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "graded_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Graded At"
+          },
+          "grading_mode": {
+            "$ref": "#/components/schemas/SubmissionGradingMode",
+            "default": "external_agent"
+          },
+          "grading_revision": {
+            "default": 0,
+            "title": "Grading Revision",
+            "type": "integer"
+          },
+          "has_code": {
+            "default": false,
+            "title": "Has Code",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "max_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Score"
+          },
+          "original_filename": {
+            "title": "Original Filename",
+            "type": "string"
+          },
+          "question_original_filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Question Original Filename"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SubmissionStatus"
+          },
+          "uploaded_at": {
+            "format": "date-time",
+            "title": "Uploaded At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "original_filename",
+          "status",
+          "uploaded_at"
+        ],
+        "title": "SubmissionOut",
+        "type": "object"
+      },
+      "SubmissionStatus": {
+        "enum": [
+          "pending",
+          "ocr_processing",
+          "ocr_done",
+          "awaiting_mcp",
+          "ready_for_review",
+          "reviewed",
+          "failed"
+        ],
+        "title": "SubmissionStatus",
+        "type": "string"
+      },
+      "SubmissionStatusOut": {
+        "description": "轻量状态:前端轮询用,不包含 ``ocr_text``/``assessment_suggestion`` 等大字段。\n\n字段集合刻意比 ``SubmissionOut`` 更小,只保留前端在\"处理中\"阶段需要\n显示的状态/分数/错误信息 + 文件名/上传时间(用于 processing UI),\n大字段(``ocr_text``/``details`` 等)在终态后再单独请求。",
+        "properties": {
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "grading_mode": {
+            "$ref": "#/components/schemas/SubmissionGradingMode",
+            "default": "external_agent"
+          },
+          "grading_revision": {
+            "default": 0,
+            "title": "Grading Revision",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "max_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Score"
+          },
+          "original_filename": {
+            "title": "Original Filename",
+            "type": "string"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SubmissionStatus"
+          },
+          "uploaded_at": {
+            "format": "date-time",
+            "title": "Uploaded At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "original_filename",
+          "uploaded_at"
+        ],
+        "title": "SubmissionStatusOut",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "description": "SURF-2026-0031 后端 API",
+    "title": "AI 作业批改系统",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/admin/dead-jobs": {
+      "get": {
+        "description": "列出所有死信任务(按 ``updated_at`` 降序)。",
+        "operationId": "list_dead_jobs_api_admin_dead_jobs_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DeadJobOut"
+                  },
+                  "title": "Response List Dead Jobs Api Admin Dead Jobs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Dead Jobs",
+        "tags": [
+          "admin",
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/dead-jobs/{job_id}": {
+      "delete": {
+        "description": "永久删除死信任务记录。",
+        "operationId": "delete_dead_job_api_admin_dead_jobs__job_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeadJobDeleteResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Dead Job",
+        "tags": [
+          "admin",
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/dead-jobs/{job_id}/retry": {
+      "post": {
+        "description": "Atomically restore the target state and dead job using global lock order.",
+        "operationId": "retry_dead_job_api_admin_dead_jobs__job_id__retry_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeadJobRetryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retry Dead Job",
+        "tags": [
+          "admin",
+          "admin"
+        ]
+      }
+    },
+    "/api/admin/runtime": {
+      "get": {
+        "description": "Return bounded operational counts without filenames or student content.",
+        "operationId": "runtime_summary_api_admin_runtime_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Runtime Summary",
+        "tags": [
+          "admin",
+          "admin"
+        ]
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "description": "校验令牌并通过 httpOnly Cookie 建立浏览器会话。\n\n前端仅在登录门提交一次令牌；此后所有浏览器请求（含 SSE、\nPDF/图片下载等原生请求）自动携带 Cookie，令牌不再出现在 URL。\n鉴权关闭（ACCESS_TOKEN 为空）时恒 401——登录门在鉴权关闭时\n不会出现，此路径不会被调用。",
+        "operationId": "login_api_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Login Api Auth Login Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Login",
+        "tags": [
+          "auth",
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "description": "清除会话 Cookie，前端据此回到登录门。公开端点：仅删除 Cookie，\n即使 Cookie 已失效也无副作用。",
+        "operationId": "logout_api_auth_logout_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Logout Api Auth Logout Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Logout",
+        "tags": [
+          "auth",
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/verify": {
+      "get": {
+        "description": "前端令牌门探测：鉴权关闭时恒 200；开启时由中间件强制令牌，\n无令牌/令牌错误返回 401，前端据此渲染登录门。",
+        "operationId": "verify_access_token_api_auth_verify_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Verify Access Token Api Auth Verify Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Verify Access Token",
+        "tags": [
+          "auth",
+          "auth"
+        ]
+      }
+    },
+    "/api/config": {
+      "get": {
+        "description": "返回指定配置项目的全部配置(缺省为默认项目,缺失字段为空字符串)。",
+        "operationId": "get_config_api_config_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "profile_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Profile Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Config",
+        "tags": [
+          "config"
+        ]
+      },
+      "put": {
+        "description": "更新指定配置项目(子集 upsert)。\n\n- 未提供的字段保持不变\n- 字段值为空字符串表示清空\n- 未知 key 返回 400\n- 返回更新后的完整配置",
+        "operationId": "update_config_api_config_put",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "profile_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Profile Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfigUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Config",
+        "tags": [
+          "config"
+        ]
+      }
+    },
+    "/api/config/profiles": {
+      "get": {
+        "description": "列出全部配置项目。",
+        "operationId": "get_profiles_api_config_profiles_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ConfigProfileOut"
+                  },
+                  "title": "Response Get Profiles Api Config Profiles Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Profiles",
+        "tags": [
+          "config"
+        ]
+      },
+      "post": {
+        "description": "新建配置项目,可选从现有项目复制配置值。",
+        "operationId": "post_profile_api_config_profiles_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfigProfileCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigProfileOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Profile",
+        "tags": [
+          "config"
+        ]
+      }
+    },
+    "/api/config/profiles/{profile_id}": {
+      "delete": {
+        "description": "删除配置项目(默认项目或被题目引用时拒绝)。",
+        "operationId": "delete_profile_route_api_config_profiles__profile_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "profile_id",
+            "required": true,
+            "schema": {
+              "title": "Profile Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Profile Route",
+        "tags": [
+          "config"
+        ]
+      },
+      "patch": {
+        "description": "重命名配置项目。",
+        "operationId": "patch_profile_api_config_profiles__profile_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "profile_id",
+            "required": true,
+            "schema": {
+              "title": "Profile Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfigProfileRename"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigProfileOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Patch Profile",
+        "tags": [
+          "config"
+        ]
+      }
+    },
+    "/api/config/profiles/{profile_id}/default": {
+      "post": {
+        "description": "将指定项目设为默认(新题目未指定时回退)。",
+        "operationId": "post_profile_default_api_config_profiles__profile_id__default_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "profile_id",
+            "required": true,
+            "schema": {
+              "title": "Profile Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigProfileOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Post Profile Default",
+        "tags": [
+          "config"
+        ]
+      }
+    },
+    "/api/events/questions": {
+      "get": {
+        "description": "Stream all question changes through one authenticated connection.",
+        "operationId": "question_events_api_events_questions_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Question Events",
+        "tags": [
+          "events"
+        ]
+      }
+    },
+    "/api/health": {
+      "get": {
+        "description": "返回服务健康状态与当前 UTC 时间戳。",
+        "operationId": "health_check_api_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Health Check Api Health Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health Check",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/api/mcp/health": {
+      "get": {
+        "operationId": "mcp_health_api_mcp_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpHealthResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Mcp Health",
+        "tags": [
+          "mcp"
+        ]
+      }
+    },
+    "/api/mcp/pending-assignments": {
+      "get": {
+        "description": "列出等待 MCP 客户端评分的作业(按上传时间与 ID 升序)。\n\n仅列出 ``awaiting_mcp`` 的作业。使用 keyset 游标分页:\n``(uploaded_at, id) >`` 上一个游标,保证排序稳定且不随翻页偏移。\n``limit`` 范围 1–100。",
+        "operationId": "mcp_pending_assignments_api_mcp_pending_assignments_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 2000,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpPendingAssignmentsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Mcp Pending Assignments",
+        "tags": [
+          "mcp"
+        ]
+      }
+    },
+    "/api/mcp/questions/{question_id}/rubric": {
+      "put": {
+        "description": "保存客户端从题目 OCR 提取的 rubric(服务端确定性校验)。\n\n- 校验 rubric 提取句柄有效、绑定 submission/question、OCR 未变化\n- ``complete`` 时逐项 source_quote 必须是 OCR 子串且含满分、分项=总分、\n  条目不重复,通过后写入题目级权威快照\n- ``absent_or_ambiguous`` 时持久化识别结果,后续评分走配置 rubric 或\n  内置默认,避免重复询问客户端\n- 保存后旧评分句柄失效,客户端必须重新 ``open_ai_marking_assignment``\n  以新 rubric 快照评分",
+        "operationId": "save_mcp_question_rubric_api_mcp_questions__question_id__rubric_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "question_id",
+            "required": true,
+            "schema": {
+              "title": "Question Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/McpSaveRubricRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpSaveRubricResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Save Mcp Question Rubric",
+        "tags": [
+          "mcp"
+        ]
+      }
+    },
+    "/api/mcp/submission-preflight": {
+      "post": {
+        "description": "Resolve a teacher-provided question name and validate only file metadata.",
+        "operationId": "mcp_submission_preflight_api_mcp_submission_preflight_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/McpPreflightRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpPreflightResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Mcp Submission Preflight",
+        "tags": [
+          "mcp"
+        ]
+      }
+    },
+    "/api/mcp/submissions/{submission_id}/assessment-review": {
+      "put": {
+        "description": "保存独立复核任务对当前评分建议的复核结论。\n\n- 评分句柄必须来自完整读取 ``ready_for_review`` 作业的评分包\n- 句柄绑定的 context_hash 与 grading_revision 必须仍然匹配,\n  建议已更新时返回 409,复核者需重新打开作业\n- ``items`` 必须逐项引用当前 rubric 的全部 item(不重复、不缺失);\n  ``suggested_score`` 不得超过该项满分\n- 复核结论写入 ``submissions.assessment_review`` 供教师在网页参考,\n  不改变建议本身与状态;教师仍在网页确认最终成绩",
+        "operationId": "save_mcp_assessment_review_api_mcp_submissions__submission_id__assessment_review_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "submission_id",
+            "required": true,
+            "schema": {
+              "title": "Submission Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/McpSaveReviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpSaveReviewResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Save Mcp Assessment Review",
+        "tags": [
+          "mcp"
+        ]
+      }
+    },
+    "/api/mcp/submissions/{submission_id}/assessment-v2": {
+      "put": {
+        "description": "Save a model-facing compact assessment using a server-issued grading handle.",
+        "operationId": "save_mcp_assessment_api_mcp_submissions__submission_id__assessment_v2_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "submission_id",
+            "required": true,
+            "schema": {
+              "title": "Submission Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/McpSaveAssessmentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpAssessmentResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Save Mcp Assessment",
+        "tags": [
+          "mcp"
+        ]
+      }
+    },
+    "/api/mcp/submissions/{submission_id}/package": {
+      "get": {
+        "description": "Expose the grading context in bounded pages with opaque continuation.",
+        "operationId": "mcp_submission_package_api_mcp_submissions__submission_id__package_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "submission_id",
+            "required": true,
+            "schema": {
+              "title": "Submission Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "continuation_token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 2000,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Continuation Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpPackageResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Mcp Submission Package",
+        "tags": [
+          "mcp"
+        ]
+      }
+    },
+    "/api/mcp/submissions/{submission_id}/visual-confirmation": {
+      "post": {
+        "operationId": "confirm_mcp_visual_review_api_mcp_submissions__submission_id__visual_confirmation_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "submission_id",
+            "required": true,
+            "schema": {
+              "title": "Submission Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/McpVisualConfirmationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpVisualConfirmationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Confirm Mcp Visual Review",
+        "tags": [
+          "mcp"
+        ]
+      }
+    },
+    "/api/questions": {
+      "get": {
+        "operationId": "list_questions_api_questions_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "skip",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Skip",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Search",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/QuestionStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedQuestions"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Questions",
+        "tags": [
+          "questions"
+        ]
+      },
+      "post": {
+        "operationId": "create_question_api_questions_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_create_question_api_questions_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuestionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Question",
+        "tags": [
+          "questions"
+        ]
+      }
+    },
+    "/api/questions/{question_id}": {
+      "delete": {
+        "operationId": "delete_question_api_questions__question_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "question_id",
+            "required": true,
+            "schema": {
+              "title": "Question Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuestionConfirmRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuestionMutationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Question",
+        "tags": [
+          "questions"
+        ]
+      },
+      "get": {
+        "operationId": "get_question_api_questions__question_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "question_id",
+            "required": true,
+            "schema": {
+              "title": "Question Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuestionDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Question",
+        "tags": [
+          "questions"
+        ]
+      },
+      "patch": {
+        "operationId": "rename_question_api_questions__question_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "question_id",
+            "required": true,
+            "schema": {
+              "title": "Question Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuestionRenameRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuestionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rename Question",
+        "tags": [
+          "questions"
+        ]
+      }
+    },
+    "/api/questions/{question_id}/config-profile": {
+      "patch": {
+        "description": "切换题目使用的配置项目。",
+        "operationId": "change_question_config_profile_api_questions__question_id__config_profile_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "question_id",
+            "required": true,
+            "schema": {
+              "title": "Question Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuestionConfigProfileRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuestionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Change Question Config Profile",
+        "tags": [
+          "questions"
+        ]
+      }
+    },
+    "/api/questions/{question_id}/grading-prompt": {
+      "get": {
+        "description": "按题目生成可审计的批改提示词。\n\n复用与运行时评分包完全相同的 rubric 解析与评分策略组装\n（``resolve_submission_rubric`` + ``build_grading_policy``），\n保证教师复制的提示词与 ``open_ai_marking_assignment`` 返回的\ngrading_policy 同源、一字不差。题目 OCR 未完成时无法生成。",
+        "operationId": "get_question_grading_prompt_api_questions__question_id__grading_prompt_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "question_id",
+            "required": true,
+            "schema": {
+              "title": "Question Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GradingPromptOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Question Grading Prompt",
+        "tags": [
+          "questions"
+        ]
+      }
+    },
+    "/api/questions/{question_id}/pdf": {
+      "get": {
+        "operationId": "get_question_pdf_api_questions__question_id__pdf_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "question_id",
+            "required": true,
+            "schema": {
+              "title": "Question Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Question Pdf",
+        "tags": [
+          "questions"
+        ]
+      }
+    },
+    "/api/questions/{question_id}/replace": {
+      "post": {
+        "operationId": "replace_question_api_questions__question_id__replace_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "question_id",
+            "required": true,
+            "schema": {
+              "title": "Question Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_replace_question_api_questions__question_id__replace_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuestionReplacementResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Replace Question",
+        "tags": [
+          "questions"
+        ]
+      }
+    },
+    "/api/questions/{question_id}/retry-ocr": {
+      "post": {
+        "description": "失败后由教师重新上传 PDF，再创建一次 OCR 任务。",
+        "operationId": "retry_question_ocr_api_questions__question_id__retry_ocr_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "question_id",
+            "required": true,
+            "schema": {
+              "title": "Question Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_retry_question_ocr_api_questions__question_id__retry_ocr_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuestionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retry Question Ocr",
+        "tags": [
+          "questions"
+        ]
+      }
+    },
+    "/api/submissions": {
+      "delete": {
+        "description": "批量删除提交记录。\n\n- 仅终态记录允许删除;存在处理中记录时整批原子拒绝\n- 先提交数据库删除,成功后再清理磁盘 PDF(学生作业 + 题目)\n- 关联的 conversations 由 DB CASCADE 自动级联删除\n- 不存在的 ID 安全跳过,不影响其他记录的删除\n- 文件删除失败不阻断流程(如文件已被清理),仅记录日志",
+        "operationId": "batch_delete_submissions_api_submissions_delete",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchDeleteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchDeleteResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Batch Delete Submissions",
+        "tags": [
+          "submissions"
+        ]
+      },
+      "get": {
+        "description": "分页列出提交(按上传时间降序)。\n\n``include_count=false`` 时跳过 ``COUNT(*)`` 查询,``total`` 返回 ``0``。\n用于前端处理中轮询场景:轮询只需刷新 items,总数由独立的\n``GET /submissions/count`` 提供,避免每 15s 一次 count 往返。",
+        "operationId": "list_submissions_api_submissions_get",
+        "parameters": [
+          {
+            "description": "跳过的记录数",
+            "in": "query",
+            "name": "skip",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "description": "跳过的记录数",
+              "minimum": 0,
+              "title": "Skip",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "每页记录数",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "description": "每页记录数",
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "是否计算 total。轮询场景传 false 跳过 count 查询",
+            "in": "query",
+            "name": "include_count",
+            "required": false,
+            "schema": {
+              "default": true,
+              "description": "是否计算 total。轮询场景传 false 跳过 count 查询",
+              "title": "Include Count",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedSubmissions"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Submissions",
+        "tags": [
+          "submissions"
+        ]
+      },
+      "post": {
+        "description": "上传学生报告 PDF 及可选的多语言代码文件。\n\n收敛为 MCP-only 后固定使用外部编程助手评分模式：上传后只做 OCR，\n进入 ``awaiting_mcp``，由 MCP 客户端评分。",
+        "operationId": "create_submission_api_submissions_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_create_submission_api_submissions_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmissionCreateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Submission",
+        "tags": [
+          "submissions"
+        ]
+      }
+    },
+    "/api/submissions/count": {
+      "get": {
+        "description": "返回提交总数。供前端在翻页/首次加载时单独拉取,避免与轮询列表耦合。",
+        "operationId": "count_submissions_api_submissions_count_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "integer"
+                  },
+                  "title": "Response Count Submissions Api Submissions Count Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Count Submissions",
+        "tags": [
+          "submissions"
+        ]
+      }
+    },
+    "/api/submissions/export.xlsx": {
+      "get": {
+        "description": "Export teacher-reviewed results for one question as an Excel workbook.",
+        "operationId": "export_submission_results_api_submissions_export_xlsx_get",
+        "parameters": [
+          {
+            "description": "题目 ID",
+            "in": "query",
+            "name": "question_id",
+            "required": true,
+            "schema": {
+              "description": "题目 ID",
+              "minLength": 1,
+              "title": "Question Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "本次导出的及格得分率百分比",
+            "in": "query",
+            "name": "pass_threshold",
+            "required": true,
+            "schema": {
+              "description": "本次导出的及格得分率百分比",
+              "exclusiveMinimum": 0,
+              "maximum": 100,
+              "title": "Pass Threshold",
+              "type": "number"
+            }
+          },
+          {
+            "description": "工作簿标题语言",
+            "in": "query",
+            "name": "locale",
+            "required": false,
+            "schema": {
+              "default": "zh-CN",
+              "description": "工作簿标题语言",
+              "enum": [
+                "zh-CN",
+                "en-US"
+              ],
+              "title": "Locale",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Export Submission Results",
+        "tags": [
+          "submissions"
+        ]
+      }
+    },
+    "/api/submissions/{submission_id}": {
+      "get": {
+        "description": "获取单个提交详情。",
+        "operationId": "get_submission_api_submissions__submission_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "submission_id",
+            "required": true,
+            "schema": {
+              "title": "Submission Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmissionDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Submission",
+        "tags": [
+          "submissions"
+        ]
+      }
+    },
+    "/api/submissions/{submission_id}/events": {
+      "get": {
+        "description": "SSE 端点:实时推送 submission 状态变更事件(P1)。\n\n- 基于 PostgreSQL LISTEN/NOTIFY,worker 在 ``_update_status`` 内 NOTIFY\n- 启动时先推一次当前状态,避免客户端错过终态事件\n- 每 15s 注释行 keepalive,防止中间代理断开空闲连接\n- 前端 ``useSubmissionEvents`` hook 消费此端点,收到事件后 invalidate\n  status query;30s 兜底轮询在 SSE 断开时仍能恢复",
+        "operationId": "submission_events_api_submissions__submission_id__events_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "submission_id",
+            "required": true,
+            "schema": {
+              "title": "Submission Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Submission Events",
+        "tags": [
+          "submissions"
+        ]
+      }
+    },
+    "/api/submissions/{submission_id}/finalize": {
+      "post": {
+        "description": "教师确认最终评分。\n\n- 校验状态为 ready_for_review(已 reviewed 返回 409)\n- 校验分数一致性(由 FinalizeRequest 的 model_validator 处理)\n- 写入 score/max_score/feedback/details/reviewed_by/reviewed_at\n- 状态置为 reviewed",
+        "operationId": "finalize_submission_api_submissions__submission_id__finalize_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "submission_id",
+            "required": true,
+            "schema": {
+              "title": "Submission Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FinalizeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmissionDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Finalize Submission",
+        "tags": [
+          "submissions"
+        ]
+      }
+    },
+    "/api/submissions/{submission_id}/pdf": {
+      "get": {
+        "description": "安全返回学生作业或作业题目的 PDF 文件流。\n\n- 仅终态记录(ready_for_review/reviewed/failed)可访问\n- 不暴露服务器文件路径,仅通过 DB 读取后本地读取\n- 使用浏览器原生 PDF 预览(iframe/object)",
+        "operationId": "get_submission_pdf_api_submissions__submission_id__pdf_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "submission_id",
+            "required": true,
+            "schema": {
+              "title": "Submission Id",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "PDF 类型: submission 或 question",
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "schema": {
+              "default": "submission",
+              "description": "PDF 类型: submission 或 question",
+              "title": "Type",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Submission Pdf",
+        "tags": [
+          "submissions"
+        ]
+      }
+    },
+    "/api/submissions/{submission_id}/retry": {
+      "post": {
+        "description": "在原记录上重试失败作业，可选替换学生 PDF。",
+        "operationId": "retry_submission_api_submissions__submission_id__retry_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "submission_id",
+            "required": true,
+            "schema": {
+              "title": "Submission Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_retry_submission_api_submissions__submission_id__retry_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmissionCreateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retry Submission",
+        "tags": [
+          "submissions"
+        ]
+      }
+    },
+    "/api/submissions/{submission_id}/status": {
+      "get": {
+        "description": "仅返回当前提交的处理状态与终态字段。\n\n用于前端兜底轮询场景(主路径走 SSE 推送):每 30s 拉一次轻量接口,\n进入终态后再拉完整 ``GET /submissions/{id}``。payload 体积通常\n小于 200B,远小于完整 ``SubmissionDetail`` 含 ``ocr_text`` 的几十 KB 至 MB。",
+        "operationId": "get_submission_status_api_submissions__submission_id__status_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "submission_id",
+            "required": true,
+            "schema": {
+              "title": "Submission Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmissionStatusOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Submission Status",
+        "tags": [
+          "submissions"
+        ]
+      }
+    }
+  }
+}
