@@ -5,8 +5,8 @@ import json
 import httpx
 import pytest
 
+from app.core.errors import BusinessError
 from app.services import ocr
-from app.services.errors import BusinessError
 from app.services.ocr import OCRError, _normalize_api_url
 
 

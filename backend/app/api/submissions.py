@@ -25,22 +25,23 @@ from fastapi import (
 )
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import exists, func, select
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, selectinload
 from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 
-from app.application.lifecycle import transition_submission
-from app.application.locking import lock_submission_after_question
+from app.application.submissions import (
+    batch_delete_submissions as batch_delete_submissions_use_case,
+)
+from app.application.submissions import (
+    finalize_submission as finalize_submission_use_case,
+)
 from app.application.uploads import (
-    DELETABLE_SUBMISSION_STATUSES,
     commit_submission_create,
     commit_submission_retry,
     preflight_submission_create,
     preflight_submission_retry,
 )
 from app.core.config import settings
-from app.core.time import utc_now_naive
 from app.db.session import get_db, get_session_factory
 from app.models.question import (
     Question,
@@ -63,16 +64,18 @@ from app.schemas.submission import (
 from app.services.code_manifest import parse_code_manifest_json
 from app.services.document_storage import (
     MAX_CODE_FILES,
-    discard_stored_document,
     remove_document_if_unreferenced,
+    resolve_upload_dir,
     save_code_files,
     save_document_as_pdf,
     validate_document_upload,
     validate_independent_code_entries,
 )
+from app.services.document_storage import (
+    discard_uncommitted_document as _discard_uncommitted_document,
+)
 from app.services.events import (
     acquire_sse_slot,
-    notify_submission_status,
     submission_event_stream,
 )
 from app.services.result_export import (
@@ -84,12 +87,6 @@ from app.services.result_export import (
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-
-def _discard_uncommitted_document(db: Session, stored, upload_dir: Path) -> None:
-    try:
-        discard_stored_document(db, stored, upload_dir)
-    except (OSError, SQLAlchemyError, ValueError) as exc:
-        logger.warning("清理未提交学生 PDF 失败 [%s]: %s", stored.path, exc)
 
 
 def _discard_code_storage(code_metadata: list[dict]) -> None:
@@ -134,14 +131,12 @@ async def create_submission(
     )
 
     # 解析并校验上传目录(必须位于后端根目录下,防止任意目录写入)
-    backend_root = Path(__file__).resolve().parent.parent.parent
-    upload_dir = Path(settings.UPLOAD_DIR).resolve()
     try:
-        upload_dir.relative_to(backend_root)
-    except ValueError:
+        upload_dir = resolve_upload_dir()
+    except ValueError as exc:
         raise HTTPException(
             status_code=500, detail="UPLOAD_DIR 配置非法,必须位于后端根目录下"
-        )
+        ) from exc
     upload_dir.mkdir(parents=True, exist_ok=True)
 
     stored = await save_document_as_pdf(file, upload_dir)
@@ -214,9 +209,8 @@ async def retry_submission(
     stored = None
     upload_dir = Path(settings.UPLOAD_DIR).resolve()
     if file is not None:
-        backend_root = Path(__file__).resolve().parent.parent.parent
         try:
-            upload_dir.relative_to(backend_root)
+            upload_dir = resolve_upload_dir()
         except ValueError as exc:
             raise HTTPException(
                 status_code=500, detail="UPLOAD_DIR 配置非法,必须位于后端根目录下"
@@ -413,91 +407,8 @@ def batch_delete_submissions(
     - 不存在的 ID 安全跳过,不影响其他记录的删除
     - 文件删除失败不阻断流程(如文件已被清理),仅记录日志
     """
-    unique_ids = list(dict.fromkeys(payload.ids))
-    snapshots = db.execute(
-        select(Submission.id, Submission.question_id).where(
-            Submission.id.in_(unique_ids)
-        )
-    ).all()
-    question_ids = sorted({row.question_id for row in snapshots})
-    if question_ids:
-        db.execute(
-            select(Question.id)
-            .where(Question.id.in_(question_ids))
-            .order_by(Question.id)
-            .with_for_update()
-        ).all()
-    stmt = (
-        select(Submission)
-        .options(
-            selectinload(Submission.code_files),
-            selectinload(Submission.code_input_files),
-        )
-        .where(Submission.id.in_(unique_ids))
-        .order_by(Submission.id)
-        .with_for_update()
-    )
-    subs = db.execute(stmt).scalars().all()
-
-    blocked_ids = sorted(
-        sub.id for sub in subs if sub.status not in DELETABLE_SUBMISSION_STATUSES
-    )
-    if blocked_ids:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={
-                "message": "正在处理的记录不可删除，请等待批改完成后重试",
-                "blocked_ids": blocked_ids,
-            },
-        )
-
-    file_paths = [sub.file_path for sub in subs if sub.file_path]
-    code_paths = [
-        code_file.file_path
-        for sub in subs
-        for code_file in sub.code_files
-        if code_file.file_path
-    ]
-    input_paths = [
-        input_file.file_path
-        for sub in subs
-        for input_file in sub.code_input_files
-        if input_file.file_path
-    ]
-    artifact_roots = [
-        Path(settings.UPLOAD_DIR).resolve() / "code-artifacts" / str(sub.id)
-        for sub in subs
-    ]
-
-    for sub in subs:
-        db.delete(sub)
-    try:
-        db.commit()
-    except Exception:
-        db.rollback()
-        raise
-
-    # 数据库是删除结果的权威来源。提交成功后再清理文件,避免事务失败时
-    # 出现“记录仍在但 PDF 已丢失”的不可恢复状态。
-    for file_path in file_paths:
-        try:
-            remove_document_if_unreferenced(db, file_path, Path(settings.UPLOAD_DIR))
-        except (OSError, ValueError) as exc:
-            logger.warning("删除 submission PDF 失败 [%s]: %s", file_path, exc)
-    for file_path in code_paths:
-        try:
-            Path(file_path).unlink(missing_ok=True)
-        except OSError as exc:
-            logger.warning("删除 submission 代码文件失败 [%s]: %s", file_path, exc)
-    for file_path in input_paths:
-        try:
-            Path(file_path).unlink(missing_ok=True)
-        except OSError as exc:
-            logger.warning("删除 submission 数据文件失败 [%s]: %s", file_path, exc)
-    for artifact_root in artifact_roots:
-        shutil.rmtree(artifact_root, ignore_errors=True)
-
-    return BatchDeleteResponse(deleted_count=len(subs))
+    deleted_count = batch_delete_submissions_use_case(db, payload.ids)
+    return BatchDeleteResponse(deleted_count=deleted_count)
 
 
 @router.get("/submissions/{submission_id}", response_model=SubmissionDetail)
@@ -570,7 +481,11 @@ def get_submission_pdf(
     - 不暴露服务器文件路径,仅通过 DB 读取后本地读取
     - 使用浏览器原生 PDF 预览(iframe/object)
     """
-    sub = db.get(Submission, submission_id)
+    sub = db.get(
+        Submission,
+        submission_id,
+        options=[selectinload(Submission.question)],
+    )
     if sub is None:
         raise HTTPException(status_code=404, detail="提交记录不存在")
     if sub.status not in (
@@ -622,27 +537,12 @@ def finalize_submission(
     - 写入 score/max_score/feedback/details/reviewed_by/reviewed_at
     - 状态置为 reviewed
     """
-    sub = lock_submission_after_question(db, submission_id)
-    if sub is None:
-        raise HTTPException(status_code=404, detail="提交记录不存在")
-    if sub.status == SubmissionStatus.reviewed:
-        raise HTTPException(status_code=409, detail="该作业已审阅,不可重复提交")
-    if sub.status != SubmissionStatus.ready_for_review:
-        raise HTTPException(
-            status_code=409,
-            detail="作业尚未准备好进行审阅",
-        )
-
-    now = utc_now_naive()
-    sub.score = payload.score
-    sub.max_score = payload.max_score
-    sub.feedback = payload.feedback
-    sub.details = [item.model_dump() for item in payload.details]
-    sub.reviewed_by = payload.reviewer_name
-    sub.reviewed_at = now
-    sub.completed_at = now
-    transition_submission(sub, SubmissionStatus.reviewed)
-    notify_submission_status(db, submission_id, SubmissionStatus.reviewed.value)
-    db.commit()
-    db.refresh(sub)
-    return sub
+    return finalize_submission_use_case(
+        db,
+        submission_id,
+        score=payload.score,
+        max_score=payload.max_score,
+        feedback=payload.feedback,
+        details=[item.model_dump() for item in payload.details],
+        reviewer_name=payload.reviewer_name,
+    )

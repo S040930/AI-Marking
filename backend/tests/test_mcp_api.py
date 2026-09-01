@@ -2,11 +2,11 @@ import json
 
 import pytest
 
+from app.application.mcp_workflow import build_grading_policy
 from app.core.config import settings
 from app.models.question import Question, QuestionStatus
 from app.models.submission import Submission, SubmissionGradingMode, SubmissionStatus
 from app.models.submission_code_file import SubmissionCodeFile
-from app.services.mcp_workflow import build_grading_policy
 from app.services.rubric import resolve_rubric
 
 

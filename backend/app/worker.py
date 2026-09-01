@@ -19,7 +19,11 @@ from app.application.lifecycle import (
     transition_submission,
 )
 from app.application.locking import lock_submission_after_question
+from app.application.marking import run_marking_pipeline
+from app.application.question_ocr import run_question_ocr
+from app.application.question_replace import run_question_replace
 from app.core.config import settings
+from app.core.errors import BusinessError
 from app.db.session import SessionLocal, engine
 from app.models.background_job import BackgroundJobType
 from app.models.question import (
@@ -29,11 +33,7 @@ from app.models.question import (
 )
 from app.models.submission import SubmissionStatus
 from app.services.cleanup import periodic_cleanup_loop
-from app.services.errors import BusinessError
-from app.services.marking import run_marking_pipeline
 from app.services.ocr import close_client as close_ocr_client
-from app.services.question_ocr import run_question_ocr
-from app.services.question_replace import run_question_replace
 from app.services.queue import (
     ClaimedJob,
     claim_next_job,

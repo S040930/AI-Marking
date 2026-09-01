@@ -19,7 +19,8 @@ from app.api.health import router as health_router
 from app.api.mcp import router as mcp_router
 from app.api.questions import router as questions_router
 from app.api.submissions import router as submissions_router
-from app.application.errors import (
+from app.core.config import settings
+from app.core.errors import (
     ApplicationError,
     ConflictError,
     NotFoundError,
@@ -27,7 +28,6 @@ from app.application.errors import (
     ServiceUnavailableError,
     ValidationError,
 )
-from app.core.config import settings
 from app.db.session import engine as _engine
 from app.services.ocr import close_client as close_ocr_client
 

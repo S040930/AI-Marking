@@ -3,11 +3,11 @@
 import logging
 
 from app.application.lifecycle import transition_question
+from app.core.errors import BusinessError
 from app.core.time import utc_now_naive
 from app.db.session import SessionLocal
 from app.models.question import Question, QuestionStatus
 from app.services.config import get_config_dict
-from app.services.errors import BusinessError
 from app.services.events import notify_question_status
 from app.services.ocr import OCRError, ocr_pdf
 

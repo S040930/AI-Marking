@@ -6,6 +6,7 @@ from pathlib import Path
 from sqlalchemy import select, text
 from sqlalchemy.orm import sessionmaker
 
+from app.application import question_replace
 from app.models.background_job import (
     BackgroundJob,
     BackgroundJobStatus,
@@ -17,7 +18,6 @@ from app.models.question import (
     QuestionStatus,
 )
 from app.models.submission import Submission, SubmissionStatus
-from app.services import question_replace
 from app.services.ocr import OCRError
 
 

@@ -13,10 +13,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
 from app import worker
+from app.application import question_replace
+from app.core.errors import BusinessError
 from app.models.background_job import BackgroundJob
 from app.models.question import Question, QuestionReplacementStatus, QuestionStatus
-from app.services import question_replace
-from app.services.errors import BusinessError
 from app.services.queue import claim_next_job, new_question_replace_job
 
 

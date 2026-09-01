@@ -6,7 +6,7 @@ import pytest
 from fastapi import UploadFile
 from starlette.datastructures import Headers
 
-from app.application.errors import PayloadTooLargeError, ValidationError
+from app.core.errors import PayloadTooLargeError, ValidationError
 from app.services import document_storage
 
 

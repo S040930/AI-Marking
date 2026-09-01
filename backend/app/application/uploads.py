@@ -14,12 +14,12 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload, sessionmaker
 
-from app.application.errors import ConflictError, NotFoundError, ValidationError
 from app.application.lifecycle import (
     transition_question,
     transition_question_replacement,
     transition_submission,
 )
+from app.core.errors import ConflictError, NotFoundError, ValidationError
 from app.core.time import utc_now_naive
 from app.models.config_profile import ConfigProfile
 from app.models.question import Question, QuestionReplacementStatus, QuestionStatus

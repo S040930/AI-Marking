@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
 from app import worker
+from app.application import question_ocr
 from app.core.time import utc_now_naive
 from app.models.background_job import (
     BackgroundJob,
@@ -17,7 +18,6 @@ from app.models.question import (
     QuestionReplacementStatus,
     QuestionStatus,
 )
-from app.services import question_ocr
 from app.services.ocr import OCRError
 from app.services.queue import (
     ClaimedJob,

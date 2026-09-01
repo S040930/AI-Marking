@@ -26,7 +26,7 @@ from collections.abc import Awaitable, Callable
 import aiofiles
 import httpx
 
-from app.services.errors import BusinessError
+from app.core.errors import BusinessError
 
 # PaddleOCR-VL layout-parsing 接口超时(秒)
 # 大 PDF + 复杂版面可能耗时较长,这里给到 120s
@@ -180,77 +180,96 @@ def _is_retryable(exc: Exception) -> bool:
     return False
 
 
-async def _request_with_retry(
-    request: Callable[[], Awaitable[httpx.Response]],
-    operation: str,
-) -> httpx.Response:
-    """Run one OCR HTTP operation with the shared retry classification."""
+async def _run_with_circuit_and_retry(
+    operation: Callable[[], Awaitable[httpx.Response]],
+    parse: Callable[[httpx.Response], Awaitable[object]] | None,
+    error_prefix: str,
+) -> object:
+    """带熔断与指数退避重试的一次 OCR HTTP 操作。
+
+    - ``operation`` 发起请求;``parse`` 可选,在 HTTP 成功后解析响应体
+      (解析抛 ``BusinessError`` 视为确定性失败,不重试也不计入熔断)
+    - 可重试错误按 1s/2s/4s 退避,耗尽后记一次熔断失败并抛 ``OCRError``
+    - 不可重试的 HTTP 错误(如 4xx 配置错误)直接转 ``BusinessError``
+    """
+    # 熔断打开时直接 raise,避免无谓重试
     if await _check_circuit_open():
         raise OCRError("PaddleOCR-VL 熔断中(连续失败过多),请稍后再试")
 
     last_exc: httpx.HTTPError | None = None
     for attempt in range(_MAX_ATTEMPTS):
         try:
-            response = await request()
+            response = await operation()
             response.raise_for_status()
+            if parse is not None:
+                data = await parse(response)
+            else:
+                data = response
             await _record_success()
-            return response
+            return data
         except httpx.HTTPError as exc:
             if not _is_retryable(exc):
-                raise BusinessError(f"PaddleOCR-VL {operation}失败: {exc}") from exc
+                # 不可重试错误(如 4xx 配置错误):业务失败,不记入熔断计数,
+                # 直接抛出 BusinessError 由 worker 标记终态且不重试。
+                raise BusinessError(f"{error_prefix}: {exc}") from exc
             last_exc = exc
-            if attempt + 1 < _MAX_ATTEMPTS:
-                await asyncio.sleep(_BACKOFF_BASE_SECONDS * (2**attempt))
+            if attempt + 1 >= _MAX_ATTEMPTS:
+                break
+            await asyncio.sleep(_BACKOFF_BASE_SECONDS * (2**attempt))
 
+    # 重试耗尽:记一次熔断失败(整个操作算一次失败)
     await _record_failure()
     status_code = _http_status_for_retry(last_exc) if last_exc else None
     detail = f"HTTP {status_code}" if status_code else type(last_exc).__name__
     raise OCRError(
-        f"PaddleOCR-VL {operation}重试 {_MAX_ATTEMPTS} 次仍失败: "
-        f"{detail}: {last_exc}"
+        f"{error_prefix}重试 {_MAX_ATTEMPTS} 次仍失败: {detail}: {last_exc}"
     ) from last_exc
+
+
+def _parse_layout_parsing_json(response: httpx.Response) -> dict:
+    """解析同步 layout-parsing 响应体;非 JSON 视为确定性业务失败。"""
+    try:
+        return response.json()
+    except (ValueError, json.JSONDecodeError) as exc:
+        # HTTP 200 但响应体不是合法 JSON(如代理返回 HTML 错误页):属于
+        # 确定性的响应格式问题,与异步路径分类一致归为业务失败,不重试。
+        raise BusinessError(f"PaddleOCR-VL 返回内容无法解析: {exc}") from exc
 
 
 async def _ocr_with_retry(
     client: httpx.AsyncClient, url: str, payload: dict, headers: dict
 ) -> dict:
-    """调用 PaddleOCR-VL,带指数退避的重试与熔断。"""
-    # 熔断打开时直接 raise,避免无谓重试占用信号量
-    if await _check_circuit_open():
-        raise OCRError(
-            "PaddleOCR-VL 熔断中(连续失败过多),请稍后再试"
-        )
+    """调用 PaddleOCR-VL 同步 layout-parsing 接口,带重试与熔断。"""
+    return await _run_with_circuit_and_retry(
+        lambda: client.post(url, json=payload, headers=headers),
+        _parse_layout_parsing_json,
+        "PaddleOCR-VL 调用失败",
+    )
 
-    last_exc: Exception | None = None
-    for attempt in range(_MAX_ATTEMPTS):
+
+async def _request_with_retry(
+    request: Callable[[], Awaitable[httpx.Response]],
+    operation: str,
+) -> httpx.Response:
+    """异步任务路径的 HTTP 操作:共享重试/熔断,不解析响应体。"""
+    return await _run_with_circuit_and_retry(
+        request,
+        None,
+        f"PaddleOCR-VL {operation}失败",
+    )
+
+
+def _combine_page_texts(pages: list[dict]) -> str:
+    """按页序拼接 layoutParsingResults 的 markdown 文本;结构异常页跳过。"""
+    texts: list[str] = []
+    for page in pages:
         try:
-            resp = await client.post(url, json=payload, headers=headers)
-            resp.raise_for_status()
-            data = resp.json()
-            await _record_success()
-            return data
-        except httpx.HTTPError as exc:
-            last_exc = exc
-            if not _is_retryable(exc):
-                # 不可重试错误(如 4xx 配置错误):业务失败,不记入熔断计数,
-                # 直接抛出 BusinessError 由 worker 标记终态且不重试。
-                raise BusinessError(f"PaddleOCR-VL 调用失败: {exc}") from exc
-            if attempt + 1 >= _MAX_ATTEMPTS:
-                break
-            backoff = _BACKOFF_BASE_SECONDS * (2**attempt)
-            await asyncio.sleep(backoff)
-        except (ValueError, json.JSONDecodeError) as exc:
-            # HTTP 200 但响应体不是合法 JSON(如代理返回 HTML 错误页):属于
-            # 确定性的响应格式问题,与异步路径分类一致归为业务失败,不重试。
-            raise BusinessError(f"PaddleOCR-VL 返回内容无法解析: {exc}") from exc
-
-    # 重试耗尽:记一次熔断失败(整个 _ocr_with_retry 算一次失败)
-    await _record_failure()
-    status_code = _http_status_for_retry(last_exc) if last_exc else None
-    detail = f"HTTP {status_code}" if status_code else type(last_exc).__name__
-    raise OCRError(
-        f"PaddleOCR-VL 重试 {_MAX_ATTEMPTS} 次仍失败: {detail}: {last_exc}"
-    ) from last_exc
+            text = page["markdown"]["text"]
+        except (KeyError, TypeError, AttributeError):
+            continue
+        if text:
+            texts.append(text)
+    return "\n\n".join(texts).strip()
 
 
 async def ocr_pdf(file_path: str, api_url: str, token: str) -> str:
@@ -301,24 +320,10 @@ async def ocr_pdf(file_path: str, api_url: str, token: str) -> str:
     except (KeyError, TypeError) as exc:
         raise BusinessError(f"PaddleOCR-VL 返回结构异常: {data}") from exc
 
-    if not results:
+    combined = _combine_page_texts(results)
+    if not combined:
         raise BusinessError("PaddleOCR-VL 返回空文本,可能 PDF 无有效内容")
-
-    # 遍历所有页面,用换行符拼接
-    texts: list[str] = []
-    for page in results:
-        try:
-            texts.append(page["markdown"]["text"])
-        except (KeyError, TypeError):
-            # 某页结构异常时跳过,不影响其他页
-            continue
-
-    combined = "\n\n".join(texts)
-
-    if not combined or not combined.strip():
-        raise BusinessError("PaddleOCR-VL 返回空文本,可能 PDF 无有效内容")
-
-    return combined.strip()
+    return combined
 
 
 async def _ocr_via_async_jobs(
@@ -411,20 +416,14 @@ async def _ocr_via_async_jobs(
             records = [
                 json.loads(line) for line in raw.splitlines() if line.strip()
             ]
-        texts = []
+        pages: list[dict] = []
         for record in records:
             result = record.get("result", record)
-            for page in result.get("layoutParsingResults", []):
-                text = page.get("markdown", {}).get("text", "")
-                if text:
-                    texts.append(text)
+            pages.extend(result.get("layoutParsingResults", []))
     except (json.JSONDecodeError, AttributeError, TypeError, ValueError) as exc:
         raise BusinessError(f"PaddleOCR-VL 解析结果失败: {exc}") from exc
 
-    if not texts:
-        raise BusinessError("PaddleOCR-VL 返回空文本，可能 PDF 无有效内容")
-
-    combined = "\n\n".join(texts).strip()
+    combined = _combine_page_texts(pages)
     if not combined:
         raise BusinessError("PaddleOCR-VL 返回空文本，可能 PDF 无有效内容")
     return combined

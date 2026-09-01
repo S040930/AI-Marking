@@ -17,6 +17,23 @@ def _imports(path: Path) -> set[str]:
     return found
 
 
+def test_core_has_no_outer_layer_imports():
+    forbidden = (
+        "fastapi",
+        "sqlalchemy",
+        "app.api",
+        "app.models",
+        "app.services",
+        "app.application",
+    )
+    violations = []
+    for path in (APP_ROOT / "core").rglob("*.py"):
+        for imported in _imports(path):
+            if imported.startswith(forbidden):
+                violations.append(f"{path.relative_to(APP_ROOT)} -> {imported}")
+    assert not violations, violations
+
+
 def test_domain_has_no_framework_or_outer_layer_imports():
     forbidden = ("fastapi", "sqlalchemy", "app.api", "app.models", "app.services")
     violations = []
@@ -36,6 +53,16 @@ def test_application_does_not_import_api():
         for path in application.rglob("*.py")
         for imported in _imports(path)
         if imported.startswith("app.api")
+    ]
+    assert not violations, violations
+
+
+def test_services_do_not_import_application():
+    violations = [
+        f"{path.relative_to(APP_ROOT)} -> {imported}"
+        for path in (APP_ROOT / "services").rglob("*.py")
+        for imported in _imports(path)
+        if imported.startswith("app.application")
     ]
     assert not violations, violations
 

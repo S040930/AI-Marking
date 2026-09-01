@@ -14,20 +14,20 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import sessionmaker
 
-from app.application.errors import ConflictError
 from app.application.locking import lock_submission_after_question
+from app.application.mcp_workflow import get_locked_submission_in_order
 from app.application.uploads import (
     commit_question_replace,
     commit_submission_retry,
     preflight_submission_create,
 )
+from app.core.errors import ConflictError
 from app.core.time import utc_now_naive
 from app.models.background_job import BackgroundJob, BackgroundJobStatus
 from app.models.config_profile import ConfigProfile
 from app.models.question import Question, QuestionStatus
 from app.models.submission import Submission, SubmissionStatus
 from app.services.document_storage import StoredDocument
-from app.services.mcp_workflow import get_locked_submission_in_order
 from app.services.queue import claim_next_job, new_question_ocr_job
 
 pytestmark = pytest.mark.skipif(

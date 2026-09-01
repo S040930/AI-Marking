@@ -17,15 +17,20 @@ from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
-from app.application.errors import ConflictError, NotFoundError, ValidationError
 from app.application.lifecycle import transition_submission
 from app.core.config import settings
+from app.core.errors import ConflictError, NotFoundError, ValidationError
 from app.core.time import utc_now_naive
 from app.models.mcp_assessment_receipt import McpAssessmentReceipt
 from app.models.mcp_workflow_handle import McpWorkflowHandle
 from app.models.question import Question
 from app.models.submission import Submission, SubmissionGradingMode, SubmissionStatus
-from app.schemas.mcp import McpAssessmentRequest, McpAssessmentResponse
+from app.schemas.mcp import (
+    McpAssessmentRequest,
+    McpAssessmentResponse,
+    McpPackageResponse,
+    McpSaveAssessmentRequest,
+)
 from app.services.config import get_config_dict
 from app.services.events import notify_submission_status
 from app.services.rubric import (
@@ -510,3 +515,371 @@ def validate_resolved_rubric(
     if abs(assessment.max_score - resolved.total_max_score) > 0.01:
         raise ValidationError("总满分与当前 rubric 不一致")
     return resolved
+
+
+def open_grading_package(
+    db: Session,
+    sub: Submission,
+    continuation_token: str | None,
+) -> McpPackageResponse:
+    """打开评分包：失败/已审阅/处理中分支与分页游标、评分句柄签发。
+
+    从 ``app/api/mcp.py`` 的 ``mcp_submission_package`` 迁入；调用方保证
+    ``sub`` 来自 ``get_submission_or_404``。
+    """
+    from app.services.question_rubric import EXTRACTOR_VERSION
+
+    if sub.status == SubmissionStatus.failed:
+        return McpPackageResponse(
+            submission_id=sub.id,
+            status=sub.status,
+            error_message=sub.error_message,
+        )
+    if sub.status == SubmissionStatus.reviewed:
+        return McpPackageResponse(
+            submission_id=sub.id,
+            status=sub.status,
+            assessment=build_assessment_summary(sub),
+        )
+    if sub.status not in (
+        SubmissionStatus.awaiting_mcp,
+        SubmissionStatus.ready_for_review,
+    ):
+        return McpPackageResponse(submission_id=sub.id, status=sub.status)
+
+    # needs_rubric 分支:题目没有可信 rubric 快照、配置项目也没有 rubric 时,
+    # 服务端解析回退到内置默认(100 分)。此时要求客户端先从题目 OCR 提取
+    # rubric 并保存(save_ai_marking_question_rubric),再重新打开作业评分。
+    # 返回题目 OCR 与短期 rubric 提取句柄;同一题目同时只允许一个有效
+    # 提取句柄,防止并发提取互相覆盖。
+    resolved = resolve_submission_rubric(db, sub)
+    if (
+        resolved.source == "built_in_default"
+        and sub.question is not None
+        and (sub.question.ocr_text or "")
+    ):
+        ocr_text = sub.question.ocr_text or ""
+        ocr_hash = "sha256:" + hashlib.sha256(ocr_text.encode()).hexdigest()
+        # 当前 OCR 已做过一次提取(complete 会走 question_extracted 分支,
+        # absent_or_ambiguous 表示题目没有明确标准)时,不再重复询问客户端,
+        # 直接落到下面的内置默认评分包。
+        already_extracted = (
+            sub.question.extracted_rubric_ocr_hash == ocr_hash
+            and sub.question.extracted_rubric_version == EXTRACTOR_VERSION
+        )
+        if not already_extracted:
+            # 撤销该题目已有的 rubric 提取句柄(含过期清理),保证单一有效句柄
+            db.execute(
+                delete(McpWorkflowHandle).where(
+                    McpWorkflowHandle.kind == "rubric_extraction",
+                    McpWorkflowHandle.question_id == sub.question.id,
+                )
+            )
+            now = utc_now_naive()
+            db.execute(delete(McpWorkflowHandle).where(McpWorkflowHandle.expires_at < now))
+            handle = secrets.token_urlsafe(32)
+            db.add(
+                McpWorkflowHandle(
+                    token_hash=token_hash(handle),
+                    kind="rubric_extraction",
+                    submission_id=sub.id,
+                    question_id=sub.question.id,
+                    ocr_hash=ocr_hash,
+                    context_hash=ocr_hash,
+                    grading_revision=sub.grading_revision,
+                    expires_at=now + timedelta(seconds=HANDLE_TTL_SECONDS),
+                )
+            )
+            db.commit()
+            return McpPackageResponse(
+                submission_id=sub.id,
+                status=sub.status,
+                needs_rubric=True,
+                question_id=sub.question.id,
+                question_ocr_text=ocr_text,
+                rubric_handle=handle,
+                review_url=f"/review/{sub.id}",
+            )
+
+    package, context_hash = build_package_text(db, sub)
+    if len(package) > settings.MCP_MAX_GRADING_CONTEXT_CHARS:
+        raise ValidationError(
+            "评分上下文超过 MCP_MAX_GRADING_CONTEXT_CHARS，请拆分作业或缩减提交内容后重试"
+        )
+    offset = 0
+    if continuation_token:
+        cursor = load_workflow_handle(db, continuation_token, kind="package")
+        if (
+            cursor.submission_id != sub.id
+            or cursor.context_hash != context_hash
+            or cursor.grading_revision != sub.grading_revision
+        ):
+            raise ConflictError("评分上下文已变化，请重新打开作业")
+        offset = int(cursor.offset or 0)
+    if offset < 0 or offset >= len(package):
+        raise ConflictError("评分包游标无效，请重新打开作业")
+    end = min(len(package), offset + PACKAGE_PAGE_CHARS)
+    complete = end == len(package)
+    next_token = None
+    if not complete:
+        next_token = create_workflow_handle(
+            db,
+            {
+                "kind": "package",
+                "submission_id": sub.id,
+                "context_hash": context_hash,
+                "grading_revision": sub.grading_revision,
+                "offset": end,
+            }
+        )
+    grading_handle = None
+    if complete:
+        grading_handle = create_workflow_handle(
+            db,
+            {
+                "kind": "grading",
+                "submission_id": sub.id,
+                "context_hash": context_hash,
+                "grading_revision": sub.grading_revision,
+                "context_complete": True,
+            }
+        )
+    db.commit()
+    return McpPackageResponse(
+        submission_id=sub.id,
+        status=sub.status,
+        content=package[offset:end],
+        context_complete=complete,
+        continuation_token=next_token,
+        grading_handle=grading_handle,
+    )
+
+
+def confirm_visual_review(
+    db: Session,
+    submission_id: int,
+    grading_handle: str,
+    verdict: str,
+    note: str | None,
+) -> McpWorkflowHandle:
+    """保存代码运行结果与报告一致性确认（教师/客户端双侧确认链的一环）。"""
+    handle = load_workflow_handle(db, grading_handle, kind="grading")
+    if handle.submission_id != submission_id or not handle.context_complete:
+        raise ConflictError("评分句柄与作业不匹配")
+    sub = get_locked_submission_in_order(db, submission_id)
+    handle = load_workflow_handle(db, grading_handle, kind="grading", lock=True)
+    _, _, context_hash, _ = build_context_parts(db, sub)
+    if handle.context_hash != context_hash or handle.grading_revision != sub.grading_revision:
+        raise ConflictError("评分上下文已变化，请重新打开作业")
+    if not sub.code_files:
+        raise ConflictError("当前作业不需要代码运行结果确认")
+    handle.visual_confirmation = verdict
+    handle.visual_confirmation_note = note.strip() if note else None
+    handle.visual_confirmed_at = utc_now_naive()
+    db.commit()
+    return handle
+
+
+def save_assessment_review(
+    db: Session,
+    submission_id: int,
+    grading_handle: str,
+    *,
+    verdict: str,
+    summary: str,
+    confidence: str,
+    items: list[dict],
+    client: str | None,
+) -> Submission:
+    """保存独立复核任务对当前评分建议的复核结论。
+
+    - 评分句柄必须来自完整读取 ``ready_for_review`` 作业的评分包
+    - 句柄绑定的 context_hash 与 grading_revision 必须仍然匹配,
+      建议已更新时返回 409,复核者需重新打开作业
+    - ``items`` 必须逐项引用当前 rubric 的全部 item(不重复、不缺失);
+      ``suggested_score`` 不得超过该项满分
+    - 复核结论写入 ``submissions.assessment_review`` 供教师在网页参考,
+      不改变建议本身与状态;教师仍在网页确认最终成绩
+    """
+    handle = load_workflow_handle(db, grading_handle, kind="grading")
+    if handle.submission_id != submission_id or not handle.context_complete:
+        raise ConflictError("评分句柄与作业不匹配，请重新打开作业")
+    sub = get_locked_submission_in_order(db, submission_id)
+    handle = load_workflow_handle(db, grading_handle, kind="grading", lock=True)
+    if sub.status == SubmissionStatus.reviewed:
+        raise ConflictError("该作业已确认最终成绩，无需复核")
+    if sub.status != SubmissionStatus.ready_for_review or not sub.assessment_suggestion:
+        raise ConflictError("该作业还没有可复核的评分建议")
+    _, _, context_hash, resolved = build_context_parts(db, sub)
+    if (
+        handle.context_hash != context_hash
+        or handle.grading_revision != sub.grading_revision
+    ):
+        raise ConflictError(
+            "评分建议已更新，请重新打开作业后复核当前建议"
+        )
+
+    expected = {item.rubric_item_id: item for item in resolved.definition.items}
+    seen: set[str] = set()
+    for item in items:
+        if item["rubric_item_id"] not in expected or item["rubric_item_id"] in seen:
+            raise ValidationError("复核项必须逐项引用当前 rubric 且不能重复")
+        suggested = item.get("suggested_score")
+        if suggested is not None and (
+            suggested > expected[item["rubric_item_id"]].max_score + 0.01
+        ):
+            raise ValidationError("复核建议分不能超过该项满分")
+        seen.add(item["rubric_item_id"])
+    if seen != set(expected):
+        raise ValidationError("复核项未完整覆盖当前 rubric")
+
+    sub.assessment_review = {
+        "verdict": verdict,
+        "summary": summary,
+        "confidence": confidence,
+        "items": [
+            {
+                "rubric_item_id": item["rubric_item_id"],
+                "criterion": expected[item["rubric_item_id"]].criterion,
+                "max_score": expected[item["rubric_item_id"]].max_score,
+                "verdict": item["verdict"],
+                "comment": item["comment"],
+                "suggested_score": item.get("suggested_score"),
+            }
+            for item in items
+        ],
+        "reviewed_revision": sub.grading_revision,
+        "client": client,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    # 状态不变(仍为 ready_for_review);复用状态事件让前端刷新详情看到复核结果
+    notify_submission_status(db, sub.id, sub.status.value)
+    db.commit()
+    logger.info(
+        "MCP assessment review saved [submission=%s, revision=%s, verdict=%s]",
+        sub.id,
+        sub.grading_revision,
+        verdict,
+    )
+    return sub
+
+
+def save_question_rubric(
+    db: Session,
+    question_id: str,
+    handle_token: str,
+    *,
+    status_value: str,
+    items: list[dict],
+    total_max_score: float,
+) -> dict:
+    """保存客户端从题目 OCR 提取的 rubric（服务端确定性校验）。
+
+    - 校验 rubric 提取句柄有效、绑定 submission/question、OCR 未变化
+    - ``complete`` 时逐项 source_quote 必须是 OCR 子串且含满分、分项=总分、
+      条目不重复,通过后写入题目级权威快照
+    - ``absent_or_ambiguous`` 时持久化识别结果,后续评分走配置 rubric 或
+      内置默认,避免重复询问客户端
+    - 保存后旧评分句柄失效,客户端必须重新 ``open_ai_marking_assignment``
+      以新 rubric 快照评分
+    """
+    from app.services.question_rubric import (
+        RubricExtraction,
+        persist_question_rubric,
+        validate_extraction,
+    )
+
+    handle = load_workflow_handle(db, handle_token, kind="rubric_extraction")
+    if handle.question_id != question_id:
+        raise ConflictError("rubric 提取句柄与题目不匹配")
+    question = db.get(Question, question_id, with_for_update=True)
+    if question is None or not question.ocr_text:
+        raise ConflictError("题目 OCR 内容不存在")
+    sub = db.get(Submission, handle.submission_id, with_for_update=True)
+    handle = load_workflow_handle(db, handle_token, kind="rubric_extraction", lock=True)
+    current_ocr_hash = "sha256:" + hashlib.sha256(
+        question.ocr_text.encode()
+    ).hexdigest()
+    if handle.ocr_hash != current_ocr_hash:
+        raise ConflictError("题目 OCR 已变化，请重新打开作业提取 rubric")
+    # 绑定 submission 仍处于 awaiting_mcp(评分句柄未生成时才有提取句柄)
+    if sub is None or sub.status != SubmissionStatus.awaiting_mcp:
+        raise ConflictError("作业状态已变化，请重新打开作业")
+
+    extraction = RubricExtraction(
+        status=status_value,
+        items=items,
+        total_max_score=total_max_score,
+    )
+    validated = validate_extraction(extraction, question.ocr_text)
+    if status_value == "complete" and not validated:
+        raise ValidationError(
+            "rubric 提取校验失败：引用必须是 OCR 原文子串且含满分、分项之和必须等于总分、条目不重复"
+        )
+
+    result = persist_question_rubric(
+        db,
+        question,
+        status=status_value,
+        validated=validated,
+        ocr_text=question.ocr_text,
+    )
+    # 提取句柄是一次性的:保存后立即失效,客户端必须重新打开作业
+    db.delete(handle)
+    db.commit()
+    snapshot_id = None
+    if result["status"] == "complete":
+        config = get_config_dict(db, profile_id=question.config_profile_id)
+        snapshot_id = resolve_rubric(question, config).snapshot_id
+    return {
+        "status": result["status"],
+        "question_id": question.id,
+        "question_name": question.name,
+        "rubric_snapshot_id": snapshot_id,
+    }
+
+
+def save_assessment(
+    db: Session,
+    submission_id: int,
+    payload: McpSaveAssessmentRequest,
+) -> McpAssessmentResponse:
+    """保存外部编程助手评分建议（幂等 + 句柄绑定 + 乐观锁）。
+
+    从 ``app/api/mcp.py`` 的 ``save_mcp_assessment`` 迁入；request_id 已
+    存在时按幂等语义返回原响应。
+    """
+    request_id = str(payload.assessment.request_id)
+    request_payload_hash = assessment_payload_hash(payload.assessment)
+    receipt = db.execute(
+        select(McpAssessmentReceipt).where(
+            McpAssessmentReceipt.submission_id == submission_id,
+            McpAssessmentReceipt.request_id == request_id,
+        )
+    ).scalar_one_or_none()
+    incoming_handle_hash = token_hash(payload.grading_handle)
+    if receipt is not None:
+        if receipt.payload_hash != request_payload_hash or receipt.handle_hash != incoming_handle_hash:
+            raise ConflictError("request_id 已用于另一份评分内容")
+        saved = McpAssessmentResponse.model_validate(receipt.response)
+        saved.idempotent = True
+        return saved
+    handle = load_workflow_handle(db, payload.grading_handle, kind="grading")
+    if handle.submission_id != submission_id or not handle.context_complete:
+        raise ConflictError("评分句柄与作业不匹配，请重新打开作业")
+    sub = get_submission_or_404(db, submission_id)
+    _question, _answer, context_hash, resolved = build_context_parts(db, sub)
+    if (
+        handle.context_hash != context_hash
+        or handle.grading_revision != sub.grading_revision
+    ):
+        raise ConflictError("评分上下文已变化，请重新打开作业")
+    return save_mcp_assessment(
+        submission_id,
+        payload.assessment,
+        db,
+        handle=handle,
+        expected_revision=sub.grading_revision,
+        context_hash=context_hash,
+        client=payload.client,
+    )

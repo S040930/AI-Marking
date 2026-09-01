@@ -24,8 +24,8 @@ from psycopg2 import extensions as pg_ext
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.application.errors import ServiceUnavailableError
 from app.core.config import settings
+from app.core.errors import ServiceUnavailableError
 from app.db.session import SessionLocal
 
 logger = logging.getLogger(__name__)

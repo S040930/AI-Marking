@@ -12,14 +12,14 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
+from app.application import marking
+from app.core.errors import BusinessError
 from app.models.background_job import BackgroundJob, BackgroundJobStatus
 from app.models.question import Question, QuestionStatus
 from app.models.submission import (
     Submission,
     SubmissionStatus,
 )
-from app.services import marking
-from app.services.errors import BusinessError
 
 # ---------- helpers ----------
 
@@ -525,7 +525,7 @@ async def test_worker_marks_business_failure_without_retry(
     """B2: OCR 抛 BusinessError(业务失败)时,worker 直接标记终态并删除任务,
     不进入队列退避重试,也不产生死信。"""
     from app import worker
-    from app.services.errors import BusinessError
+    from app.core.errors import BusinessError
     from app.services.queue import claim_next_job, new_submission_ocr_job
 
     sub = await _make_submission(db_session, tmp_path)

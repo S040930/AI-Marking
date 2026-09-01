@@ -2,7 +2,6 @@
 
 import json
 import logging
-import shutil
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -18,12 +17,19 @@ from fastapi import (
 )
 from fastapi.responses import FileResponse
 from sqlalchemy import func, or_, select
-from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
+from app.application.mcp_workflow import (
+    build_grading_policy,
+    resolve_submission_rubric,
+)
+from app.application.questions import (
+    change_question_config_profile as change_question_config_profile_use_case,
+)
+from app.application.questions import delete_question as delete_question_use_case
+from app.application.questions import rename_question as rename_question_use_case
 from app.application.uploads import (
-    DELETABLE_SUBMISSION_STATUSES,
     commit_question_create,
     commit_question_replace,
     commit_question_retry,
@@ -32,7 +38,6 @@ from app.application.uploads import (
     preflight_question_retry,
 )
 from app.core.config import settings
-from app.core.time import utc_now_naive
 from app.db.session import get_db, get_session_factory
 from app.models.question import (
     Question,
@@ -56,14 +61,15 @@ from app.services.config import (
     get_profile,
 )
 from app.services.document_storage import (
-    discard_stored_document,
+    discard_uncommitted_document as _discard_uncommitted_document,
+)
+from app.services.document_storage import (
     remove_document_if_unreferenced,
     save_document_as_pdf,
     validate_document_upload,
 )
-from app.services.mcp_workflow import (
-    build_grading_policy,
-    resolve_submission_rubric,
+from app.services.document_storage import (
+    resolve_upload_dir as _resolve_upload_dir,
 )
 from app.services.question_identity import build_question_id
 
@@ -72,23 +78,12 @@ logger = logging.getLogger(__name__)
 
 
 def _upload_dir() -> Path:
-    backend_root = Path(__file__).resolve().parent.parent.parent
-    upload_dir = Path(settings.UPLOAD_DIR).resolve()
     try:
-        upload_dir.relative_to(backend_root)
+        return _resolve_upload_dir()
     except ValueError as exc:
         raise HTTPException(
             status_code=500, detail="UPLOAD_DIR 配置非法,必须位于后端根目录下"
         ) from exc
-    upload_dir.mkdir(parents=True, exist_ok=True)
-    return upload_dir
-
-
-def _discard_uncommitted_document(db: Session, stored, upload_dir: Path) -> None:
-    try:
-        discard_stored_document(db, stored, upload_dir)
-    except (OSError, SQLAlchemyError, ValueError) as exc:
-        logger.warning("清理未提交题目 PDF 失败 [%s]: %s", stored.path, exc)
 
 
 def _question_with_count(db: Session, question_id: str):
@@ -298,17 +293,7 @@ def rename_question(
     payload: QuestionRenameRequest,
     db: Session = Depends(get_db),
 ):
-    question = db.get(Question, question_id)
-    if question is None:
-        raise HTTPException(status_code=404, detail="题目不存在")
-    if question.replacement_status in (
-        QuestionReplacementStatus.pending,
-        QuestionReplacementStatus.processing,
-    ):
-        raise HTTPException(status_code=409, detail="题目新版正在处理中")
-    question.name = payload.name.strip()
-    question.updated_at = utc_now_naive()
-    db.commit()
+    rename_question_use_case(db, question_id, payload.name)
     row = _question_with_count(db, question_id)
     return _serialize(row[0], row[1])
 
@@ -322,14 +307,7 @@ def change_question_config_profile(
     """切换题目使用的配置项目。"""
     if get_profile(db, payload.config_profile_id) is None:
         raise HTTPException(status_code=422, detail="配置项目不存在")
-    question = db.get(Question, question_id)
-    if question is None:
-        raise HTTPException(status_code=404, detail="题目不存在")
-    if question.status in (QuestionStatus.pending, QuestionStatus.ocr_processing):
-        raise HTTPException(status_code=409, detail="题目 OCR 正在处理中")
-    question.config_profile_id = payload.config_profile_id
-    question.updated_at = utc_now_naive()
-    db.commit()
+    change_question_config_profile_use_case(db, question_id, payload.config_profile_id)
     row = _question_with_count(db, question_id)
     return _serialize(row[0], row[1])
 
@@ -358,31 +336,6 @@ async def retry_question_ocr(
         with session_factory() as cleanup_db:
             _unlink_after_commit(cleanup_db, [old_path])
     return _serialize(question, submission_count)
-
-
-def _locked_submissions(db: Session, question_id: str):
-    return (
-        (
-            db.execute(
-                select(Submission)
-                .options(
-                    selectinload(Submission.code_files),
-                    selectinload(Submission.code_input_files),
-                )
-                .where(Submission.question_id == question_id)
-                .order_by(Submission.id)
-                .with_for_update()
-            )
-        )
-        .scalars()
-        .all()
-    )
-
-
-def _blocked_ids(submissions: list[Submission]) -> list[int]:
-    return sorted(
-        sub.id for sub in submissions if sub.status not in DELETABLE_SUBMISSION_STATUSES
-    )
 
 
 def _unlink_after_commit(db: Session, paths: list[str]) -> None:
@@ -445,58 +398,5 @@ def delete_question(
     payload: QuestionConfirmRequest = Body(...),
     db: Session = Depends(get_db),
 ):
-    question = db.get(Question, question_id, with_for_update=True)
-    if question is None:
-        raise HTTPException(status_code=404, detail="题目不存在")
-    if payload.confirmation_name != question.name:
-        raise HTTPException(status_code=422, detail="题目名称确认不匹配")
-    if question.status in (QuestionStatus.pending, QuestionStatus.ocr_processing):
-        raise HTTPException(status_code=409, detail="题目 OCR 正在处理中")
-    if question.replacement_status in (
-        QuestionReplacementStatus.pending,
-        QuestionReplacementStatus.processing,
-    ):
-        raise HTTPException(status_code=409, detail="题目新版正在处理中")
-    submissions = _locked_submissions(db, question_id)
-    blocked = _blocked_ids(submissions)
-    if blocked:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "message": "存在正在处理的批改记录，无法删除题目",
-                "blocked_submission_ids": blocked,
-            },
-        )
-    paths = [question.file_path]
-    if question.replacement_file_path:
-        paths.append(question.replacement_file_path)
-    paths.extend(sub.file_path for sub in submissions if sub.file_path)
-    paths.extend(
-        code_file.file_path
-        for sub in submissions
-        for code_file in sub.code_files
-        if code_file.file_path
-    )
-    paths.extend(
-        input_file.file_path
-        for sub in submissions
-        for input_file in sub.code_input_files
-        if input_file.file_path
-    )
-    artifact_roots = [
-        Path(settings.UPLOAD_DIR).resolve() / "code-artifacts" / str(sub.id)
-        for sub in submissions
-    ]
-    for sub in submissions:
-        db.delete(sub)
-    db.flush()
-    db.delete(question)
-    try:
-        db.commit()
-    except Exception:
-        db.rollback()
-        raise
-    _unlink_after_commit(db, paths)
-    for artifact_root in artifact_roots:
-        shutil.rmtree(artifact_root, ignore_errors=True)
-    return QuestionMutationResponse(deleted_submission_count=len(submissions))
+    deleted_count = delete_question_use_case(db, question_id, payload.confirmation_name)
+    return QuestionMutationResponse(deleted_submission_count=deleted_count)

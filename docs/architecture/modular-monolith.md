@@ -8,12 +8,24 @@ AI-Marking 面向单教师、单机 PostgreSQL、本地文件目录和 loopback 
 React / TanStack Query
         │ HTTP / SSE
         ▼
-API 与 MCP 适配层
+API 与 MCP 适配层（薄适配：参数解析、序列化；写编排不在此层）
         ▼
-应用用例层：事务、固定锁顺序、状态迁移、任务编排
-        ├── 纯领域：状态枚举、迁移规则、业务错误
-        └── 基础设施：SQLAlchemy、PostgreSQL 队列、OCR、文件、事件
+应用用例层：事务、固定锁顺序、状态迁移、任务编排、错误定义
+        ├── 纯领域：状态枚举、迁移规则
+        └── 基础设施（services）：SQLAlchemy、PostgreSQL 队列、OCR、文件、事件
 ```
+
+## 依赖方向（由 `tests/test_architecture_boundaries.py` 强制）
+
+- 依赖只能向内：`api → application → services → core/domain`。
+- `app/core` 是共享内核（config/time/errors），不依赖任何其他层；
+  `ApplicationError` 族与 worker 重试分类 `BusinessError` 统一定义在
+  `app/core/errors.py`。
+- `app/services` 是纯基础设施，**不得 import `app.application`**；需要编排
+  事务、锁序或状态迁移的逻辑属于 application 层（如 `marking`、
+  `mcp_workflow`、`uploads`、`questions`、`submissions`、`dead_jobs`）。
+- `app/api` 只做参数解析与序列化；跨实体写事务（删除、finalize、死信重试、
+  MCP 评分保存等）必须位于 application 用例函数，单行纯 CRUD 允许留在路由。
 
 ## 边界与一致性
 

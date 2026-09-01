@@ -3,6 +3,7 @@
 import ast
 import hashlib
 import json
+import logging
 import os
 import shutil
 import tempfile
@@ -14,8 +15,12 @@ from pathlib import Path
 import aiofiles
 from fastapi import UploadFile
 from sqlalchemy import or_, select
+from sqlalchemy.exc import SQLAlchemyError
 
-from app.application.errors import PayloadTooLargeError, ValidationError
+from app.core.config import settings
+from app.core.errors import PayloadTooLargeError, ValidationError
+
+logger = logging.getLogger(__name__)
 
 PDF_MIME_TYPE = "application/pdf"
 MAX_DOCUMENT_SIZE_BYTES = 50 * 1024 * 1024
@@ -133,6 +138,29 @@ def discard_stored_document(db, stored: StoredDocument, upload_dir: Path) -> boo
     if not stored.created:
         return False
     return remove_document_if_unreferenced(db, str(stored.path), upload_dir)
+
+
+def resolve_upload_dir() -> Path:
+    """解析并校验 uploads 目录(必须位于后端根目录下,防止任意目录写入)。
+
+    各上传端点共用;目录不存在时自动创建。
+    """
+    backend_root = Path(__file__).resolve().parent.parent.parent
+    upload_dir = Path(settings.UPLOAD_DIR).resolve()
+    try:
+        upload_dir.relative_to(backend_root)
+    except ValueError as exc:
+        raise ValueError("UPLOAD_DIR 配置非法,必须位于后端根目录下") from exc
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    return upload_dir
+
+
+def discard_uncommitted_document(db, stored: StoredDocument, upload_dir: Path) -> None:
+    """尽力清理未提交事务创建的文档;失败仅记录日志,不阻断原异常传播。"""
+    try:
+        discard_stored_document(db, stored, upload_dir)
+    except (OSError, SQLAlchemyError, ValueError) as exc:
+        logger.warning("清理未提交文档失败 [%s]: %s", stored.path, exc)
 
 
 async def save_document_as_pdf(

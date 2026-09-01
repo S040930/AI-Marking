@@ -5,9 +5,9 @@ from uuid import UUID
 
 import pytest
 
-from app.application.errors import ValidationError
+from app.application.mcp_workflow import validate_code_evidence
+from app.core.errors import ValidationError
 from app.schemas.mcp import McpAssessmentRequest
-from app.services.mcp_workflow import validate_code_evidence
 
 
 def _assessment_with_report_quote(quote: str) -> McpAssessmentRequest:

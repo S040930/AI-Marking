@@ -132,6 +132,7 @@ OCR 在内部对超时 / 限流 / 5xx 进行最多 3 次短暂重试；网络重
 19. **本地文件按内容寻址**：PDF 使用 SHA-256 作为共享实体路径，原始文件名只作为记录元数据保留；清理和题目替换删除前会查询题目、作业及替换引用，永不删除仍被引用的文件。开发依赖由 `scripts/clean-local` 和 `scripts/bootstrap` 按需清理、恢复。
 20. **题目 ID 为文件名 slug**：`questions.id` 由上传文件名去扩展名生成稳定 slug 字符串（如 `DTS208TC_CW1_Paper`），不再使用自增整数；id 在创建时确定且不随替换/重试 OCR 变化，同名重复上传返回 409 拒绝，避免 ID 跳号与删除复用歧义。
 21. **成绩导出只读快照**：`GET /api/submissions/export.xlsx` 只读取指定题目的 `reviewed` 最终成绩，以用户输入的及格线和当前界面语言生成三表 Excel；不读取 OCR/PDF/代码、不写数据库、不持久化导出文件，响应结束即删除临时文件。得分率和达标状态保留为工作簿公式，统计文字不调用模型。
+22. **分层依赖单向向内**：`api → application → services → core/domain`，由 `tests/test_architecture_boundaries.py` 强制。错误类型统一在 `app/core/errors.py`（`ApplicationError` 族映射 HTTP 状态码，`BusinessError` 驱动 worker 重试分类）；`services` 只做纯基础设施、不得引用 `application`；跨实体写事务（删除、finalize、死信重试、MCP 评分保存等）必须位于 application 用例函数，API 层只做参数解析与序列化。
 
 ## 子文档索引
 

@@ -21,13 +21,13 @@ from sqlalchemy.orm import Session
 
 from app.application.lifecycle import transition_submission
 from app.application.locking import lock_submission_after_question
+from app.core.errors import BusinessError
 from app.db.session import SessionLocal
 from app.models.submission import (
     Submission,
     SubmissionStatus,
 )
 from app.services.config import get_config_dict
-from app.services.errors import BusinessError
 from app.services.events import notify_submission_status
 from app.services.ocr import OCRError, ocr_pdf
 

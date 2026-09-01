@@ -340,14 +340,6 @@ export interface paths {
         /**
          * Save Mcp Question Rubric
          * @description 保存客户端从题目 OCR 提取的 rubric(服务端确定性校验)。
-         *
-         *     - 校验 rubric 提取句柄有效、绑定 submission/question、OCR 未变化
-         *     - ``complete`` 时逐项 source_quote 必须是 OCR 子串且含满分、分项=总分、
-         *       条目不重复,通过后写入题目级权威快照
-         *     - ``absent_or_ambiguous`` 时持久化识别结果,后续评分走配置 rubric 或
-         *       内置默认,避免重复询问客户端
-         *     - 保存后旧评分句柄失效,客户端必须重新 ``open_ai_marking_assignment``
-         *       以新 rubric 快照评分
          */
         put: operations["save_mcp_question_rubric_api_mcp_questions__question_id__rubric_put"];
         post?: never;
@@ -388,14 +380,6 @@ export interface paths {
         /**
          * Save Mcp Assessment Review
          * @description 保存独立复核任务对当前评分建议的复核结论。
-         *
-         *     - 评分句柄必须来自完整读取 ``ready_for_review`` 作业的评分包
-         *     - 句柄绑定的 context_hash 与 grading_revision 必须仍然匹配,
-         *       建议已更新时返回 409,复核者需重新打开作业
-         *     - ``items`` 必须逐项引用当前 rubric 的全部 item(不重复、不缺失);
-         *       ``suggested_score`` 不得超过该项满分
-         *     - 复核结论写入 ``submissions.assessment_review`` 供教师在网页参考,
-         *       不改变建议本身与状态;教师仍在网页确认最终成绩
          */
         put: operations["save_mcp_assessment_review_api_mcp_submissions__submission_id__assessment_review_put"];
         post?: never;
