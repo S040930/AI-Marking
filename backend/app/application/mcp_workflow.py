@@ -179,22 +179,29 @@ def resolve_submission_rubric(db: Session, sub: Submission) -> ResolvedRubric:
     return resolve_rubric(sub.question, get_config_dict(db, profile_id=profile_id))
 
 
-def build_context_parts(db: Session, sub: Submission) -> tuple[str, str, str, ResolvedRubric]:
+def build_context_parts(
+    db: Session, sub: Submission, resolved: ResolvedRubric | None = None
+) -> tuple[str, str, str, str, ResolvedRubric]:
+    """返回 (题目 OCR, 提交 OCR, 源码文本, 上下文哈希, 已解析 rubric)。
+
+    ``resolved`` 允许调用方复用已解析结果,避免同一次请求内重复查询配置。
+    """
     question_text = sub.question.ocr_text if sub.question else ""
     submission_text = sub.ocr_text or ""
     source_text = build_code_context(sub)
-    resolution = resolve_submission_rubric(db, sub)
+    if resolved is None:
+        resolved = resolve_submission_rubric(db, sub)
     payload = json.dumps(
         {
             "submission_id": sub.id,
             "question": question_text,
             "submission": submission_text,
             "source": source_text,
-            "rubric_source": resolution.source,
-            "rubric_snapshot_id": resolution.snapshot_id,
-            "rubric": resolution.text,
+            "rubric_source": resolved.source,
+            "rubric_snapshot_id": resolved.snapshot_id,
+            "rubric": resolved.text,
             "rubric_version": RUBRIC_VERSION,
-            "rubric_items": resolution.items,
+            "rubric_items": resolved.items,
         },
         ensure_ascii=False,
         sort_keys=True,
@@ -203,8 +210,9 @@ def build_context_parts(db: Session, sub: Submission) -> tuple[str, str, str, Re
     return (
         question_text,
         submission_text,
+        source_text,
         f"sha256:{hashlib.sha256(payload).hexdigest()}",
-        resolution,
+        resolved,
     )
 
 
@@ -300,8 +308,7 @@ def save_mcp_assessment(
         handle = load_workflow_handle(db, plaintext, kind="grading", lock=True)
         if handle.submission_id != submission_id or not handle.context_complete:
             raise ConflictError("评分句柄与作业不匹配，请重新打开作业")
-    question_text, submission_text, current_hash, resolved = build_context_parts(db, sub)
-    source_text = build_code_context(sub)
+    question_text, submission_text, source_text, current_hash, resolved = build_context_parts(db, sub)
     if (
         len(question_text) + len(submission_text) + len(source_text)
         > settings.MCP_MAX_GRADING_CONTEXT_CHARS
@@ -471,8 +478,7 @@ def save_mcp_assessment(
 
 
 def build_package_text(db: Session, sub: Submission) -> tuple[str, str]:
-    question_text, submission_text, context_hash, resolved = build_context_parts(db, sub)
-    source_text = build_code_context(sub)
+    question_text, submission_text, source_text, context_hash, resolved = build_context_parts(db, sub)
     config = get_config_dict(db, profile_id=sub.question.config_profile_id) if sub.question else {}
     review_enabled = (
         sub.review_enabled
@@ -668,7 +674,7 @@ def confirm_visual_review(
         raise ConflictError("评分句柄与作业不匹配")
     sub = get_locked_submission_in_order(db, submission_id)
     handle = load_workflow_handle(db, grading_handle, kind="grading", lock=True)
-    _, _, context_hash, _ = build_context_parts(db, sub)
+    _, _, _, context_hash, _ = build_context_parts(db, sub)
     if handle.context_hash != context_hash or handle.grading_revision != sub.grading_revision:
         raise ConflictError("评分上下文已变化，请重新打开作业")
     if not sub.code_files:
@@ -710,7 +716,7 @@ def save_assessment_review(
         raise ConflictError("该作业已确认最终成绩，无需复核")
     if sub.status != SubmissionStatus.ready_for_review or not sub.assessment_suggestion:
         raise ConflictError("该作业还没有可复核的评分建议")
-    _, _, context_hash, resolved = build_context_parts(db, sub)
+    _, _, _, context_hash, resolved = build_context_parts(db, sub)
     if (
         handle.context_hash != context_hash
         or handle.grading_revision != sub.grading_revision
@@ -868,18 +874,15 @@ def save_assessment(
     if handle.submission_id != submission_id or not handle.context_complete:
         raise ConflictError("评分句柄与作业不匹配，请重新打开作业")
     sub = get_submission_or_404(db, submission_id)
-    _question, _answer, context_hash, resolved = build_context_parts(db, sub)
-    if (
-        handle.context_hash != context_hash
-        or handle.grading_revision != sub.grading_revision
-    ):
-        raise ConflictError("评分上下文已变化，请重新打开作业")
+    # 句柄绑定的 context_hash/revision 由 save_mcp_assessment 在锁定后统一
+    # 校验（handle.context_hash vs 锁内重建的 current_hash）；此处不再无锁
+    # 重建一次完整上下文。
     return save_mcp_assessment(
         submission_id,
         payload.assessment,
         db,
         handle=handle,
         expected_revision=sub.grading_revision,
-        context_hash=context_hash,
+        context_hash=handle.context_hash,
         client=payload.client,
     )
