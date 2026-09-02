@@ -999,3 +999,63 @@ async def test_save_assessment_review_rejects_after_finalize(client, db_session)
         },
     )
     assert response.status_code == 409
+
+
+# ---------- 句柄过期批量清理 ----------
+
+
+def test_purge_expired_handles_removes_only_expired_rows(db_session):
+    """批量清理删除过期句柄、保留未过期句柄；force 时必须全部完成。"""
+    from datetime import timedelta
+
+    from app.application.mcp_workflow import purge_expired_handles
+    from app.core.time import utc_now_naive
+    from app.models.mcp_workflow_handle import McpWorkflowHandle
+
+    db_session.add_all(
+        [
+            McpWorkflowHandle(
+                token_hash="expired" + "0" * 57,
+                kind="package",
+                submission_id=1,
+                context_hash="sha256:" + "0" * 64,
+                grading_revision=0,
+                expires_at=utc_now_naive() - timedelta(seconds=1),
+            ),
+            McpWorkflowHandle(
+                token_hash="alive" + "0" * 59,
+                kind="package",
+                submission_id=1,
+                context_hash="sha256:" + "0" * 64,
+                grading_revision=0,
+                expires_at=utc_now_naive() + timedelta(seconds=600),
+            ),
+        ]
+    )
+    db_session.commit()
+
+    purge_expired_handles(db_session, force=True)
+    db_session.commit()
+
+    remaining = db_session.query(McpWorkflowHandle).all()
+    assert [row.token_hash for row in remaining] == ["alive" + "0" * 59]
+
+
+def test_purge_expired_handles_is_probabilistic(db_session, monkeypatch):
+    """默认非 force 调用按 1/16 概率触发；低随机值时执行清理。"""
+    from app.application import mcp_workflow
+
+    calls = {"count": 0}
+
+    def count_execute(*_args, **_kwargs):
+        calls["count"] += 1
+        return None
+
+    monkeypatch.setattr(mcp_workflow.random, "random", lambda: 0.99)
+    monkeypatch.setattr(db_session, "execute", count_execute)
+    mcp_workflow.purge_expired_handles(db_session)
+    assert calls["count"] == 0
+
+    monkeypatch.setattr(mcp_workflow.random, "random", lambda: 0.0)
+    mcp_workflow.purge_expired_handles(db_session)
+    assert calls["count"] == 1

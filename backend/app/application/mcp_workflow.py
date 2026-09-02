@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import random
 import re
 import secrets
 import unicodedata
@@ -45,6 +46,10 @@ from app.services.rubric import (
 logger = logging.getLogger(__name__)
 PACKAGE_PAGE_CHARS = 40_000
 HANDLE_TTL_SECONDS = 30 * 60
+# 过期句柄批量清理的触发概率：load_workflow_handle 已对命中的过期句柄做
+# 单条删除，批量清理只是防止长期不重复访问的句柄残留，无需每次创建都
+# 对热路径做一次全表 DELETE（写锁 + 死元组 churn）。
+_EXPIRED_PURGE_PROBABILITY = 1 / 16
 
 
 def token_hash(value: str) -> str:
@@ -56,10 +61,16 @@ def assessment_payload_hash(payload: McpAssessmentRequest) -> str:
     return hashlib.sha256(json.dumps(data, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
+def purge_expired_handles(db: Session, *, force: bool = False) -> None:
+    """低频批量清理过期句柄；随机触发，避免热路径全表 DELETE。"""
+    if not force and random.random() >= _EXPIRED_PURGE_PROBABILITY:
+        return
+    db.execute(delete(McpWorkflowHandle).where(McpWorkflowHandle.expires_at < utc_now_naive()))
+
+
 def create_workflow_handle(db: Session, payload: dict) -> str:
     """Create a DB-backed opaque MCP handle; plaintext is never persisted."""
-    now = utc_now_naive()
-    db.execute(delete(McpWorkflowHandle).where(McpWorkflowHandle.expires_at < now))
+    purge_expired_handles(db)
     handle = secrets.token_urlsafe(32)
     db.add(
         McpWorkflowHandle(
@@ -70,7 +81,7 @@ def create_workflow_handle(db: Session, payload: dict) -> str:
             grading_revision=payload["grading_revision"],
             offset=payload.get("offset"),
             context_complete=bool(payload.get("context_complete", False)),
-            expires_at=now + timedelta(seconds=HANDLE_TTL_SECONDS),
+            expires_at=utc_now_naive() + timedelta(seconds=HANDLE_TTL_SECONDS),
         )
     )
     db.flush()
@@ -597,15 +608,15 @@ def open_grading_package(
             and sub.question.extracted_rubric_version == EXTRACTOR_VERSION
         )
         if not already_extracted:
-            # 撤销该题目已有的 rubric 提取句柄(含过期清理),保证单一有效句柄
+            # 撤销该题目已有的 rubric 提取句柄,保证单一有效句柄
             db.execute(
                 delete(McpWorkflowHandle).where(
                     McpWorkflowHandle.kind == "rubric_extraction",
                     McpWorkflowHandle.question_id == sub.question.id,
                 )
             )
+            purge_expired_handles(db)
             now = utc_now_naive()
-            db.execute(delete(McpWorkflowHandle).where(McpWorkflowHandle.expires_at < now))
             handle = secrets.token_urlsafe(32)
             db.add(
                 McpWorkflowHandle(
