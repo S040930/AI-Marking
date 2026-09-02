@@ -4647,7 +4647,7 @@
     },
     "/api/submissions": {
       "delete": {
-        "description": "批量删除提交记录。\n\n- 仅终态记录允许删除;存在处理中记录时整批原子拒绝\n- 先提交数据库删除,成功后再清理磁盘 PDF(学生作业 + 题目)\n- 关联的 conversations 由 DB CASCADE 自动级联删除\n- 不存在的 ID 安全跳过,不影响其他记录的删除\n- 文件删除失败不阻断流程(如文件已被清理),仅记录日志",
+        "description": "批量删除提交记录。\n\n- 仅终态记录允许删除;存在处理中记录时整批原子拒绝\n- 先提交数据库删除,成功后再清理磁盘 PDF(学生作业 + 题目)\n- 不存在的 ID 安全跳过,不影响其他记录的删除\n- 文件删除失败不阻断流程(如文件已被清理),仅记录日志",
         "operationId": "batch_delete_submissions_api_submissions_delete",
         "requestBody": {
           "content": {

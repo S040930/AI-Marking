@@ -2,7 +2,9 @@
 
 > 历史说明：当前决策以 [modular-monolith.md](modular-monolith.md) 为准。
 > P3 的远端存储抽象和 P4 的 Prometheus 方案均已废弃；当前使用本地内容寻址文件、
-> 结构化日志、`/api/admin/runtime` 与死信 API。
+> 结构化日志、`/api/admin/runtime` 与死信 API。P0 描述的对话链路（chat 路由与
+> `conversations` 表）和 P2 描述的后端 LLM/Agent 调用亦已整体移除，
+> `services/marking.py` 等模块现位于 `app/application/`。
 
 针对前序架构评审发现的 6 个问题，按优先级给出可执行的改造方案。所有方案遵循项目既有"简洁实用、零中间件依赖"的取舍。
 

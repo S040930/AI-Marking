@@ -9,7 +9,7 @@ description: 在教师明确要求时，使用本机 AI-Marking MCP 对一份报
 
 > 本文件是批改流程的**唯一权威源**。客户端按 skill 名称 `ai-marking-grader` 加载本文获取完整流程；MCP 不再提供单独的提示词模板，题目库「复制提示词」对话框只输出一句「使用 ai-marking-grader skill」的引用。改流程只改本文件。
 
-## 评分流程（grade_assignment）
+## 评分流程
 
 按以下顺序执行，任何一步失败或条件不满足都停下来向教师说明，不要猜测。
 
@@ -52,7 +52,7 @@ description: 在教师明确要求时，使用本机 AI-Marking MCP 对一份报
 3. 服务端以确定性规则校验（引用子串、满分包含、总分一致性、评分项不重复），通过后写入题目级权威快照并返回 `rubric_snapshot_id`；校验失败返回 422，不写入。客户端不得绕过或降级该项校验。
 4. 保存成功后**重新调用** `open_ai_marking_assignment`，以新 rubric 快照评分。
 
-## 复核已有建议（review_assessment）
+## 复核已有建议
 
 教师要求复核某份已保存的评分建议（作业状态 `ready_for_review`）时：
 

@@ -58,7 +58,7 @@ PostgreSQL 持久化队列
 本机编程助手 MCP（STDIO，任意兼容客户端）
   ├─ run-ai-marking-mcp → FastAPI /api/mcp（loopback），按可选 client 记录评分来源
   ├─ 编程助手内预检报告 PDF + 多语言小题文件，再提交并自动等待 OCR
-  ├─ PostgreSQL TTL 评分包与续页句柄读取（MCP API v10）
+  ├─ PostgreSQL TTL 评分包与续页句柄读取（MCP API v11）
   ├─ 编程助手评分建议、revision 乐观锁、evidence 校验
   └─ 不提供最终确认、删除、配置或密钥工具
 ```
