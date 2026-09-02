@@ -11,6 +11,7 @@ import logging
 import re
 import secrets
 import unicodedata
+from collections import OrderedDict
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import delete, select
@@ -506,6 +507,28 @@ def build_package_text(db: Session, sub: Submission) -> tuple[str, str]:
     return text_value, context_hash
 
 
+# 进程内评分包缓存：分页读取同一评分包时避免每次翻页都重建 200k 文本并
+# 重新哈希。key 为 (submission_id, grading_revision, question.updated_at)，
+# 其中 grading_revision 在保存建议/教师确认后递增，question.updated_at 覆盖
+# 同 revision 下题目 OCR/替换变化的极端情况；容量按 LRU 淘汰。
+_PACKAGE_CACHE_MAX = 8
+_package_cache: OrderedDict[tuple[int, int, object], tuple[str, str]] = OrderedDict()
+
+
+def _cached_package_text(db: Session, sub: Submission) -> tuple[str, str]:
+    question_updated_at = sub.question.updated_at if sub.question else None
+    key = (sub.id, sub.grading_revision, question_updated_at)
+    cached = _package_cache.get(key)
+    if cached is not None:
+        _package_cache.move_to_end(key)
+        return cached
+    package, context_hash = build_package_text(db, sub)
+    if len(_package_cache) >= _PACKAGE_CACHE_MAX:
+        _package_cache.popitem(last=False)
+    _package_cache[key] = (package, context_hash)
+    return package, context_hash
+
+
 def validate_resolved_rubric(
     db: Session, sub: Submission, assessment: McpAssessmentRequest
 ) -> ResolvedRubric:
@@ -607,7 +630,7 @@ def open_grading_package(
                 review_url=f"/review/{sub.id}",
             )
 
-    package, context_hash = build_package_text(db, sub)
+    package, context_hash = _cached_package_text(db, sub)
     if len(package) > settings.MCP_MAX_GRADING_CONTEXT_CHARS:
         raise ValidationError(
             "评分上下文超过 MCP_MAX_GRADING_CONTEXT_CHARS，请拆分作业或缩减提交内容后重试"
