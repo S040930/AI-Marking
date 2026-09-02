@@ -7,7 +7,6 @@ export type SubmissionStatus = components['schemas']['SubmissionStatus'];
 
 export type AiSuggestionDetail = components['schemas']['ScoreDetail'];
 
-export type AiSuggestionDto = components['schemas']['AssessmentSuggestionOut'];
 export interface AiSuggestion {
   score: number;
   max_score: number;
@@ -16,8 +15,6 @@ export interface AiSuggestion {
   confidence: number;
   mcp_metadata?: components['schemas']['McpMetadataOut'];
 }
-
-export type AssessmentReviewItem = components['schemas']['AssessmentReviewItemOut'];
 
 export type AssessmentReview = components['schemas']['AssessmentReviewOut'];
 

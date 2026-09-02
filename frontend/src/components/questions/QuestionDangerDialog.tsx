@@ -55,7 +55,7 @@ export function QuestionDangerDialog({
           </AlertDialogTitle>
           <AlertDialogDescription>
             {t('此操作会永久删除该题目关联的')} {danger?.question.submission_count ?? 0}{' '}
-            {t('条批改记录、对话和学生 PDF，无法恢复。请输入题目名称确认：')}
+            {t('条批改记录和学生 PDF，无法恢复。请输入题目名称确认：')}
             <strong className="mt-2 block text-foreground">{danger?.question.name}</strong>
           </AlertDialogDescription>
         </AlertDialogHeader>

@@ -5,20 +5,14 @@ import type { components } from '@/api/generated';
 import { subscribeToQuestionEvents } from '@/api/questionEvents';
 import { queryKeys } from '@/api/queryKeys';
 
-export type QuestionStatus = components['schemas']['QuestionStatus'];
-export type QuestionReplacementStatus = components['schemas']['QuestionReplacementStatus'];
 export type Question = components['schemas']['QuestionOut'];
-export type PaginatedQuestions = components['schemas']['PaginatedQuestions'];
-
-/** GET /questions/{id}/grading-prompt 返回的提示词素材（后端生成，与评分包同源）。 */
-export type GradingPrompt = components['schemas']['GradingPromptOut'];
 
 export function useGradingPrompt(questionId: string | null) {
   return useQuery({
     queryKey: queryKeys.questions.gradingPrompt(questionId),
     queryFn: () =>
       apiClient
-        .get<GradingPrompt>(`/questions/${questionId}/grading-prompt`, {
+        .get<components['schemas']['GradingPromptOut']>(`/questions/${questionId}/grading-prompt`, {
           skipErrorToast: true,
         })
         .then((response) => response.data),
@@ -39,7 +33,7 @@ export function useQuestions(search = '', limit = 50) {
     queryKey: queryKeys.questions.list(search, limit),
     queryFn: () =>
       apiClient
-        .get<PaginatedQuestions>('/questions', {
+        .get<components['schemas']['PaginatedQuestions']>('/questions', {
           params: { search, limit, skip: 0 },
         })
         .then((response) => response.data),
