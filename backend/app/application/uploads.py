@@ -52,18 +52,6 @@ class SubmissionPreflight:
     question_text: str
 
 
-@dataclass(frozen=True, slots=True)
-class RetryPreflight:
-    question_id: str
-    original_filename: str
-    old_path: str
-
-
-@dataclass(frozen=True, slots=True)
-class ReplacePreflight:
-    affected_submission_count: int
-
-
 def _ready_question(question: Question | None, *, retry: bool = False) -> Question:
     if question is None:
         raise NotFoundError("题目不存在")
@@ -128,7 +116,7 @@ def commit_submission_create(
 
 def preflight_submission_retry(
     factory: sessionmaker[Session], submission_id: int, *, replacing_file: bool
-) -> RetryPreflight:
+) -> str:
     with factory() as db:
         sub = db.scalar(
             select(Submission)
@@ -149,7 +137,7 @@ def preflight_submission_retry(
             raise ConflictError("原代码文件已过期，请通过编程助手（MCP）重新提交 PDF 与全部代码文件")
         if any(not Path(item.file_path).is_file() for item in sub.code_input_files):
             raise ConflictError("原数据集文件已过期，请通过编程助手（MCP）重新提交 PDF、代码与数据集")
-        return RetryPreflight(sub.question_id, sub.original_filename, sub.file_path)
+        return sub.question_id
 
 
 def commit_submission_retry(
@@ -302,7 +290,7 @@ def preflight_question_replace(
     confirmation_name: str,
     *,
     acknowledge_deletion: bool,
-) -> ReplacePreflight:
+) -> None:
     with factory() as db:
         question = db.get(Question, question_id)
         if question is None:
@@ -335,7 +323,6 @@ def preflight_question_replace(
                     "acknowledge_required": True,
                 }
             )
-        return ReplacePreflight(len(submissions))
 
 
 def commit_question_replace(

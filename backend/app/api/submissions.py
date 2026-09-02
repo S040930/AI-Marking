@@ -199,7 +199,7 @@ async def retry_submission(
     """在原记录上重试失败作业，可选替换学生 PDF。"""
     if file is not None:
         validate_document_upload(file)
-    preflight = await run_in_threadpool(
+    question_id = await run_in_threadpool(
         preflight_submission_retry,
         session_factory,
         submission_id,
@@ -221,7 +221,7 @@ async def retry_submission(
             commit_submission_retry,
             session_factory,
             submission_id=submission_id,
-            question_id=preflight.question_id,
+            question_id=question_id,
             stored=stored,
         )
     except Exception:

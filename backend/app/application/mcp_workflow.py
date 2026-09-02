@@ -540,23 +540,6 @@ def _cached_package_text(db: Session, sub: Submission) -> tuple[str, str]:
     return package, context_hash
 
 
-def validate_resolved_rubric(
-    db: Session, sub: Submission, assessment: McpAssessmentRequest
-) -> ResolvedRubric:
-    resolved = resolve_submission_rubric(db, sub)
-    if assessment.rubric_snapshot_id != resolved.snapshot_id:
-        raise ConflictError("rubric 快照已变化，请重新读取评分包")
-    if assessment.rubric_source != resolved.source:
-        raise ValidationError("rubric 来源与服务端解析结果不一致")
-    try:
-        validate_assessment_details(assessment.details, resolved)
-    except ValueError as exc:
-        raise ValidationError(str(exc)) from exc
-    if abs(assessment.max_score - resolved.total_max_score) > 0.01:
-        raise ValidationError("总满分与当前 rubric 不一致")
-    return resolved
-
-
 def open_grading_package(
     db: Session,
     sub: Submission,
