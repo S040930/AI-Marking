@@ -8,7 +8,7 @@
 prepare_ai_marking_submission（只读）
 → 编程助手在当前任务临时目录尝试运行代码（结果留在对话）
 → submit_prepared_ai_marking_submission（写）
-→ open_ai_marking_assignment（只读，10 秒轮询、最多 5 分钟）
+→ open_ai_marking_assignment（只读，wait-ready 长轮询、最多 5 分钟）
 → [needs_rubric 时 save_ai_marking_question_rubric，再重新打开]
 → confirm_ai_marking_visual_review（含代码作业必需）
 → save_ai_marking_assessment（写）
@@ -16,7 +16,7 @@ prepare_ai_marking_submission（只读）
 
 预检在 MCP 进程内校验本机路径、PDF、多语言代码入口和文件 SHA-256，并向后端请求题目映射；成功后产生 30 分钟有效的进程内 `submission_plan`。计划不写入数据库，也不保存源码正文，只保存路径、哈希和入口元数据；每次创建或读取时清理过期项，单进程最多保留 256 个有效计划。MCP 重启或文件变化时必须重新预检。
 
-打开作业由 MCP 在服务端状态上每 10 秒轮询，最多 5 分钟。就绪时后端提供题目、报告、源码和 `resolved_rubric`，每页最多 40,000 Unicode 字符，总上下文硬上限 200,000 字符；超过上限需拆分作业或缩减提交内容。中间页只有 `continuation_token`，完整读取的最终页才签发 `grading_handle`。句柄持久化于 PostgreSQL，绑定 revision 和 context hash，服务重启或多 worker 不会丢失。
+打开作业先读取一次评分包状态；仍在 OCR 时改调 `GET /api/mcp/submissions/{id}/wait-ready` 长轮询——PostgreSQL 后端复用 LISTEN/NOTIFY 通道，状态变更即时唤醒，单次最长 60 秒，总预算 5 分钟，不再产生固定间隔的全量评分包查询。就绪时后端提供题目、报告、源码和 `resolved_rubric`，每页最多 40,000 Unicode 字符，总上下文硬上限 200,000 字符；超过上限需拆分作业或缩减提交内容。中间页只有 `continuation_token`，完整读取的最终页才签发 `grading_handle`。句柄持久化于 PostgreSQL，绑定 revision 和 context hash，服务重启或多 worker 不会丢失；评分包文本按 `(submission_id, grading_revision, question.updated_at)` 在进程内缓存，翻页不重复重建。
 
 `list_pending_ai_marking_assignments(cursor, limit)` 按上传时间与 ID 升序返回等待评分的作业（最多 100 条，带 `next_cursor` 分页），用于恢复被关闭的原任务、续接或清理待办。
 

@@ -1059,3 +1059,131 @@ def test_purge_expired_handles_is_probabilistic(db_session, monkeypatch):
     monkeypatch.setattr(mcp_workflow.random, "random", lambda: 0.0)
     mcp_workflow.purge_expired_handles(db_session)
     assert calls["count"] == 1
+
+
+# ---------- wait-ready 长轮询 ----------
+
+
+@pytest.mark.asyncio
+async def test_wait_ready_returns_ready_immediately_for_awaiting_mcp(
+    client, db_session
+):
+    """已处于 awaiting_mcp 的作业立即返回 ready=true,不等待。"""
+    question = Question(
+        name="等待题",
+        original_filename="q.pdf",
+        file_path="/tmp/q.pdf",
+        ocr_text="Task 1: 100 points",
+        status=QuestionStatus.ready,
+    )
+    submission = Submission(
+        original_filename="answer.pdf",
+        file_path="/tmp/a.pdf",
+        question=question,
+        ocr_text="答案",
+        status=SubmissionStatus.awaiting_mcp,
+        grading_mode=SubmissionGradingMode.external_agent,
+    )
+    db_session.add(submission)
+    db_session.commit()
+
+    response = await client.get(
+        f"/api/mcp/submissions/{submission.id}/wait-ready",
+        params={"timeout": 5},
+        headers=_headers(),
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["ready"] is True
+    assert payload["status"] == "awaiting_mcp"
+    assert payload["submission_id"] == submission.id
+
+
+@pytest.mark.asyncio
+async def test_wait_ready_wakes_on_status_change(client, db_session, monkeypatch):
+    """处理中的作业在状态变更为 awaiting_mcp 后立即返回 ready=true。
+
+    通过后台任务延迟改写数据库,模拟 worker 完成 OCR;wait-ready 的
+    SQLite 退化轮询应捕捉到变化,而不是等到超时。
+    """
+    import asyncio as _asyncio
+
+    question = Question(
+        name="等待变化题",
+        original_filename="q.pdf",
+        file_path="/tmp/q.pdf",
+        ocr_text="Task 1: 100 points",
+        status=QuestionStatus.ready,
+    )
+    submission = Submission(
+        original_filename="answer.pdf",
+        file_path="/tmp/a.pdf",
+        question=question,
+        status=SubmissionStatus.ocr_processing,
+        grading_mode=SubmissionGradingMode.external_agent,
+    )
+    db_session.add(submission)
+    db_session.commit()
+    submission_id = submission.id
+
+    async def complete_later():
+        await _asyncio.sleep(0.2)
+        row = db_session.get(Submission, submission_id)
+        row.status = SubmissionStatus.awaiting_mcp
+        row.ocr_text = "OCR 完成"
+        db_session.commit()
+
+    task = _asyncio.create_task(complete_later())
+    try:
+        response = await client.get(
+            f"/api/mcp/submissions/{submission_id}/wait-ready",
+            params={"timeout": 10},
+            headers=_headers(),
+        )
+    finally:
+        task.cancel()
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["ready"] is True
+    assert payload["status"] == "awaiting_mcp"
+
+
+@pytest.mark.asyncio
+async def test_wait_ready_times_out_with_ready_false(client, db_session):
+    """处理中的作业等待超时返回 ready=false 与当前状态。"""
+    question = Question(
+        name="等待超时题",
+        original_filename="q.pdf",
+        file_path="/tmp/q.pdf",
+        ocr_text="Task 1: 100 points",
+        status=QuestionStatus.ready,
+    )
+    submission = Submission(
+        original_filename="answer.pdf",
+        file_path="/tmp/a.pdf",
+        question=question,
+        status=SubmissionStatus.ocr_processing,
+        grading_mode=SubmissionGradingMode.external_agent,
+    )
+    db_session.add(submission)
+    db_session.commit()
+
+    response = await client.get(
+        f"/api/mcp/submissions/{submission.id}/wait-ready",
+        params={"timeout": 1},
+        headers=_headers(),
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["ready"] is False
+    assert payload["status"] == "ocr_processing"
+
+
+@pytest.mark.asyncio
+async def test_wait_ready_rejects_out_of_range_timeout(client, db_session):
+    response = await client.get(
+        "/api/mcp/submissions/1/wait-ready",
+        params={"timeout": 61},
+        headers=_headers(),
+    )
+    assert response.status_code == 422

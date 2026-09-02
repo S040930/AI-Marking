@@ -1802,6 +1802,30 @@
         "title": "McpVisualConfirmationResponse",
         "type": "object"
       },
+      "McpWaitReadyResponse": {
+        "description": "wait-ready 长轮询响应:当前状态与是否已进入可打开状态。\n\n``ready`` 为 true 时 status 必然属于 awaiting_mcp/ready_for_review/\nreviewed/failed,客户端可立即调用 open_ai_marking_assignment;\nfalse 表示超时仍未就绪,客户端可继续等待。",
+        "properties": {
+          "ready": {
+            "title": "Ready",
+            "type": "boolean"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "submission_id": {
+            "title": "Submission Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "submission_id",
+          "status",
+          "ready"
+        ],
+        "title": "McpWaitReadyResponse",
+        "type": "object"
+      },
       "PaginatedQuestions": {
         "properties": {
           "items": {
@@ -4057,6 +4081,61 @@
           }
         },
         "summary": "Confirm Mcp Visual Review",
+        "tags": [
+          "mcp"
+        ]
+      }
+    },
+    "/api/mcp/submissions/{submission_id}/wait-ready": {
+      "get": {
+        "description": "长轮询等待作业进入可打开状态（OCR 完成/失败或已有建议）。\n\n替代客户端固定间隔轮询 /package:PG 后端复用 LISTEN/NOTIFY 通道,\n状态变更即时返回;非 PG 后端内部退化为低频轮询。超时返回当前状态,\n客户端据 ``ready`` 决定是打开评分包还是继续等待。",
+        "operationId": "mcp_wait_ready_api_mcp_submissions__submission_id__wait_ready_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "submission_id",
+            "required": true,
+            "schema": {
+              "title": "Submission Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "timeout",
+            "required": false,
+            "schema": {
+              "default": 30.0,
+              "exclusiveMinimum": 0,
+              "maximum": 60.0,
+              "title": "Timeout",
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpWaitReadyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Mcp Wait Ready",
         "tags": [
           "mcp"
         ]

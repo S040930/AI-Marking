@@ -11,7 +11,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, text
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.application.mcp_workflow import (
     confirm_visual_review,
@@ -23,7 +23,7 @@ from app.application.mcp_workflow import (
     save_question_rubric,
 )
 from app.core.config import AI_MARKING_SERVICE, MCP_API_VERSION
-from app.db.session import get_db
+from app.db.session import get_db, get_session_factory
 from app.models.question import Question, QuestionStatus
 from app.models.submission import Submission, SubmissionGradingMode, SubmissionStatus
 from app.schemas.mcp import (
@@ -42,11 +42,13 @@ from app.schemas.mcp import (
     McpSaveRubricResponse,
     McpVisualConfirmationRequest,
     McpVisualConfirmationResponse,
+    McpWaitReadyResponse,
 )
 from app.services.code_manifest import auto_question_number, resolve_code_manifest
 from app.services.document_storage import (
     validate_code_filenames,
 )
+from app.services.events import wait_for_submission_status
 
 router = APIRouter(prefix="/mcp", tags=["mcp"])
 logger = logging.getLogger(__name__)
@@ -211,6 +213,50 @@ def mcp_submission_package(
     """Expose the grading context in bounded pages with opaque continuation."""
     sub = get_submission_or_404(db, submission_id)
     return open_grading_package(db, sub, continuation_token)
+
+
+# MCP open 工具可等待的最长单次时长;客户端在总预算内自行重试。
+MCP_WAIT_READY_MAX_TIMEOUT_SECONDS = 60.0
+
+# 这些状态到达后客户端才能(或不必再)打开评分包。
+_MCP_READY_STATUSES = frozenset(
+    {
+        SubmissionStatus.awaiting_mcp.value,
+        SubmissionStatus.ready_for_review.value,
+        SubmissionStatus.reviewed.value,
+        SubmissionStatus.failed.value,
+    }
+)
+
+
+@router.get(
+    "/submissions/{submission_id}/wait-ready",
+    response_model=McpWaitReadyResponse,
+)
+async def mcp_wait_ready(
+    submission_id: int,
+    timeout: float = Query(default=30.0, gt=0, le=MCP_WAIT_READY_MAX_TIMEOUT_SECONDS),
+    db: Session = Depends(get_db),
+    session_factory: sessionmaker = Depends(get_session_factory),
+) -> McpWaitReadyResponse:
+    """长轮询等待作业进入可打开状态（OCR 完成/失败或已有建议）。
+
+    替代客户端固定间隔轮询 /package:PG 后端复用 LISTEN/NOTIFY 通道,
+    状态变更即时返回;非 PG 后端内部退化为低频轮询。超时返回当前状态,
+    客户端据 ``ready`` 决定是打开评分包还是继续等待。
+    """
+    get_submission_or_404(db, submission_id)
+    status = await wait_for_submission_status(
+        submission_id,
+        _MCP_READY_STATUSES,
+        timeout,
+        session_factory=session_factory,
+    )
+    return McpWaitReadyResponse(
+        submission_id=submission_id,
+        status=status,
+        ready=status in _MCP_READY_STATUSES,
+    )
 
 
 @router.post(

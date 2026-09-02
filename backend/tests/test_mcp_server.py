@@ -62,7 +62,54 @@ def test_expired_prepared_plans_are_purged_and_capacity_is_bounded(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_open_waits_at_ten_second_intervals_until_package_ready(monkeypatch):
+async def test_open_waits_via_wait_ready_until_package_ready(monkeypatch):
+    """open 先查一次评分包,处理中改走 wait-ready 长轮询,就绪后重新取包。"""
+    package_calls = {"count": 0}
+
+    async def fake_call(_method, path, **kwargs):
+        if path.endswith("/wait-ready"):
+            assert float(kwargs["params"]["timeout"]) == server._WAIT_CHUNK_SECONDS
+            return {"submission_id": 7, "status": "awaiting_mcp", "ready": True}
+        package_calls["count"] += 1
+        if package_calls["count"] == 1:
+            return {"submission_id": 7, "status": "ocr_processing"}
+        return {
+            "submission_id": 7,
+            "status": "awaiting_mcp",
+            "content": "package",
+            "context_complete": True,
+            "grading_handle": "handle",
+        }
+
+    monkeypatch.setattr(server, "_call", fake_call)
+    result = await server.open_ai_marking_assignment(7)
+    assert result["context_complete"] is True
+    assert result["review_url"] == "http://localhost:5173/review/7"
+    assert package_calls["count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_open_still_processing_after_budget_returns_retry_message(monkeypatch):
+    """总预算耗尽时返回 still_processing 与重试提示,不抛错。"""
+    processing = {"submission_id": 7, "status": "ocr_processing"}
+
+    async def fake_call(_method, path, **_kwargs):
+        return processing
+
+    async def fake_wait(_submission_id, _timeout):
+        return None
+
+    monkeypatch.setattr(server, "_call", fake_call)
+    monkeypatch.setattr(server, "_wait_until_ready", fake_wait)
+    monkeypatch.setattr(server, "_OPEN_TIMEOUT_SECONDS", 0)
+    result = await server.open_ai_marking_assignment(7)
+    assert result["still_processing"] is True
+    assert "请再次调用" in result["message"]
+
+
+@pytest.mark.asyncio
+async def test_open_falls_back_to_polling_when_wait_ready_unavailable(monkeypatch):
+    """旧后端没有 wait-ready 端点时,退化为固定间隔轮询,行为不变。"""
     responses = iter(
         [
             {"submission_id": 7, "status": "ocr_processing"},
@@ -75,9 +122,11 @@ async def test_open_waits_at_ten_second_intervals_until_package_ready(monkeypatc
             },
         ]
     )
-    waits = []
+    waits: list[float] = []
 
-    async def fake_call(*_args, **_kwargs):
+    async def fake_call(_method, path, **_kwargs):
+        if path.endswith("/wait-ready"):
+            raise McpApiError("AI-Marking API 返回 HTTP 404: Not Found")
         return next(responses)
 
     async def fake_sleep(value):

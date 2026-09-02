@@ -15,7 +15,9 @@ _BACKEND_DIR = Path(__file__).resolve().parents[2]
 
 AI_MARKING_SERVICE = "ai-marking"
 BACKEND_API_VERSION = "1"
-MCP_API_VERSION = "10"
+# v11: 新增 GET /api/mcp/submissions/{id}/wait-ready 长轮询端点,
+# MCP open 工具由固定 10s 轮询改为 NOTIFY 驱动的状态等待。
+MCP_API_VERSION = "11"
 
 
 class Settings(BaseSettings):

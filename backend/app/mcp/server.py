@@ -29,8 +29,12 @@ from app.services.document_storage import (
 CODE_ENTRY_EXTENSIONS = ENTRYPOINT_EXTENSIONS
 
 logger = logging.getLogger("ai_marking.mcp")
-_POLL_SECONDS = 10
 _OPEN_TIMEOUT_SECONDS = 5 * 60
+# 单次 wait-ready 长轮询时长:服务端在该窗口内由 NOTIFY 即时唤醒,
+# 超时返回当前状态,客户端循环重试直至总预算耗尽。
+_WAIT_CHUNK_SECONDS = 60
+# wait-ready 不可用(旧后端)时的退化轮询间隔。
+_POLL_SECONDS = 10
 _active_client: ApiClient | None = None
 
 
@@ -244,7 +248,27 @@ async def open_ai_marking_assignment(
                 "still_processing": True,
                 "message": "OCR 仍在处理中；请再次调用同一工具。",
             }
-        await asyncio.sleep(min(_POLL_SECONDS, remaining))
+        await _wait_until_ready(submission_id, min(_WAIT_CHUNK_SECONDS, remaining))
+
+
+async def _wait_until_ready(submission_id: int, timeout: float) -> None:
+    """阻塞等待作业状态变更;wait-ready 不可用时退化为固定间隔轮询。
+
+    服务端长轮询由 NOTIFY 即时唤醒,避免了每 10s 一次的全量评分包查询。
+    """
+    try:
+        await _call(
+            "GET",
+            f"/api/mcp/submissions/{submission_id}/wait-ready",
+            params={"timeout": timeout},
+        )
+    except McpApiError:
+        logger.info(
+            "wait-ready 端点不可用,退化为 %ss 轮询 [submission=%s]",
+            _POLL_SECONDS,
+            submission_id,
+        )
+        await asyncio.sleep(min(_POLL_SECONDS, timeout))
 
 
 @mcp.tool(

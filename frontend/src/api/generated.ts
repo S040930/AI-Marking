@@ -446,6 +446,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/mcp/submissions/{submission_id}/wait-ready": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Mcp Wait Ready
+         * @description 长轮询等待作业进入可打开状态（OCR 完成/失败或已有建议）。
+         *
+         *     替代客户端固定间隔轮询 /package:PG 后端复用 LISTEN/NOTIFY 通道,
+         *     状态变更即时返回;非 PG 后端内部退化为低频轮询。超时返回当前状态,
+         *     客户端据 ``ready`` 决定是打开评分包还是继续等待。
+         */
+        get: operations["mcp_wait_ready_api_mcp_submissions__submission_id__wait_ready_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/questions": {
         parameters: {
             query?: never;
@@ -1529,6 +1553,22 @@ export interface components {
              * @enum {string}
              */
             verdict: "consistent" | "mismatch";
+        };
+        /**
+         * McpWaitReadyResponse
+         * @description wait-ready 长轮询响应:当前状态与是否已进入可打开状态。
+         *
+         *     ``ready`` 为 true 时 status 必然属于 awaiting_mcp/ready_for_review/
+         *     reviewed/failed,客户端可立即调用 open_ai_marking_assignment;
+         *     false 表示超时仍未就绪,客户端可继续等待。
+         */
+        McpWaitReadyResponse: {
+            /** Ready */
+            ready: boolean;
+            /** Status */
+            status: string;
+            /** Submission Id */
+            submission_id: number;
         };
         /** PaginatedQuestions */
         PaginatedQuestions: {
@@ -2675,6 +2715,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["McpVisualConfirmationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mcp_wait_ready_api_mcp_submissions__submission_id__wait_ready_get: {
+        parameters: {
+            query?: {
+                timeout?: number;
+            };
+            header?: never;
+            path: {
+                submission_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpWaitReadyResponse"];
                 };
             };
             /** @description Validation Error */

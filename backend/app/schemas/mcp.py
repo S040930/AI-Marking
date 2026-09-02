@@ -97,6 +97,19 @@ class McpPendingAssignmentsResponse(BaseModel):
     next_cursor: str | None = None
 
 
+class McpWaitReadyResponse(BaseModel):
+    """wait-ready 长轮询响应:当前状态与是否已进入可打开状态。
+
+    ``ready`` 为 true 时 status 必然属于 awaiting_mcp/ready_for_review/
+    reviewed/failed,客户端可立即调用 open_ai_marking_assignment;
+    false 表示超时仍未就绪,客户端可继续等待。
+    """
+
+    submission_id: int
+    status: str
+    ready: bool
+
+
 class McpRubricExtractionItem(BaseModel):
     """客户端从题目 OCR 中提取的单个评分项。"""
 

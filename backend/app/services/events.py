@@ -22,7 +22,7 @@ from collections.abc import AsyncIterator
 import psycopg2
 from psycopg2 import extensions as pg_ext
 from sqlalchemy import text
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import settings
 from app.core.errors import ServiceUnavailableError
@@ -259,3 +259,91 @@ async def question_collection_event_stream() -> AsyncIterator[str]:
         if conn is not None:
             await asyncio.to_thread(conn.close)
         _sse_slots.release()
+
+
+# MCP wait-ready 长轮询参数:等待期间每次 NOTIFY poll 间隔与 SSE 相同;
+# 非 PG 后端(SQLite 测试)NOTIFY 不可用,退化为状态轮询。
+_WAIT_POLL_INTERVAL_SECONDS = 0.5
+_WAIT_FALLBACK_INTERVAL_SECONDS = 1.0
+
+
+async def wait_for_submission_status(
+    submission_id: int,
+    ready_statuses: set[str],
+    timeout_seconds: float,
+    *,
+    session_factory: sessionmaker | None = None,
+) -> str:
+    """阻塞等待指定 submission 状态进入 ``ready_statuses``,返回当前状态。
+
+    - PG 后端复用 LISTEN/NOTIFY 通道,状态变更即时唤醒,不产生轮询流量;
+      独立 psycopg2 连接用完即关,不占用 SSE 客户端槽位(无并发流)。
+    - 非 PG 后端(或 LISTEN 建连失败)退化为 1s 间隔查询状态,行为正确性不变。
+    - 超时返回当前状态(不在 ready_statuses 中),由调用方决定重试。
+    - ``session_factory`` 用于读取状态,默认 ``SessionLocal``;测试可注入
+      SQLite 工厂,与 ``get_session_factory`` 依赖保持同一数据源。是否可用
+      NOTIFY 由该工厂绑定引擎的方言判定,而非全局配置字符串。
+    """
+    from app.models.submission import Submission  # 延迟导入避免循环依赖
+
+    factory = session_factory or SessionLocal
+    engine_dialect = factory.kw["bind"].dialect.name
+
+    deadline = time.monotonic() + timeout_seconds
+
+    def _read_status() -> str | None:
+        with factory() as db:
+            sub = db.get(Submission, submission_id)
+            return sub.status.value if sub is not None else None
+
+    status = await asyncio.to_thread(_read_status)
+    if status in ready_statuses:
+        return status
+
+    if engine_dialect != "postgresql":
+        # SQLite/测试环境:NOTIFY 不可用,退化为轮询。
+        while status not in ready_statuses:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return status or ""
+            await asyncio.sleep(min(_WAIT_FALLBACK_INTERVAL_SECONDS, remaining))
+            status = await asyncio.to_thread(_read_status)
+        return status or ""
+
+    conn: "psycopg2.extensions.connection | None" = None
+    try:
+        try:
+            conn = await asyncio.to_thread(
+                _listen,
+                _parse_pg_dsn(settings.DATABASE_URL),
+                CHANNEL_SUBMISSION,
+            )
+        except psycopg2.OperationalError:
+            logger.warning("wait-ready LISTEN 建连失败,退化为状态轮询")
+        while status not in ready_statuses:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return status or ""
+            if conn is not None:
+                for payload in await asyncio.to_thread(_drain_notifies, conn):
+                    try:
+                        data = json.loads(payload)
+                    except json.JSONDecodeError:
+                        continue
+                    if data.get("submission_id") == submission_id:
+                        status = str(data.get("status", ""))
+            if status in ready_statuses:
+                return status
+            # NOTIFY 轮询间隙兜底读一次库:直接 UPDATE 数据库绕过 NOTIFY 的
+            # 路径(如手工维护)也能被等待方感知。
+            status = await asyncio.to_thread(_read_status)
+            await asyncio.sleep(
+                min(
+                    _WAIT_POLL_INTERVAL_SECONDS if conn is not None else _WAIT_FALLBACK_INTERVAL_SECONDS,
+                    max(deadline - time.monotonic(), 0),
+                )
+            )
+        return status or ""
+    finally:
+        if conn is not None:
+            await asyncio.to_thread(conn.close)
