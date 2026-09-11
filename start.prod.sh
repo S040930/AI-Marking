@@ -15,6 +15,7 @@ else
 fi
 BACKEND_PID=""
 WORKER_PID=""
+ACP_WORKER_PID=""
 FRONTEND_PID=""
 STOPPED=0
 WORKERS="${WORKERS:-1}"
@@ -93,9 +94,11 @@ cleanup() {
   info "正在关闭前后端..."
   [ -n "$FRONTEND_PID" ] && kill "$FRONTEND_PID" 2>/dev/null || true
   [ -n "$WORKER_PID" ] && kill "$WORKER_PID" 2>/dev/null || true
+  [ -n "$ACP_WORKER_PID" ] && kill "$ACP_WORKER_PID" 2>/dev/null || true
   [ -n "$BACKEND_PID" ] && kill "$BACKEND_PID" 2>/dev/null || true
   [ -n "$FRONTEND_PID" ] && wait "$FRONTEND_PID" 2>/dev/null || true
   [ -n "$WORKER_PID" ] && wait "$WORKER_PID" 2>/dev/null || true
+  [ -n "$ACP_WORKER_PID" ] && wait "$ACP_WORKER_PID" 2>/dev/null || true
   [ -n "$BACKEND_PID" ] && wait "$BACKEND_PID" 2>/dev/null || true
 }
 
@@ -107,7 +110,7 @@ command -v "$PYTHON_BIN" >/dev/null 2>&1 || {
 }
 
 command -v npm >/dev/null 2>&1 || {
-  error "未找到 npm。请安装 Node.js 18 或更高版本。"
+  error "未找到 npm。请安装 .nvmrc 指定的 Node.js 26.4.0。"
   exit 1
 }
 
@@ -123,7 +126,7 @@ fi
 
 if ! (
   cd "$BACKEND_DIR"
-  "$PYTHON_BIN" -c 'import app, mcp'
+  "$PYTHON_BIN" -c 'import app, mcp, acp'
 ) >/dev/null 2>&1; then
   info "生产依赖未就绪，运行 bootstrap --prod..."
   "$ROOT_DIR/scripts/bootstrap" --prod
@@ -172,6 +175,13 @@ info "正在启动持久化任务 worker(并发 ${TASK_CONCURRENCY:-2})"
 ) &
 WORKER_PID=$!
 
+info "正在启动 ACP 批改 worker(并发 1)"
+(
+  cd "$BACKEND_DIR"
+  exec "$PYTHON_BIN" -m app.acp_worker
+) &
+ACP_WORKER_PID=$!
+
 info "正在启动前端预览:http://localhost:5173"
 (
   cd "$FRONTEND_DIR"
@@ -183,6 +193,7 @@ printf '\n\033[1;32mAI Marking 已启动（生产模式），按 Ctrl+C 同时�
 
 while kill -0 "$BACKEND_PID" 2>/dev/null \
   && kill -0 "$WORKER_PID" 2>/dev/null \
+  && kill -0 "$ACP_WORKER_PID" 2>/dev/null \
   && kill -0 "$FRONTEND_PID" 2>/dev/null; do
   sleep 1
 done

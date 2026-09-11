@@ -35,7 +35,7 @@ prepare_ai_marking_submission（只读）
 3. 服务端以确定性规则校验（引用子串、满分包含、总分一致性、评分项不重复），通过后写入题目级权威快照并返回 `rubric_snapshot_id`，随后删除该次提取句柄；校验失败返回 422，不写入。客户端不得绕过或降级该项校验。
 4. 保存成功后重新调用 `open_ai_marking_assignment` 以新 rubric 快照评分。
 
-批改流程的唯一权威源是 [.agents/skills/ai-marking-grader/SKILL.md](../../.agents/skills/ai-marking-grader/SKILL.md)：客户端按 skill 名称 `ai-marking-grader` 加载它获取完整流程，MCP 不再提供单独的提示词模板；前端「批改提示词」对话框只输出一句「使用 ai-marking-grader skill」的引用 + 题目标识，不再内嵌流程或评分标准，避免多份流程漂移。`GET /api/questions/{id}/grading-prompt` 仍返回与该题同源的 `grading_policy`（复用 `resolve_submission_rubric` + `build_grading_policy`）供审计与预检；题目 OCR 未完成时该接口返回 409，前端提示先完成识别。
+批改流程的唯一权威源是 [.agents/skills/ai-marking-grader/SKILL.md](../../.agents/skills/ai-marking-grader/SKILL.md)：客户端按 skill 名称 `ai-marking-grader` 加载它获取完整流程，MCP 不再提供单独的提示词模板；前端「批改提示词」对话框只输出一句「使用 ai-marking-grader skill」的引用 + 题目标识，不再内嵌流程或评分标准，避免多份流程漂移。MCP 专属内容（新作业上传步骤 1-4、list_pending 恢复）在 [references/mcp-only.md](../../.agents/skills/ai-marking-grader/references/mcp-only.md) 附录；ACP 工作区物化的 `skill.md` 为剔除 MCP 专属块的裁剪版。`GET /api/questions/{id}/grading-prompt` 仍返回与该题同源的 `grading_policy`（复用 `resolve_submission_rubric` + `build_grading_policy`）供审计与预检；题目 OCR 未完成时该接口返回 409，前端提示先完成识别。
 
 代码支持 Python/Notebook、R、Java、C、C++；每题一个入口，可附题目要求的同题辅助源码/头文件。编程助手在提交前把同题源码复制到独立临时目录中尝试运行，不修改原文件、不申请提权、不开放网络。运行失败、超时或本机缺少语言环境都由编程助手明确告知教师，但不阻止上传和静态评分；运行输出不上传后端，不进入评分包，不作为服务端证据。
 
