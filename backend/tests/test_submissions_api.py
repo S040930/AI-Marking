@@ -630,6 +630,41 @@ async def test_finalize_rejects_inconsistent_totals(client, db_session):
     assert sub.status == SubmissionStatus.ready_for_review
 
 
+async def test_finalize_rejects_max_score_mismatch_with_rubric(client, db_session):
+    """总满分与当前 rubric 不一致(默认 rubric 满分 100)→ 422,状态不变。"""
+    sub = Submission(
+        original_filename="rubric-mismatch.pdf",
+        file_path="/tmp/rubric-mismatch.pdf",
+        question=_ready_question(db_session, name="rubric 不一致题目"),
+        status=SubmissionStatus.ready_for_review,
+    )
+    db_session.add(sub)
+    db_session.commit()
+
+    response = await client.post(
+        f"/api/submissions/{sub.id}/finalize",
+        json={
+            "reviewer_name": "Dr Chen",
+            "score": 150,
+            "max_score": 200,
+            "feedback": "反馈",
+            "details": [
+                {
+                    "criterion": "内容",
+                    "score": 150,
+                    "max_score": 200,
+                    "comment": "内容完整",
+                    "evidence": [],
+                }
+            ],
+        },
+    )
+    assert response.status_code == 422
+    assert "总满分与当前 rubric 不一致" in response.json()["detail"]
+    db_session.refresh(sub)
+    assert sub.status == SubmissionStatus.ready_for_review
+
+
 async def test_submission_requires_question_id(tmp_path):
     """模型约束:缺少 question_id 的 submission 落库必须失败。
 

@@ -122,7 +122,15 @@ def _cleanup_candidates(db, candidates, root: Path) -> int:
 
 
 def _old_pdf_candidates(upload_dir: Path, cutoff: float):
-    for path in upload_dir.rglob("*.pdf"):
+    # PDF blob 的唯一合法落点是 uploads/documents/(直传与 ZIP 报告共用,
+    # 见 document_storage.persist_pdf_blob)。不能递归扫描 uploads 根:
+    # acp-chat-workspaces/chat-N/ 里物化的报告 PDF 在数据库零引用,
+    # 宽限期后会被误当孤儿删除;ACP 工作区由 cleanup_expired_workspaces
+    # 单独管理生命周期。
+    documents_dir = upload_dir / "documents"
+    if not documents_dir.is_dir():
+        return
+    for path in documents_dir.rglob("*.pdf"):
         try:
             if (
                 path.is_file()

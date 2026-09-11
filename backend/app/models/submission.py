@@ -101,6 +101,10 @@ class Submission(Base):
     )
 
     @property
+    def question_name(self) -> str | None:
+        return self.question.name if self.question else None
+
+    @property
     def question_original_filename(self) -> str | None:
         return self.question.original_filename if self.question else None
 

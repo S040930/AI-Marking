@@ -42,6 +42,10 @@ class ApiClient:
             base_url=API_BASE_URL,
             timeout=httpx.Timeout(60.0, connect=5.0),
             headers=headers,
+            # 目标恒为本机 loopback;trust_env 默认会读到 macOS 系统代理
+            # (如 Clash :7890),代理故障时 loopback 请求也会 502 且响应为空,
+            # 因此显式禁用环境/系统代理直连。
+            trust_env=False,
         )
         return self
 

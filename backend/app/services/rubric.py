@@ -61,7 +61,6 @@ class ResolvedRubric:
     source: str
     text: str
     snapshot_id: str
-    profile_id: int | None = None
 
     @property
     def items(self) -> list[dict[str, Any]]:
@@ -117,10 +116,9 @@ def canonical_text(definition: RubricDefinition) -> str:
     return "\n".join(lines) + f"\n总分:{definition.total_max_score:g}分"
 
 
-def snapshot_id(source: str, definition: RubricDefinition, *, profile_id: int | None = None) -> str:
+def snapshot_id(source: str, definition: RubricDefinition) -> str:
     payload = {
         "source": source,
-        "profile_id": profile_id,
         "version": RUBRIC_VERSION,
         "definition": definition.model_dump(exclude_none=True),
     }
@@ -185,7 +183,6 @@ def resolve_rubric(question: Any | None, config: dict[str, Any] | None) -> Resol
     if question_definition is not None:
         source = "question_extracted"
         definition = question_definition
-        profile_id = getattr(question, "config_profile_id", None)
     else:
         definition = None
         raw_config = config.get("rubric_definition")
@@ -196,25 +193,36 @@ def resolve_rubric(question: Any | None, config: dict[str, Any] | None) -> Resol
                 definition = None
         if definition is not None:
             source = "configured"
-            profile_id = getattr(question, "config_profile_id", None)
         else:
             source = "built_in_default"
             definition = DEFAULT_DEFINITION
-            profile_id = None
     return ResolvedRubric(
         definition=definition,
         source=source,
         text=canonical_text(definition),
-        snapshot_id=snapshot_id(source, definition, profile_id=profile_id),
-        profile_id=profile_id,
+        snapshot_id=snapshot_id(source, definition),
     )
 
 
-def validate_assessment_details(details: list[Any], resolved: ResolvedRubric) -> None:
+def validate_assessment_details(
+    details: list[Any],
+    resolved: ResolvedRubric,
+    *,
+    require_full_coverage: bool = True,
+) -> None:
+    """校验明细逐项引用并匹配当前 rubric。
+
+    ``require_full_coverage=False`` 是教师 finalize 语义:明细可省略
+    ``rubric_item_id``(schema 注释允许,该情形直接跳过),携带 id 的项仍
+    必须与当前 rubric 一致,且不要求完整覆盖。默认 MCP 语义:逐项必填
+    且必须完整覆盖。
+    """
     expected = {item.rubric_item_id: item for item in resolved.definition.items}
     seen: set[str] = set()
     for detail in details:
         item_id = getattr(detail, "rubric_item_id", None) or detail.get("rubric_item_id")
+        if item_id is None and not require_full_coverage:
+            continue
         criterion = getattr(detail, "criterion", None) or detail.get("criterion")
         max_score = getattr(detail, "max_score", None)
         if max_score is None and isinstance(detail, dict):
@@ -222,8 +230,12 @@ def validate_assessment_details(details: list[Any], resolved: ResolvedRubric) ->
         if item_id not in expected or item_id in seen:
             raise ValueError("评分项必须逐项引用当前 rubric 且不能重复")
         item = expected[item_id]
-        if criterion != item.criterion or abs(float(max_score) - item.max_score) > 0.01:
+        if (
+            max_score is None
+            or criterion != item.criterion
+            or abs(float(max_score) - item.max_score) > 0.01
+        ):
             raise ValueError("评分项内容与当前 rubric 不一致")
         seen.add(item_id)
-    if seen != set(expected):
+    if require_full_coverage and seen != set(expected):
         raise ValueError("评分项未完整覆盖当前 rubric")

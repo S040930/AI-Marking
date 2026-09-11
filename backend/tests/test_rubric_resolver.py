@@ -9,7 +9,6 @@ from app.services.rubric import resolve_rubric, validate_assessment_details
 def _question():
     text = "评分：内容 60 分。分析 40 分。"
     return SimpleNamespace(
-        config_profile_id=7,
         ocr_text=text,
         extracted_rubric="历史文本格式不作为权威",
         extracted_rubric_items=[

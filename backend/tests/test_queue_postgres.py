@@ -24,7 +24,6 @@ from app.application.uploads import (
 from app.core.errors import ConflictError
 from app.core.time import utc_now_naive
 from app.models.background_job import BackgroundJob, BackgroundJobStatus
-from app.models.config_profile import ConfigProfile
 from app.models.question import Question, QuestionStatus
 from app.models.submission import Submission, SubmissionStatus
 from app.services.document_storage import StoredDocument
@@ -60,12 +59,8 @@ def _session():
 
 def _new_question(setup, prefix: str) -> Question:
     suffix = uuid4().hex[:10]
-    profile = ConfigProfile(name=f"{prefix}-{suffix}", is_default=False)
-    setup.add(profile)
-    setup.flush()
     question = Question(
         id=f"{prefix}-{suffix}",
-        config_profile_id=profile.id,
         name=f"{prefix}-{suffix}",
         original_filename=f"{prefix}-{suffix}.pdf",
         file_path=f"/tmp/{prefix}-{suffix}.pdf",
@@ -76,26 +71,20 @@ def _new_question(setup, prefix: str) -> Question:
     return question
 
 
-def _cleanup(question_id: str | None, profile_id: int | None) -> None:
+def _cleanup(question_id: str | None) -> None:
     with _session() as cleanup:
         question = cleanup.get(Question, question_id) if question_id else None
         if question is not None:
             cleanup.delete(question)
             cleanup.commit()
-        profile = cleanup.get(ConfigProfile, profile_id) if profile_id else None
-        if profile is not None:
-            cleanup.delete(profile)
-            cleanup.commit()
 
 
 def test_skip_locked_prevents_duplicate_claim():
     question_id = None
-    profile_id = None
     with _session() as setup:
         question = _new_question(setup, "queue-integration")
         question.status = QuestionStatus.pending
         question_id = question.id
-        profile_id = question.config_profile_id
         setup.add(new_question_ocr_job(question.id))
         setup.commit()
 
@@ -119,7 +108,7 @@ def test_skip_locked_prevents_duplicate_claim():
             assert claimed is not None
             assert claimed.question_id == question_id
     finally:
-        _cleanup(question_id, profile_id)
+        _cleanup(question_id)
 
 
 def test_finalize_and_mcp_lock_paths_serialize():
@@ -131,11 +120,9 @@ def test_finalize_and_mcp_lock_paths_serialize():
     """
     submission_id = None
     question_id = None
-    profile_id = None
     with _session() as setup:
         question = _new_question(setup, "finalize-race")
         question_id = question.id
-        profile_id = question.config_profile_id
         sub = Submission(
             original_filename="finalize-race.pdf",
             file_path="/tmp/finalize-race.pdf",
@@ -180,17 +167,15 @@ def test_finalize_and_mcp_lock_paths_serialize():
         assert results.get("first") == "ok"
         assert results["second_status"] == SubmissionStatus.reviewed.value
     finally:
-        _cleanup(question_id, profile_id)
+        _cleanup(question_id)
 
 
 def test_upload_preflight_does_not_hold_question_lock():
     question_id = None
-    profile_id = None
     with _session() as setup:
         question = _new_question(setup, "upload-preflight")
         question.ocr_text = "ready"
         question_id = question.id
-        profile_id = question.config_profile_id
         setup.commit()
 
     try:
@@ -206,12 +191,11 @@ def test_upload_preflight_does_not_hold_question_lock():
             ).scalar_one()
             assert locked.id == question_id
     finally:
-        _cleanup(question_id, profile_id)
+        _cleanup(question_id)
 
 
 def test_retry_and_question_replace_do_not_deadlock_and_only_one_wins(tmp_path):
     question_id = None
-    profile_id = None
     submission_id = None
     source = tmp_path / "submission.pdf"
     source.write_bytes(b"%PDF-test")
@@ -221,7 +205,6 @@ def test_retry_and_question_replace_do_not_deadlock_and_only_one_wins(tmp_path):
         question = _new_question(setup, "retry-replace-race")
         question.ocr_text = "ready"
         question_id = question.id
-        profile_id = question.config_profile_id
         sub = Submission(
             original_filename="submission.pdf",
             file_path=str(source),
@@ -277,17 +260,15 @@ def test_retry_and_question_replace_do_not_deadlock_and_only_one_wins(tmp_path):
             assert not thread.is_alive(), "concurrent write deadlocked"
         assert sorted(outcomes.values()) == ["conflict", "ok"]
     finally:
-        _cleanup(question_id, profile_id)
+        _cleanup(question_id)
 
 
 def test_expired_running_lease_is_reclaimed():
     question_id = None
-    profile_id = None
     with _session() as setup:
         question = _new_question(setup, "expired-lease")
         question.status = QuestionStatus.pending
         question_id = question.id
-        profile_id = question.config_profile_id
         setup.add(new_question_ocr_job(question.id))
         setup.commit()
 
@@ -306,4 +287,4 @@ def test_expired_running_lease_is_reclaimed():
         assert reclaimed.id == claimed.id
         assert reclaimed.claim_token != claimed.claim_token
     finally:
-        _cleanup(question_id, profile_id)
+        _cleanup(question_id)

@@ -84,6 +84,7 @@ from app.services.result_export import (
     delete_export_file,
     safe_export_filename,
 )
+from app.services.submission_zip import extract_and_classify_zip
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -101,23 +102,33 @@ def _discard_code_storage(code_metadata: list[dict]) -> None:
     status_code=status.HTTP_201_CREATED,
 )
 async def create_submission(
-    file: UploadFile = File(..., description="学生作业 PDF"),
+    file: UploadFile = File(..., description="学生作业 PDF 或 ZIP(PDF+代码+数据集)"),
     question_id: str = Form(..., description="题目 ID(文件名 slug)"),
     code_files: list[UploadFile] = File(
-        default=[], description="可选多语言代码文件"
+        default=[], description="可选多语言代码文件(仅纯 PDF 上传)"
     ),
     code_manifest: str | None = Form(
         default=None,
         max_length=50_000,
-        description="代码文件小题映射 JSON",
+        description="代码文件小题映射 JSON(仅纯 PDF 上传)",
     ),
     session_factory=Depends(get_session_factory),
 ):
-    """上传学生报告 PDF 及可选的多语言代码文件。
+    """上传学生作业:纯报告 PDF(+可选散装代码),或一个 ZIP 包。
 
+    ZIP 由后端解包自动分类:恰好一份报告 PDF、``q<n>.<ext>`` 命名的代码、
+    其余为数据集(写入 ``submission_code_input_files``,批改工作区会物化)。
     收敛为 MCP-only 后固定使用外部编程助手评分模式：上传后只做 OCR，
     进入 ``awaiting_mcp``，由 MCP 客户端评分。
     """
+    upload_kind = _sniff_upload_kind(file)
+    if upload_kind == "zip":
+        return await _create_submission_from_zip(
+            file=file,
+            question_id=question_id,
+            session_factory=session_factory,
+        )
+
     validate_document_upload(file)
     preflight = await run_in_threadpool(
         preflight_submission_create, session_factory, question_id
@@ -131,12 +142,7 @@ async def create_submission(
     )
 
     # 解析并校验上传目录(必须位于后端根目录下,防止任意目录写入)
-    try:
-        upload_dir = resolve_upload_dir()
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=500, detail="UPLOAD_DIR 配置非法,必须位于后端根目录下"
-        ) from exc
+    upload_dir = _resolve_upload_dir_or_500()
     upload_dir.mkdir(parents=True, exist_ok=True)
 
     stored = await save_document_as_pdf(file, upload_dir)
@@ -170,6 +176,59 @@ async def create_submission(
             _discard_uncommitted_document(cleanup_db, stored, upload_dir)
         raise
 
+    return submission
+
+
+def _sniff_upload_kind(file: UploadFile) -> Literal["pdf", "zip"]:
+    suffix = Path(file.filename or "").suffix.lower()
+    if suffix == ".zip":
+        return "zip"
+    if suffix == ".pdf":
+        return "pdf"
+    raise HTTPException(status_code=422, detail="文件仅支持 PDF 或 ZIP 格式")
+
+
+def _resolve_upload_dir_or_500() -> Path:
+    try:
+        return resolve_upload_dir()
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=500, detail="UPLOAD_DIR 配置非法,必须位于后端根目录下"
+        ) from exc
+
+
+async def _create_submission_from_zip(
+    *,
+    file: UploadFile,
+    question_id: str,
+    session_factory,
+):
+    """ZIP 分支:线程池解包分类,再走同一提交事务。"""
+    preflight = await run_in_threadpool(
+        preflight_submission_create, session_factory, question_id
+    )
+    _ = preflight  # 预检即校验;question_text 由解包规则隐式使用(仅 qN 命名)
+    upload_dir = _resolve_upload_dir_or_500()
+    upload_dir.mkdir(parents=True, exist_ok=True)
+
+    package = await run_in_threadpool(
+        extract_and_classify_zip, file, upload_dir
+    )
+    try:
+        submission = await run_in_threadpool(
+            commit_submission_create,
+            session_factory,
+            question_id=question_id,
+            stored=package.stored,
+            code_metadata=package.code_metadata,
+            input_metadata=package.input_metadata,
+        )
+    except Exception:
+        for storage_dir in package.storage_dirs:
+            shutil.rmtree(storage_dir, ignore_errors=True)
+        with session_factory() as cleanup_db:
+            _discard_uncommitted_document(cleanup_db, package.stored, upload_dir)
+        raise
     return submission
 
 

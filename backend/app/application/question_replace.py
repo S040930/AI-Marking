@@ -59,7 +59,7 @@ async def run_question_replace(question_id: str) -> None:
         db.commit()
 
     with SessionLocal() as db:
-        config = get_config_dict(db, profile_id=question.config_profile_id)
+        config = get_config_dict(db)
 
     try:
         new_ocr_text = await ocr_pdf(

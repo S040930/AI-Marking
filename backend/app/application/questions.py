@@ -1,4 +1,4 @@
-"""题目域用例：改名、切换配置项与安全删除。
+"""题目域用例：改名与安全删除。
 
 从 ``app/api/questions.py`` 迁入的写事务编排；API 层只做参数适配与序列化。
 所有写操作沿用既有锁序 ``Question -> Submission(s)``，数据库提交成功后再
@@ -35,21 +35,6 @@ def rename_question(db: Session, question_id: str, name: str) -> Question:
     ):
         raise ConflictError("题目新版正在处理中")
     question.name = name.strip()
-    question.updated_at = utc_now_naive()
-    db.commit()
-    return question
-
-
-def change_question_config_profile(
-    db: Session, question_id: str, config_profile_id: int
-) -> Question:
-    """切换题目使用的配置项目（非状态机字段，直接写）。"""
-    question = db.get(Question, question_id, with_for_update=True)
-    if question is None:
-        raise NotFoundError("题目不存在")
-    if question.status in (QuestionStatus.pending, QuestionStatus.ocr_processing):
-        raise ConflictError("题目 OCR 正在处理中")
-    question.config_profile_id = config_profile_id
     question.updated_at = utc_now_naive()
     db.commit()
     return question

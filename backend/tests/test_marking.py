@@ -96,25 +96,20 @@ async def test_pipeline_reuses_question_ocr_and_only_ocr_student_submission(
 
 
 @pytest.mark.asyncio
-async def test_pipeline_uses_question_config_profile(
+async def test_pipeline_uses_global_config(
     monkeypatch, tmp_path, db_session, marking_session_factory
 ):
-    """批改流水线读取题目所绑定配置项目的 OCR 参数，而非全局默认。"""
-    from app.models.config_profile import ConfigProfile
+    """批改流水线读取全局配置中的 OCR 参数。"""
     from app.models.question import Question, QuestionStatus
     from app.models.submission import Submission
     from app.services.config import upsert_config
 
-    profile = ConfigProfile(name="独立项目", is_default=False)
-    db_session.add(profile)
-    db_session.commit()
     upsert_config(
         db_session,
         {
             "paddleocr_api_url": "https://custom.ocr/jobs",
             "paddleocr_token": "custom-token",
         },
-        profile_id=profile.id,
     )
 
     question = Question(
@@ -123,7 +118,6 @@ async def test_pipeline_uses_question_config_profile(
         file_path=str(tmp_path / "q.pdf"),
         ocr_text="题目 OCR 文本",
         status=QuestionStatus.ready,
-        config_profile_id=profile.id,
     )
     sub = Submission(
         original_filename="h.pdf",

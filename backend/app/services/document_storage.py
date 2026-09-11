@@ -78,6 +78,54 @@ async def _stream_upload(
     return written, digest.hexdigest()
 
 
+def persist_pdf_blob(
+    source: Path,
+    *,
+    original_filename: str,
+    upload_dir: Path,
+) -> StoredDocument:
+    """把已通过 ``%PDF-`` 魔数校验的本地文件持久化为内容寻址 blob。
+
+    直传 PDF 与 ZIP 内报告成员共用;失败时调用方负责清理 ``source``。
+    """
+    size = source.stat().st_size
+    digest = _streaming_sha256(source)
+    blob_dir = upload_dir / "documents" / digest[:2]
+    saved_path = blob_dir / f"{digest}.pdf"
+    blob_dir.mkdir(parents=True, exist_ok=True)
+    if saved_path.exists():
+        if not _same_file(saved_path, source, size):
+            raise RuntimeError(f"内容哈希冲突，拒绝覆盖已有文件：{saved_path}")
+        source.unlink(missing_ok=True)
+        # A request may be about to create the first durable reference to an
+        # old orphaned blob. Refresh its age so concurrent retention cleanup
+        # cannot remove it before the surrounding transaction commits.
+        saved_path.touch()
+        created = False
+    else:
+        try:
+            # Hard-link creation is atomic and never overwrites a blob
+            # another concurrent uploader may have created.
+            os.link(source, saved_path)
+            source.unlink(missing_ok=True)
+            created = True
+        except FileExistsError:
+            if not _same_file(saved_path, source, size):
+                raise RuntimeError(f"内容哈希冲突，拒绝覆盖已有文件：{saved_path}")
+            source.unlink(missing_ok=True)
+            saved_path.touch()
+            created = False
+    return StoredDocument(original_filename, saved_path, digest, created)
+
+
+def _streaming_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        while chunk := handle.read(_CHUNK_SIZE):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def _same_file(left: Path, right: Path, size: int) -> bool:
     """Compare an existing blob without loading either file into memory."""
     if left.stat().st_size != size:
@@ -178,33 +226,11 @@ async def save_document_as_pdf(
         temporary_dir = Path(tempfile.mkdtemp(prefix=".document-", dir=upload_dir))
         stored_stem = uuid.uuid4().hex
         source = temporary_dir / f"{stored_stem}.pdf"
-        size, digest = await _stream_upload(upload_file, source, max_size_bytes)
-        blob_dir = upload_dir / "documents" / digest[:2]
-        saved_path = blob_dir / f"{digest}.pdf"
-        blob_dir.mkdir(parents=True, exist_ok=True)
-        if saved_path.exists():
-            if not _same_file(saved_path, source, size):
-                raise RuntimeError(f"内容哈希冲突，拒绝覆盖已有文件：{saved_path}")
-            source.unlink(missing_ok=True)
-            # A request may be about to create the first durable reference to an
-            # old orphaned blob. Refresh its age so concurrent retention cleanup
-            # cannot remove it before the surrounding transaction commits.
-            saved_path.touch()
-            created = False
-        else:
-            try:
-                # Hard-link creation is atomic and never overwrites a blob
-                # another concurrent uploader may have created.
-                os.link(source, saved_path)
-                source.unlink(missing_ok=True)
-                created = True
-            except FileExistsError:
-                if not _same_file(saved_path, source, size):
-                    raise RuntimeError(f"内容哈希冲突，拒绝覆盖已有文件：{saved_path}")
-                source.unlink(missing_ok=True)
-                saved_path.touch()
-                created = False
-        return StoredDocument(original_filename, saved_path, digest, created)
+        await _stream_upload(upload_file, source, max_size_bytes)
+        stored = persist_pdf_blob(
+            source, original_filename=original_filename, upload_dir=upload_dir
+        )
+        return stored
     finally:
         await upload_file.close()
         if temporary_dir is not None:

@@ -148,7 +148,7 @@ async def run_marking_pipeline(submission_id: int) -> None:
             return
 
         # 一次性读取配置(OCR URL/Token 等)
-        config = get_config_dict(db, profile_id=sub.question.config_profile_id)
+        config = get_config_dict(db)
         paddleocr_api_url = config.get("paddleocr_api_url", "") or ""
         paddleocr_token = config.get("paddleocr_token", "") or ""
         file_path = sub.file_path

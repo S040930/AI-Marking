@@ -9,16 +9,9 @@ from app.models.question import Question, QuestionStatus
 from app.models.submission import Submission, SubmissionStatus
 
 
-def _profile_id(db_session) -> int:
-    from app.models.config_profile import ConfigProfile
-
-    return db_session.query(ConfigProfile.id).filter_by(is_default=True).scalar()
-
-
 async def test_runtime_summary_contains_only_bounded_counts(client, db_session):
     question = Question(
         id="runtime-question",
-        config_profile_id=_profile_id(db_session),
         name="sensitive title",
         original_filename="student-name.pdf",
         file_path="/tmp/student-name.pdf",
@@ -45,7 +38,6 @@ async def test_dead_question_retry_restores_target_and_job(
     source.write_bytes(b"%PDF-question")
     question = Question(
         id="dead-question",
-        config_profile_id=_profile_id(db_session),
         name="dead",
         original_filename="dead.pdf",
         file_path=str(source),
@@ -80,7 +72,6 @@ async def test_dead_submission_retry_rejects_missing_file(
     question_file.write_bytes(b"%PDF-question")
     question = Question(
         id="dead-submission-question",
-        config_profile_id=_profile_id(db_session),
         name="question",
         original_filename="question.pdf",
         file_path=str(question_file),

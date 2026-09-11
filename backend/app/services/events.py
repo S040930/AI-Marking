@@ -32,6 +32,8 @@ logger = logging.getLogger(__name__)
 
 CHANNEL_SUBMISSION = "submission_status"
 CHANNEL_QUESTION = "question_status"
+CHANNEL_ACP_RUN = "acp_run_events"
+CHANNEL_ACP_CHAT = "acp_chat_events"
 
 # SSE 客户端默认 30s 网络空闲可能被中间代理断开,15s 发一次注释行保活。
 _KEEPALIVE_INTERVAL_SECONDS = 15.0
@@ -133,6 +135,38 @@ def notify_question_status(
     )
 
 
+def notify_acp_run_event(
+    db: Session, run_id: int, seq: int, kind: str, payload: dict
+) -> None:
+    """在当前事务内发送 ACP run 事件 NOTIFY;SSE 以 seq 续读。"""
+    if not _is_postgres(db):
+        return
+    payload_json = json.dumps(
+        {"run_id": run_id, "seq": seq, "kind": kind, "payload": payload},
+        ensure_ascii=False,
+    )
+    db.execute(
+        text(_notify_sql(CHANNEL_ACP_RUN)),
+        {"payload": payload_json},
+    )
+
+
+def notify_acp_chat_event(
+    db: Session, session_id: int, seq: int, kind: str, payload: dict
+) -> None:
+    """在当前事务内发送 ACP 对话事件 NOTIFY;SSE 以 seq 续读。"""
+    if not _is_postgres(db):
+        return
+    payload_json = json.dumps(
+        {"session_id": session_id, "seq": seq, "kind": kind, "payload": payload},
+        ensure_ascii=False,
+    )
+    db.execute(
+        text(_notify_sql(CHANNEL_ACP_CHAT)),
+        {"payload": payload_json},
+    )
+
+
 # ---------------------------------------------------------------------------
 # 接收端:SSE 流
 # ---------------------------------------------------------------------------
@@ -148,9 +182,11 @@ def _sse_keepalive() -> str:
     return ": keepalive\n\n"
 
 
-# 允许监听的 PG 通知频道白名单。频道名只会来自这两个模块常量,
+# 允许监听的 PG 通知频道白名单。频道名只会来自这几个模块常量,
 # 在执行 LISTEN 前显式校验,避免任何外部拼接进入 SQL 语句结构。
-_VALID_CHANNELS = frozenset({CHANNEL_SUBMISSION, CHANNEL_QUESTION})
+_VALID_CHANNELS = frozenset(
+    {CHANNEL_SUBMISSION, CHANNEL_QUESTION, CHANNEL_ACP_RUN, CHANNEL_ACP_CHAT}
+)
 
 
 def _listen(dsn: str, channel: str) -> "psycopg2.extensions.connection":

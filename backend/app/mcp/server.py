@@ -83,6 +83,15 @@ mcp = MCPServer(
 
 
 @mcp.tool(annotations=ToolAnnotations(read_only_hint=True, destructive_hint=False))
+async def health_ai_marking() -> dict:
+    """只读验证当前 Agent 能访问正确版本的 AI-Marking MCP。"""
+    result = await _call("GET", "/api/mcp/health")
+    if not isinstance(result, dict):
+        raise McpApiError("AI-Marking 健康检查返回无效响应")
+    return result
+
+
+@mcp.tool(annotations=ToolAnnotations(read_only_hint=True, destructive_hint=False))
 async def prepare_ai_marking_submission(
     question_name: str,
     report_path: str,
@@ -95,7 +104,9 @@ async def prepare_ai_marking_submission(
     code_files = inspect_code_files(code_file_paths or [])
     provided = code_mappings or []
     try:
-        mapping_by_name = parse_explicit_code_mappings(provided, [item["filename"] for item in code_files])
+        mapping_by_name = parse_explicit_code_mappings(
+            provided, [item["filename"] for item in code_files]
+        )
     except Exception as exc:  # FastAPI validation is converted to MCP text.
         raise McpApiError(str(getattr(exc, "detail", exc))) from exc
     preflight = await _call(
@@ -106,10 +117,14 @@ async def prepare_ai_marking_submission(
             "code_files": [
                 {
                     "filename": item["filename"],
-                    **(mapping_by_name.get(item["filename"]) or {
-                        "question_number": None,
-                        "entrypoint": Path(item["filename"]).suffix.lower() in CODE_ENTRY_EXTENSIONS,
-                    }),
+                    **(
+                        mapping_by_name.get(item["filename"])
+                        or {
+                            "question_number": None,
+                            "entrypoint": Path(item["filename"]).suffix.lower()
+                            in CODE_ENTRY_EXTENSIONS,
+                        }
+                    ),
                 }
                 for item in code_files
             ],
@@ -164,7 +179,11 @@ async def submit_prepared_ai_marking_submission(submission_plan: str) -> dict:
             path = Path(item["path"])
             handle = path.open("rb")
             handles.append(handle)
-            mime = "application/x-ipynb+json" if path.suffix.lower() == ".ipynb" else "text/plain"
+            mime = (
+                "application/x-ipynb+json"
+                if path.suffix.lower() == ".ipynb"
+                else "text/plain"
+            )
             multipart.append(("code_files", (path.name, handle, mime)))
         async with ApiClient() as client:
             result = await client.request(
@@ -173,7 +192,9 @@ async def submit_prepared_ai_marking_submission(submission_plan: str) -> dict:
                 files=multipart,
                 data={
                     "question_id": str(plan["question_id"]),
-                    "code_manifest": json.dumps(plan["code_manifest"], ensure_ascii=False),
+                    "code_manifest": json.dumps(
+                        plan["code_manifest"], ensure_ascii=False
+                    ),
                 },
             )
     finally:
@@ -183,7 +204,11 @@ async def submit_prepared_ai_marking_submission(submission_plan: str) -> dict:
         raise McpApiError("AI-Marking 上传接口返回了无效响应")
     submission_id = int(result["id"])
     discard_plan(submission_plan)
-    return {**result, "submission_id": submission_id, "review_url": review_url(submission_id)}
+    return {
+        **result,
+        "submission_id": submission_id,
+        "review_url": review_url(submission_id),
+    }
 
 
 @mcp.tool(annotations=ToolAnnotations(read_only_hint=True, destructive_hint=False))
@@ -318,7 +343,14 @@ async def save_ai_marking_assessment(
     grading_handle: str,
     assessment: McpAssessmentRequest,
 ) -> dict:
-    """保存外部编程助手建议；request_id 与 rubric snapshot 必须来自当前评分包。"""
+    """保存外部编程助手建议；request_id 与 rubric snapshot 必须来自当前评分包。
+
+    含代码作业的每个打分明细 ``evidence_refs`` 必须带至少一条服务端可逐字定位
+    的证据:代码用 ``{"type": "source_line", "filename", "line", "end_line?", "quote"}``
+    (行号按单个代码文件计,见评分包 ``grading_policy.evidence_format``),报告用
+    ``{"type": "report_quote", "quote"}``(逐字取自评分包 submission OCR 段)。
+    引文不可定位时服务端返回 422 并逐条列出原因。
+    """
     result = await _call(
         "PUT",
         f"/api/mcp/submissions/{submission_id}/assessment-v2",
@@ -399,7 +431,9 @@ async def confirm_ai_marking_visual_review(
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    logging.basicConfig(
+        level=logging.INFO, format="%(levelname)s %(name)s: %(message)s"
+    )
     mcp.run()
 
 

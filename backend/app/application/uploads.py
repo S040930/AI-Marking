@@ -21,11 +21,10 @@ from app.application.lifecycle import (
 )
 from app.core.errors import ConflictError, NotFoundError, ValidationError
 from app.core.time import utc_now_naive
-from app.models.config_profile import ConfigProfile
 from app.models.question import Question, QuestionReplacementStatus, QuestionStatus
 from app.models.submission import Submission, SubmissionStatus
 from app.models.submission_code_file import SubmissionCodeFile
-from app.services.config import DEFAULT_PROFILE_NAME
+from app.models.submission_code_input_file import SubmissionCodeInputFile
 from app.services.document_storage import StoredDocument
 from app.services.events import notify_question_status, notify_submission_status
 from app.services.queue import (
@@ -80,6 +79,7 @@ def commit_submission_create(
     question_id: str,
     stored: StoredDocument,
     code_metadata: list[dict],
+    input_metadata: list[dict] | None = None,
 ) -> Submission:
     with factory() as db:
         question = _ready_question(
@@ -106,6 +106,16 @@ def commit_submission_create(
                     file_kind=metadata["kind"],
                     source_sha256=metadata["source_sha256"],
                     source_text=metadata["source_text"],
+                )
+            )
+        for metadata in input_metadata or []:
+            db.add(
+                SubmissionCodeInputFile(
+                    submission_id=submission.id,
+                    original_filename=metadata["filename"],
+                    file_path=metadata["path"],
+                    size_bytes=metadata["size"],
+                    sha256=metadata["sha256"],
                 )
             )
         db.add(new_submission_ocr_job(submission.id))
@@ -190,24 +200,12 @@ def commit_submission_retry(
 
 
 def preflight_question_create(
-    factory: sessionmaker[Session], question_id: str, config_profile_id: int | None
-) -> int:
+    factory: sessionmaker[Session], question_id: str
+) -> None:
+    """上传前预检：提前暴露重名，避免先落盘再失败。"""
     with factory() as db:
         if db.get(Question, question_id) is not None:
             raise ConflictError("同名题目已存在，请修改文件名后重新上传")
-        if config_profile_id is not None:
-            if db.get(ConfigProfile, config_profile_id) is None:
-                raise ValidationError("配置项目不存在")
-            return config_profile_id
-        profile = db.scalar(
-            select(ConfigProfile).where(ConfigProfile.is_default.is_(True))
-        )
-        if profile is None:
-            profile = ConfigProfile(name=DEFAULT_PROFILE_NAME, is_default=True)
-            db.add(profile)
-            db.commit()
-            db.refresh(profile)
-        return profile.id
 
 
 def commit_question_create(
@@ -215,14 +213,11 @@ def commit_question_create(
     *,
     question_id: str,
     name: str,
-    config_profile_id: int,
     stored: StoredDocument,
 ) -> Question:
     with factory() as db:
         if db.get(Question, question_id, with_for_update=True) is not None:
             raise ConflictError("同名题目已存在，请修改文件名后重新上传")
-        if db.get(ConfigProfile, config_profile_id) is None:
-            raise ValidationError("配置项目不存在")
         question = Question(
             id=question_id,
             name=name,
@@ -230,7 +225,6 @@ def commit_question_create(
             file_path=str(stored.path),
             file_sha256=stored.sha256,
             status=QuestionStatus.pending,
-            config_profile_id=config_profile_id,
         )
         db.add(question)
         try:

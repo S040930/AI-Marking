@@ -180,17 +180,35 @@ def _is_retryable(exc: Exception) -> bool:
     return False
 
 
+# PaddleOCR 异步接口的临时拒绝:HTTP 400 + 业务码 10010(提交队列满)。
+_PADDLE_QUEUE_FULL_CODE = 10010
+
+
+def _is_queue_full_response(response: httpx.Response) -> bool:
+    """识别"提交队列已满"响应;这是暂时性错误,应当重试。"""
+    if response.status_code != 400:
+        return False
+    try:
+        return response.json().get("code") == _PADDLE_QUEUE_FULL_CODE
+    except ValueError:
+        return False
+
+
 async def _run_with_circuit_and_retry(
     operation: Callable[[], Awaitable[httpx.Response]],
     parse: Callable[[httpx.Response], Awaitable[object]] | None,
     error_prefix: str,
+    *,
+    retry_on_http_client_error: Callable[[httpx.Response], bool] | None = None,
 ) -> object:
     """带熔断与指数退避重试的一次 OCR HTTP 操作。
 
     - ``operation`` 发起请求;``parse`` 可选,在 HTTP 成功后解析响应体
       (解析抛 ``BusinessError`` 视为确定性失败,不重试也不计入熔断)
+    - ``retry_on_http_client_error`` 可选:对 4xx 响应做二次判定(如提交
+      队列满的暂时性 400),命中时按可重试错误处理
     - 可重试错误按 1s/2s/4s 退避,耗尽后记一次熔断失败并抛 ``OCRError``
-    - 不可重试的 HTTP 错误(如 4xx 配置错误)直接转 ``BusinessError``
+    - 其余不可重试的 HTTP 错误(如 4xx 配置错误)直接转 ``BusinessError``
     """
     # 熔断打开时直接 raise,避免无谓重试
     if await _check_circuit_open():
@@ -208,10 +226,18 @@ async def _run_with_circuit_and_retry(
             await _record_success()
             return data
         except httpx.HTTPError as exc:
-            if not _is_retryable(exc):
+            force_retry = (
+                retry_on_http_client_error is not None
+                and isinstance(exc, httpx.HTTPStatusError)
+                and retry_on_http_client_error(exc.response)
+            )
+            if not force_retry and not _is_retryable(exc):
                 # 不可重试错误(如 4xx 配置错误):业务失败,不记入熔断计数,
                 # 直接抛出 BusinessError 由 worker 标记终态且不重试。
-                raise BusinessError(f"{error_prefix}: {exc}") from exc
+                # 带上响应体片段,保留服务端的真实拒绝原因。
+                detail = _response_error_detail(exc)
+                suffix = f"({detail})" if detail else ""
+                raise BusinessError(f"{error_prefix}: {exc}{suffix}") from exc
             last_exc = exc
             if attempt + 1 >= _MAX_ATTEMPTS:
                 break
@@ -224,6 +250,22 @@ async def _run_with_circuit_and_retry(
     raise OCRError(
         f"{error_prefix}重试 {_MAX_ATTEMPTS} 次仍失败: {detail}: {last_exc}"
     ) from last_exc
+
+
+def _response_error_detail(exc: httpx.HTTPError) -> str:
+    """从 HTTP 错误响应中提取服务端 msg 片段,便于定位真实拒绝原因。"""
+    response = getattr(exc, "response", None)
+    if response is None:
+        return ""
+    try:
+        body = response.json()
+        msg = body.get("msg") or body.get("message")
+        if msg:
+            return str(msg)
+    except ValueError:
+        pass
+    text = (response.text or "").strip()
+    return text[:200]
 
 
 def _parse_layout_parsing_json(response: httpx.Response) -> dict:
@@ -251,11 +293,16 @@ async def _request_with_retry(
     request: Callable[[], Awaitable[httpx.Response]],
     operation: str,
 ) -> httpx.Response:
-    """异步任务路径的 HTTP 操作:共享重试/熔断,不解析响应体。"""
+    """异步任务路径的 HTTP 操作:共享重试/熔断,不解析响应体。
+
+    服务端业务码为"队列已满"(code=10010)时属于暂时性拒绝,原地等待后重试,
+    不计入业务终态失败。
+    """
     return await _run_with_circuit_and_retry(
         request,
         None,
         f"PaddleOCR-VL {operation}失败",
+        retry_on_http_client_error=_is_queue_full_response,
     )
 
 

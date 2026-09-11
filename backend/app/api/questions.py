@@ -24,9 +24,6 @@ from app.application.mcp_workflow import (
     build_grading_policy,
     resolve_submission_rubric,
 )
-from app.application.questions import (
-    change_question_config_profile as change_question_config_profile_use_case,
-)
 from app.application.questions import delete_question as delete_question_use_case
 from app.application.questions import rename_question as rename_question_use_case
 from app.application.uploads import (
@@ -48,7 +45,6 @@ from app.models.submission import Submission, SubmissionGradingMode
 from app.schemas.question import (
     GradingPromptOut,
     PaginatedQuestions,
-    QuestionConfigProfileRequest,
     QuestionConfirmRequest,
     QuestionDetail,
     QuestionMutationResponse,
@@ -56,10 +52,7 @@ from app.schemas.question import (
     QuestionRenameRequest,
     QuestionReplacementResponse,
 )
-from app.services.config import (
-    get_config_dict,
-    get_profile,
-)
+from app.services.config import get_config_dict
 from app.services.document_storage import (
     discard_uncommitted_document as _discard_uncommitted_document,
 )
@@ -106,7 +99,6 @@ def _serialize(question: Question, submission_count: int, *, detail: bool = Fals
     schema = QuestionDetail if detail else QuestionOut
     return schema(
         id=question.id,
-        config_profile_id=question.config_profile_id,
         name=question.name,
         original_filename=question.original_filename,
         status=question.status,
@@ -125,7 +117,6 @@ def _serialize(question: Question, submission_count: int, *, detail: bool = Fals
 async def create_question(
     file: UploadFile = File(...),
     name: str | None = Form(default=None, max_length=255),
-    config_profile_id: int | None = Form(default=None),
     session_factory=Depends(get_session_factory),
 ):
     validate_document_upload(file)
@@ -138,11 +129,10 @@ async def create_question(
     if not question_id:
         await file.close()
         raise HTTPException(status_code=422, detail="无法从文件名生成题目 ID")
-    config_profile_id = await run_in_threadpool(
+    await run_in_threadpool(
         preflight_question_create,
         session_factory,
         question_id,
-        config_profile_id,
     )
     upload_dir = _upload_dir()
     stored = await save_document_as_pdf(file, upload_dir, suffix="_question")
@@ -152,7 +142,6 @@ async def create_question(
             session_factory,
             question_id=question_id,
             name=display_name,
-            config_profile_id=config_profile_id,
             stored=stored,
         )
     except Exception:
@@ -234,7 +223,7 @@ def get_question_grading_prompt(question_id: str, db: Session = Depends(get_db))
     resolved = resolve_submission_rubric(
         db, SimpleNamespace(question=question)
     )
-    config = get_config_dict(db, profile_id=question.config_profile_id)
+    config = get_config_dict(db)
     review_enabled = (config.get("review_enabled", "true") or "true").lower() == "true"
     grading_policy = build_grading_policy(resolved, review_required=review_enabled)
 
@@ -294,20 +283,6 @@ def rename_question(
     db: Session = Depends(get_db),
 ):
     rename_question_use_case(db, question_id, payload.name)
-    row = _question_with_count(db, question_id)
-    return _serialize(row[0], row[1])
-
-
-@router.patch("/questions/{question_id}/config-profile", response_model=QuestionOut)
-def change_question_config_profile(
-    question_id: str,
-    payload: QuestionConfigProfileRequest,
-    db: Session = Depends(get_db),
-):
-    """切换题目使用的配置项目。"""
-    if get_profile(db, payload.config_profile_id) is None:
-        raise HTTPException(status_code=422, detail="配置项目不存在")
-    change_question_config_profile_use_case(db, question_id, payload.config_profile_id)
     row = _question_with_count(db, question_id)
     return _serialize(row[0], row[1])
 

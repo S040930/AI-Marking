@@ -4,8 +4,6 @@
 `ConfigOut` 为 GET 接口与 PUT 返回的完整结构。
 """
 
-from datetime import datetime
-
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.services.rubric import RubricDefinition
@@ -44,34 +42,3 @@ class ConfigOut(BaseModel):
     paddleocr_token: str = ""
     rubric_definition: RubricDefinition | None = None
     review_enabled: bool = True
-
-
-class ConfigProfileOut(BaseModel):
-    """配置项目元信息输出。"""
-
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    name: str
-    is_default: bool
-    created_at: datetime
-    updated_at: datetime
-
-
-class ConfigProfileCreate(BaseModel):
-    """新建配置项目入参。"""
-
-    model_config = ConfigDict(extra="forbid")
-
-    name: str = Field(min_length=1, max_length=100)
-    copy_from_id: int | None = Field(
-        default=None, description="非空时复制该项目的全部配置值"
-    )
-
-
-class ConfigProfileRename(BaseModel):
-    """重命名配置项目入参。"""
-
-    model_config = ConfigDict(extra="forbid")
-
-    name: str = Field(min_length=1, max_length=100)

@@ -10,7 +10,6 @@ from sqlalchemy.pool import StaticPool
 from app.db.base import Base
 from app.db.session import get_db, get_session_factory
 from app.main import create_app
-from app.models.config_profile import ConfigProfile
 from app.services.ocr import reset_circuit_breaker
 
 
@@ -32,13 +31,6 @@ def db_session():
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, expire_on_commit=False)
     session = factory()
-    # 初始化默认配置项目,保证题目绑定可回退、问题查询可用
-    if (
-        session.query(ConfigProfile).filter(ConfigProfile.is_default.is_(True)).first()
-        is None
-    ):
-        session.add(ConfigProfile(name="默认配置", is_default=True))
-        session.commit()
     try:
         yield session
     finally:

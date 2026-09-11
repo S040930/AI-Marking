@@ -98,6 +98,7 @@ class SubmissionOut(BaseModel):
 
     id: int
     original_filename: str
+    question_name: str | None = None
     question_original_filename: str | None = None
     status: SubmissionStatus
     grading_mode: SubmissionGradingMode = SubmissionGradingMode.external_agent
@@ -139,6 +140,7 @@ class SubmissionCodeInputFileOut(BaseModel):
 class SubmissionDetail(SubmissionOut):
     """完整版:详情页展示用。"""
 
+    question_id: str | None = None
     ocr_text: str | None = None
     question_ocr_text: str | None = None
     feedback: str | None = None

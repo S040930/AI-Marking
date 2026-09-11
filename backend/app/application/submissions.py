@@ -17,12 +17,14 @@ from sqlalchemy.orm import Session, selectinload
 from app.application.lifecycle import transition_submission
 from app.application.locking import lock_submission_after_question
 from app.core.config import settings
-from app.core.errors import ConflictError, NotFoundError
+from app.core.errors import ConflictError, NotFoundError, ValidationError
 from app.core.time import utc_now_naive
 from app.models.question import Question
 from app.models.submission import Submission, SubmissionStatus
+from app.services.config import get_config_dict
 from app.services.document_storage import remove_document_if_unreferenced
 from app.services.events import notify_submission_status
+from app.services.rubric import resolve_rubric, validate_assessment_details
 
 logger = logging.getLogger(__name__)
 
@@ -135,6 +137,8 @@ def finalize_submission(
     """教师确认最终评分（``reviewed`` 的唯一写入入口）。
 
     - 校验状态为 ready_for_review（已 reviewed 返回 409）
+    - 校验总分与教师明细绑定当前 rubric（与 MCP 侧同源校验；教师明细可
+      省略 rubric_item_id，携带 id 的项核对一致，不强制完整覆盖）
     - 写入 score/max_score/feedback/details/reviewed_by/reviewed_at
     - 状态置为 reviewed 并 NOTIFY
     """
@@ -145,6 +149,16 @@ def finalize_submission(
         raise ConflictError("该作业已审阅,不可重复提交")
     if sub.status != SubmissionStatus.ready_for_review:
         raise ConflictError("作业尚未准备好进行审阅")
+
+    # 与 MCP 侧 save_assessment 同源:确认时也要绑定当前 rubric,防止
+    # rubric 在建议生成与教师确认之间被改后,最终成绩与评分项脱节。
+    resolved = resolve_rubric(sub.question, get_config_dict(db))
+    if abs(max_score - resolved.total_max_score) > 0.01:
+        raise ValidationError("总满分与当前 rubric 不一致")
+    try:
+        validate_assessment_details(details, resolved, require_full_coverage=False)
+    except ValueError as exc:
+        raise ValidationError(str(exc)) from exc
 
     now = utc_now_naive()
     sub.score = score

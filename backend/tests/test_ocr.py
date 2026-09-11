@@ -78,6 +78,60 @@ async def test_non_retryable_http_failure_is_business_error():
     assert attempts == 1
 
 
+async def test_queue_full_400_is_retried_then_succeeds(monkeypatch):
+    """PaddleOCR 队列满(HTTP 400 + code=10010)是暂时性拒绝,应重试而非终态失败。"""
+    attempts = 0
+
+    async def no_sleep(_seconds):
+        return None
+
+    async def request():
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return _response(
+                "https://x.com/api/v2/ocr/jobs",
+                status=400,
+                payload={"code": 10010, "msg": "任务提交队列已满，请稍后重试"},
+            )
+        return _response("https://x.com/api/v2/ocr/jobs", payload={"code": 0})
+
+    monkeypatch.setattr(ocr.asyncio, "sleep", no_sleep)
+    response = await ocr._request_with_retry(request, "提交任务")
+    assert response.json()["code"] == 0
+    assert attempts == 2
+
+
+async def test_queue_full_400_exhaustion_raises_ocr_error(monkeypatch):
+    async def no_sleep(_seconds):
+        return None
+
+    async def request():
+        return _response(
+            "https://x.com/api/v2/ocr/jobs",
+            status=400,
+            payload={"code": 10010, "msg": "任务提交队列已满，请稍后重试"},
+        )
+
+    monkeypatch.setattr(ocr.asyncio, "sleep", no_sleep)
+    with pytest.raises(OCRError, match="重试 3 次"):
+        await ocr._request_with_retry(request, "提交任务")
+
+
+async def test_other_400_business_error_includes_server_msg():
+    """非队列满的 400 直接终态失败,错误信息带服务端 msg 便于定位。"""
+
+    async def request():
+        return _response(
+            "https://x.com/api/v2/ocr/jobs",
+            status=400,
+            payload={"code": 10001, "msg": "文件格式不支持"},
+        )
+
+    with pytest.raises(BusinessError, match="文件格式不支持"):
+        await ocr._request_with_retry(request, "提交任务")
+
+
 class _AsyncJobsClient:
     def __init__(self, *, fail_first_submit: bool = False, job_state: str = "done"):
         self.fail_first_submit = fail_first_submit

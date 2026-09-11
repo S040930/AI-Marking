@@ -36,81 +36,6 @@ async def _question(db_session, tmp_path, *, name="期末作文"):
     return question, path
 
 
-async def test_create_question_binds_default_config_profile(client, db_session):
-    """未指定配置项目的题目自动绑定默认项目。"""
-    from app.models.config_profile import ConfigProfile
-
-    created = await client.post(
-        "/api/questions",
-        files={"file": ("new-q.pdf", b"%PDF-1.4", "application/pdf")},
-        data={"name": "默认绑定题"},
-    )
-    assert created.status_code == 201
-    default_id = db_session.query(ConfigProfile).filter_by(is_default=True).one().id
-    assert created.json()["config_profile_id"] == default_id
-    assert (
-        db_session.get(Question, created.json()["id"]).config_profile_id == default_id
-    )
-
-
-async def test_create_question_with_explicit_config_profile(client, db_session):
-    """显式指定 config_profile_id 时题目按项目绑定。"""
-    from app.models.config_profile import ConfigProfile
-
-    profile = ConfigProfile(name="AB 项目", is_default=False)
-    db_session.add(profile)
-    db_session.commit()
-
-    created = await client.post(
-        "/api/questions",
-        files={"file": ("new-q.pdf", b"%PDF-1.4", "application/pdf")},
-        data={"name": "AB绑定题", "config_profile_id": str(profile.id)},
-    )
-    assert created.status_code == 201
-    assert created.json()["config_profile_id"] == profile.id
-
-
-async def test_switch_question_config_profile(client, db_session, tmp_path):
-    """PATCH /questions/{id}/config-profile 切换题目的配置项目。"""
-    from app.models.config_profile import ConfigProfile
-
-    profile_a = ConfigProfile(name="项目A", is_default=False)
-    db_session.add(profile_a)
-    db_session.commit()
-
-    question, _ = await _question(db_session, tmp_path)
-
-    switched = await client.patch(
-        f"/api/questions/{question.id}/config-profile",
-        json={"config_profile_id": profile_a.id},
-    )
-    assert switched.status_code == 200
-    assert switched.json()["config_profile_id"] == profile_a.id
-    assert db_session.get(Question, question.id).config_profile_id == profile_a.id
-    # 不存在的项目拒绝
-    missing = await client.patch(
-        f"/api/questions/{question.id}/config-profile",
-        json={"config_profile_id": 9999},
-    )
-    assert missing.status_code == 422
-
-
-async def test_switch_question_config_profile_blocks_during_ocr(client):
-    """OCR 处理中的题目不可切换配置项目。"""
-    creating = await client.post(
-        "/api/questions",
-        files={"file": ("q.pdf", b"%PDF-1.4", "application/pdf")},
-        data={"name": "排队题"},
-    )
-    assert creating.status_code == 201
-    qid = creating.json()["id"]
-    resp = await client.patch(
-        f"/api/questions/{qid}/config-profile",
-        json={"config_profile_id": creating.json()["config_profile_id"]},
-    )
-    assert resp.status_code == 409
-
-
 async def test_create_and_retry_question_use_one_durable_job(client, db_session):
     created = await client.post(
         "/api/questions",
@@ -455,10 +380,7 @@ async def test_replacement_freezes_question_mutations(client, db_session, tmp_pa
 
 
 async def _grading_prompt_question(db_session, *, name="提示词题"):
-    """创建带 config_profile_id 的题目并返回。"""
-    from app.models.config_profile import ConfigProfile
-
-    profile = db_session.query(ConfigProfile).filter_by(is_default=True).one()
+    """创建带 OCR 文本的题目并返回。"""
     path = Path(f"/tmp/{name}.pdf")
     question = Question(
         name=name,
@@ -466,7 +388,6 @@ async def _grading_prompt_question(db_session, *, name="提示词题"):
         file_path=str(path),
         ocr_text="Task 1: 100 points\nTask 2: 50 points",
         status=QuestionStatus.ready,
-        config_profile_id=profile.id,
     )
     db_session.add(question)
     db_session.commit()
@@ -480,16 +401,12 @@ async def test_grading_prompt_404_when_question_missing(client):
 
 
 async def test_grading_prompt_409_when_ocr_missing(client, db_session):
-    from app.models.config_profile import ConfigProfile
-
-    profile = db_session.query(ConfigProfile).filter_by(is_default=True).one()
     question = Question(
         name="无 OCR 题",
         original_filename="noocr.pdf",
         file_path="/tmp/noocr.pdf",
         ocr_text=None,
         status=QuestionStatus.pending,
-        config_profile_id=profile.id,
     )
     db_session.add(question)
     db_session.commit()

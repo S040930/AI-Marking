@@ -6,7 +6,6 @@ from sqlalchemy import (
     JSON,
     DateTime,
     Enum,
-    ForeignKey,
     Index,
     String,
     Text,
@@ -30,11 +29,6 @@ class Question(Base):
     # id 为创建时 original_filename 去扩展名生成的稳定 slug(见
     # app/services/question_identity.py),替换/重试 OCR 不改 id。
     id: Mapped[str] = mapped_column(String(100), primary_key=True)
-    config_profile_id: Mapped[int] = mapped_column(
-        ForeignKey("config_profiles.id", ondelete="RESTRICT"),
-        nullable=False,
-        index=True,
-    )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
     file_path: Mapped[str] = mapped_column(String(512), nullable=False)
