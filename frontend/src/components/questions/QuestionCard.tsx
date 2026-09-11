@@ -10,7 +10,6 @@ import {
   Trash2,
 } from 'lucide-react';
 import { type Question } from '@/api/questions';
-import { type ConfigProfile } from '@/api/config';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -26,11 +25,8 @@ const statusMeta = {
 
 interface QuestionCardProps {
   question: Question;
-  profiles: ConfigProfile[] | undefined;
-  isSwitchingProfile: boolean;
   onRename: (question: Question) => void;
   onRetryUpload: (id: string, file: File) => void;
-  onSwitchProfile: (id: string, configProfileId: number) => void;
   onReplace: (question: Question, file: File) => void;
   onDelete: (question: Question) => void;
   onCopyPrompt: (question: Question) => void;
@@ -39,11 +35,8 @@ interface QuestionCardProps {
 
 export function QuestionCard({
   question,
-  profiles,
-  isSwitchingProfile,
   onRename,
   onRetryUpload,
-  onSwitchProfile,
   onReplace,
   onDelete,
   onCopyPrompt,
@@ -112,40 +105,6 @@ export function QuestionCard({
             {t('新版识别失败：')}{question.replacement_error_message}{t('。旧版题目仍可继续使用。')}
           </p>
         )}
-        <div className="flex items-center gap-2 border-t pt-3">
-          <span className="text-xs text-muted-foreground">
-            {t('配置项目')}
-          </span>
-          {profiles?.length ? (
-            <select
-              aria-label={`${t('切换')} ${question.name} ${t('的配置项目')}`}
-              value={question.config_profile_id}
-              disabled={
-                isSwitchingProfile ||
-                question.status === 'pending' ||
-                question.status === 'ocr_processing' ||
-                replacementActive
-              }
-              onChange={(event) => {
-                const next = Number(event.target.value);
-                if (next === question.config_profile_id) return;
-                onSwitchProfile(question.id, next);
-              }}
-              className="h-8 rounded-md border border-input bg-background px-2 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
-            >
-              {profiles?.map((profile) => (
-                <option key={profile.id} value={profile.id}>
-                  {profile.is_default ? '★ ' : ''}
-                  {profile.name}
-                </option>
-              ))}
-            </select>
-          ) : (
-            <span className="text-sm text-muted-foreground">
-              #{question.config_profile_id}
-            </span>
-          )}
-        </div>
         <div className="flex flex-wrap gap-2 border-t pt-3">
           <Button variant="outline" size="sm" asChild>
             <a href={`/api/questions/${question.id}/pdf`} target="_blank" rel="noopener noreferrer">

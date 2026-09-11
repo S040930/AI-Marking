@@ -25,8 +25,10 @@ export function AssessmentReviewCard({ data }: { data: SubmissionDetail }) {
   const canRequestReview = data.status === 'ready_for_review';
 
   const copyReviewPrompt = async () => {
+    // 题目名指代作业;工具调用仍需数字 submission id
+    const target = data.question_name ?? data.original_filename;
     const prompt =
-      `请使用 AI-Marking MCP 独立复核作业 #${data.id} 的评分建议：` +
+      `请使用 AI-Marking MCP 独立复核题目 ${target} 的评分建议：` +
       `先调用 open_ai_marking_assignment(${data.id}) 用 continuation_token 读完评分包（header 中的 current_assessment 是被复核建议），` +
       `按 grading_policy 独立复核每个评分项，再调用 ` +
       `save_ai_marking_assessment_review(${data.id}, grading_handle, verdict, summary, items, confidence) ` +

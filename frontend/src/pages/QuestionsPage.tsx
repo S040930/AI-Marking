@@ -4,14 +4,12 @@ import { Loader2, Plus, Search, BookOpen } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   type Question,
-  useChangeQuestionConfigProfile,
   useDeleteQuestion,
   useQuestions,
   useRenameQuestion,
   useReplaceQuestion,
   useRetryQuestionOcr,
 } from '@/api/questions';
-import { useConfigProfiles } from '@/api/config';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { QuestionCard } from '@/components/questions/QuestionCard';
@@ -23,6 +21,7 @@ import { QuestionPromptDialog } from '@/components/questions/QuestionPromptDialo
 import { ResultExportDialog } from '@/components/questions/ResultExportDialog';
 import { errorMessage } from '@/lib/questionErrors';
 import { useLanguage } from '@/i18n';
+import { PageHeader } from '@/components/common/PageHeader';
 
 export default function QuestionsPage() {
   const [search, setSearch] = useState('');
@@ -32,8 +31,6 @@ export default function QuestionsPage() {
   const [acknowledgedDeletion, setAcknowledgedDeletion] = useState(false);
   const [promptQuestion, setPromptQuestion] = useState<Question | null>(null);
   const [exportQuestion, setExportQuestion] = useState<Question | null>(null);
-  const switchProfileMutation = useChangeQuestionConfigProfile();
-  const { data: profiles } = useConfigProfiles();
   const renameMutation = useRenameQuestion();
   const retryMutation = useRetryQuestionOcr();
   const deleteMutation = useDeleteQuestion();
@@ -57,16 +54,6 @@ export default function QuestionsPage() {
       { id, file },
       {
         onSuccess: () => toast.success(t('文件已重新上传，正在识别')),
-        onError: (error) => toast.error(errorMessage(error)),
-      },
-    );
-  };
-
-  const switchProfile = (id: string, configProfileId: number) => {
-    switchProfileMutation.mutate(
-      { id, configProfileId },
-      {
-        onSuccess: () => toast.success(t('配置项目已更新')),
         onError: (error) => toast.error(errorMessage(error)),
       },
     );
@@ -118,20 +105,19 @@ export default function QuestionsPage() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
-      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">{t('题目库')}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {t('题目只需上传并识别一次，之后可直接用于多份学生作业。')}
-          </p>
-        </div>
-        <Button asChild>
-          <Link to="/questions/upload">
-            <Plus />
-            {t('上传题目')}
-          </Link>
-        </Button>
-      </div>
+      <PageHeader
+        className="flex-col sm:flex-row sm:items-end"
+        title={t('题目库')}
+        description={t('题目只需上传并识别一次，之后可直接用于多份学生作业。')}
+        actions={
+          <Button asChild>
+            <Link to="/questions/upload">
+              <Plus />
+              {t('上传题目')}
+            </Link>
+          </Button>
+        }
+      />
 
       <div className="relative max-w-md">
         <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -153,11 +139,8 @@ export default function QuestionsPage() {
             <QuestionCard
               key={question.id}
               question={question}
-              profiles={profiles}
-              isSwitchingProfile={switchProfileMutation.isPending}
               onRename={rename}
               onRetryUpload={retryUpload}
-              onSwitchProfile={switchProfile}
               onReplace={(q, file) => setDanger({ type: 'replace', question: q, file })}
               onDelete={(q) => setDanger({ type: 'delete', question: q })}
               onCopyPrompt={setPromptQuestion}

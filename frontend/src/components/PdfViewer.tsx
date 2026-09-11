@@ -5,6 +5,7 @@ import {
   BookOpen,
 } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Button } from '@/components/ui/button';
 import { apiClient } from '@/api/client';
 import { useLanguage } from '@/i18n';
 
@@ -38,8 +39,12 @@ export function PdfViewer({ submissionId, filename, status, className }: PdfView
   const [type, setType] = useState<'submission' | 'question'>('submission');
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
+  // 重试计数:超时/HEAD 失败后可手动重载(改动 key 触发 iframe 重新挂载)
+  const [reloadKey, setReloadKey] = useState(0);
   // 标记 iframe onLoad 是否已触发,用于兜底超时避免误置错误态。
   const loadedRef = useRef(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
   const pdfUrl = `/api/submissions/${submissionId}/pdf?type=${type}`;
   const statusBadge = STATUS_BADGE[status] ?? {
@@ -94,10 +99,38 @@ export function PdfViewer({ submissionId, filename, status, className }: PdfView
       controller.abort();
       if (loadTimeout) clearTimeout(loadTimeout);
     };
-  }, [submissionId, type]);
+  }, [submissionId, type, reloadKey]);
+
+  // 容器尺寸变化(拖动分栏、窗口缩放)时,在原位重载 iframe,让浏览器内置 PDF 阅读器
+  // 按新的宽度重新自适应排版。仅宽度变化超过阈值才触法(高度抖动、微小缩放直接忽略),
+  // 且保持 URL 不变、走同源 reload,浏览器凭 ETag/304 命中缓存,不再整份重新下载,
+  // 从而比「换 src + 时间戳刷新」更丝滑、无横向滚动。
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    let resetTimer: ReturnType<typeof setTimeout> | undefined;
+    let lastWidth = el.clientWidth;
+    const ro = new ResizeObserver((entries) => {
+      if (!loadedRef.current || !iframeRef.current) return;
+      const width = entries[0]?.contentRect.width ?? el.clientWidth;
+      if (Math.abs(width - lastWidth) < 24) return;
+      lastWidth = width;
+      clearTimeout(resetTimer);
+      resetTimer = setTimeout(() => {
+        const frame = iframeRef.current;
+        if (frame) frame.contentWindow?.location.reload();
+      }, 350);
+    });
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      if (resetTimer) clearTimeout(resetTimer);
+    };
+  }, [pdfUrl]);
 
   return (
     <div
+      ref={containerRef}
       className={`relative flex flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-sm ${className ?? ''}`}
     >
       {/* Toolbar */}
@@ -190,9 +223,18 @@ export function PdfViewer({ submissionId, filename, status, className }: PdfView
           <p className="max-w-xs text-xs text-muted-foreground">
             {t('文件可能已过期或无法访问。请返回历史记录重新上传。')}
           </p>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setReloadKey((key) => key + 1)}
+          >
+            {t('重试')}
+          </Button>
         </div>
       ) : (
         <iframe
+          key={reloadKey}
+          ref={iframeRef}
           src={pdfUrl}
           title={type === 'question' ? t('作业题目') : t('学生作业')}
           className={`min-h-0 w-full flex-1 ${isLoading ? 'opacity-0' : 'animate-soft-fade-in opacity-100'}`}

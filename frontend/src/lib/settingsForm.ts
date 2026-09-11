@@ -37,15 +37,3 @@ export function errorText(error: Error): string {
   const e = error as { response?: { data?: { detail?: string } } };
   return e.response?.data?.detail ?? error.message ?? '操作失败';
 }
-
-export interface ProfileDialogState {
-  open: boolean;
-  mode: 'create' | 'rename' | 'copy';
-  profileId?: number;
-  profileName?: string;
-}
-
-export const CLOSED_PROFILE_DIALOG: ProfileDialogState = {
-  open: false,
-  mode: 'create',
-};

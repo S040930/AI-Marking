@@ -90,6 +90,7 @@ function SidebarCollapseToggle() {
 export default function MainLayout() {
   const { pathname } = useLocation();
   const activeKey = getActiveKey(pathname);
+  const isReviewPage = pathname.startsWith('/review/');
   const { locale, toggleLocale, t } = useLanguage();
 
   return (
@@ -168,24 +169,30 @@ export default function MainLayout() {
         </SidebarFooter>
       </Sidebar>
       <SidebarInset className="min-h-0">
-        <header className="flex h-16 shrink-0 items-center gap-3 border-b bg-background px-6">
-          <SidebarTrigger className="text-muted-foreground md:hidden" />
-          <div className="h-6 w-px bg-border" />
-            <span className="text-[15px] font-semibold tracking-tight text-foreground">
-              {activeKey ? t(navItems.find((i) => i.key === activeKey)?.label ?? 'AI 作业批改系统') : t('AI 作业批改系统')}
-            </span>
-          <button
-            type="button"
-            onClick={toggleLocale}
-            className="ml-auto rounded-md border px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            aria-label={locale === 'zh-CN' ? '切换到英文' : 'Switch to Chinese'}
-          >
-            {locale === 'zh-CN' ? 'English' : '中文'}
-          </button>
-        </header>
+        {!isReviewPage && (
+          <header className="flex h-16 shrink-0 items-center gap-3 border-b bg-background px-6">
+            <SidebarTrigger className="text-muted-foreground md:hidden" />
+            <div className="h-6 w-px bg-border" />
+              <span className="text-[15px] font-semibold tracking-tight text-foreground">
+                {activeKey ? t(navItems.find((i) => i.key === activeKey)?.label ?? 'AI 作业批改系统') : t('AI 作业批改系统')}
+              </span>
+            <button
+              type="button"
+              onClick={toggleLocale}
+              className="ml-auto rounded-md border px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              aria-label={locale === 'zh-CN' ? '切换到英文' : 'Switch to Chinese'}
+            >
+              {locale === 'zh-CN' ? 'English' : '中文'}
+            </button>
+          </header>
+        )}
         <div
           id="main-content"
-          className="flex-1 overflow-auto bg-background p-8"
+          className={`flex-1 bg-background ${
+            isReviewPage
+              ? 'overflow-hidden'
+              : 'overflow-auto p-8'
+          }`}
           tabIndex={-1}
         >
           <Suspense fallback={<PageSkeleton />}>

@@ -23,6 +23,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { useLanguage } from '@/i18n';
+import { IconBadge } from '@/components/common/IconBadge';
 import {
   DEFAULT_RUBRIC_PLACEHOLDER,
   EN_RUBRIC_PLACEHOLDER,
@@ -53,9 +54,9 @@ export function ConfigSettingsForm({
         <Card className="elevated-card stagger-1 animate-fade-in-up motion-reduce:animate-none overflow-hidden">
           <CardHeader className="pb-4">
             <div className="flex items-center gap-3">
-              <div className="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary/10 to-primary/5 text-primary ring-1 ring-primary/10">
+              <IconBadge>
                 <ShieldCheck className="size-5" />
-              </div>
+              </IconBadge>
               <div>
                   <CardTitle className="text-lg">{t('MCP 评分自检')}</CardTitle>
                 <CardDescription>
@@ -93,9 +94,9 @@ export function ConfigSettingsForm({
         <Card className="elevated-card stagger-2 animate-fade-in-up motion-reduce:animate-none overflow-hidden">
           <CardHeader className="pb-4">
             <div className="flex items-center gap-3">
-              <div className="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary/10 to-primary/5 text-primary ring-1 ring-primary/10">
+              <IconBadge>
                 <ScanEye className="size-5" />
-              </div>
+              </IconBadge>
               <div>
                   <CardTitle className="text-lg">{t('PaddleOCR-VL 文档解析')}</CardTitle>
                 <CardDescription>
@@ -152,9 +153,9 @@ export function ConfigSettingsForm({
           <CardHeader className="pb-4">
             <div className="flex items-start justify-between gap-4">
               <div className="flex items-center gap-3">
-                <div className="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary/10 to-primary/5 text-primary ring-1 ring-primary/10">
+                <IconBadge>
                   <ClipboardCheck className="size-5" />
-                </div>
+                </IconBadge>
                 <div>
                   <CardTitle className="text-lg">{t('评分标准(Rubric)')}</CardTitle>
                   <CardDescription>

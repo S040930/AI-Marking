@@ -4,6 +4,463 @@
  */
 
 export interface paths {
+    "/api/acp/agents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Agents
+         * @description 白名单 agent 目录;Registry 不可达时返回缓存或空目录(可离线浏览)。
+         */
+        get: operations["list_agents_api_acp_agents_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/acp/agents/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Refresh Registry */
+        post: operations["refresh_registry_api_acp_agents_refresh_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/acp/agents/{agent_id}/install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Install Agent
+         * @description 安装白名单 agent 的精确版本;已缓存同版本时不重复下载。
+         *
+         *     npm/uvx 发行:安装即解析并审核精确版本快照(npx/uvx 在 spawn 时按
+         *     精确版本拉取);binary 发行:下载归档 → SHA-256 校验 → 安全解压到
+         *     受控缓存,并把 command 指向解压出的可执行文件。
+         */
+        post: operations["install_agent_api_acp_agents__agent_id__install_post"];
+        /**
+         * Uninstall Agent
+         * @description 卸载已安装链接:删除安装标记与该版本下载缓存。
+         *
+         *     与"移出白名单"不同:卸载后 agent 仍留在目录中(状态回到未安装),
+         *     可随时重新安装;npx/uvx 发行不触碰本机全局包缓存。
+         */
+        delete: operations["uninstall_agent_api_acp_agents__agent_id__install_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/acp/agents/{agent_id}/set-default": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set Default Agent
+         * @description 教师显式选择机器级默认 agent;要求该 agent 已安装。
+         */
+        post: operations["set_default_agent_api_acp_agents__agent_id__set_default_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/acp/agents/{agent_id}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Test Agent Connection
+         * @description 连接诊断:initialize → 能力协商 → 安全关闭;不保存认证秘密。
+         */
+        post: operations["test_agent_connection_api_acp_agents__agent_id__test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/acp/chat/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Chat Sessions */
+        get: operations["list_chat_sessions_api_acp_chat_sessions_get"];
+        put?: never;
+        /** Create Chat Session */
+        post: operations["create_chat_session_api_acp_chat_sessions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/acp/chat/sessions/{chat_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Chat Session Detail */
+        get: operations["get_chat_session_detail_api_acp_chat_sessions__chat_id__get"];
+        put?: never;
+        post?: never;
+        /** Close Chat Session */
+        delete: operations["close_chat_session_api_acp_chat_sessions__chat_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/acp/chat/sessions/{chat_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Chat Turn */
+        post: operations["cancel_chat_turn_api_acp_chat_sessions__chat_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/acp/chat/sessions/{chat_id}/codex-configuration": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Chat Codex Configuration */
+        patch: operations["update_chat_codex_configuration_api_acp_chat_sessions__chat_id__codex_configuration_patch"];
+        trace?: never;
+    };
+    "/api/acp/chat/sessions/{chat_id}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Chat Events */
+        get: operations["list_chat_events_api_acp_chat_sessions__chat_id__events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/acp/chat/sessions/{chat_id}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Send Chat Message */
+        post: operations["send_chat_message_api_acp_chat_sessions__chat_id__messages_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/acp/chat/sessions/{chat_id}/permanent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Chat Session Permanently
+         * @description 永久删除对话:停止运行中的会话,删除会话行、事件转录与专属工作区。
+         *
+         *     与上面的"关闭会话"不同,此操作不可恢复。
+         */
+        delete: operations["delete_chat_session_permanently_api_acp_chat_sessions__chat_id__permanent_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/acp/chat/sessions/{chat_id}/permission": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Answer Chat Permission */
+        post: operations["answer_chat_permission_api_acp_chat_sessions__chat_id__permission_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/acp/chat/sessions/{chat_id}/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream Chat Events
+         * @description SSE:先回放数据库事件,再通过 PG NOTIFY 推送增量。
+         *
+         *     SSE ``id`` 等于事件 seq;会话进入终态且读尽后发送 ``: done``。
+         */
+        get: operations["stream_chat_events_api_acp_chat_sessions__chat_id__stream_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/acp/codex/configuration": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Codex Configuration Catalog
+         * @description Return the live Codex model/thought/speed catalog for the UI.
+         */
+        get: operations["get_codex_configuration_catalog_api_acp_codex_configuration_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/acp/default-agent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Default Agent */
+        get: operations["get_default_agent_api_acp_default_agent_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/acp/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Run */
+        post: operations["create_run_api_acp_runs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/acp/runs/by-submission/{submission_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Active Run By Submission
+         * @description 查询作业当前的活跃 run;不存在返回 404(前端视为无运行)。
+         */
+        get: operations["get_active_run_by_submission_api_acp_runs_by_submission__submission_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/acp/runs/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Run */
+        get: operations["get_run_api_acp_runs__run_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/acp/runs/{run_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Run */
+        post: operations["cancel_run_api_acp_runs__run_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/acp/runs/{run_id}/codex-configuration": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Run Codex Configuration */
+        patch: operations["update_run_codex_configuration_api_acp_runs__run_id__codex_configuration_patch"];
+        trace?: never;
+    };
+    "/api/acp/runs/{run_id}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Run Events */
+        get: operations["list_run_events_api_acp_runs__run_id__events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/acp/runs/{run_id}/reply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reply Checkpoint
+         * @description 教师答复检查点;答复持久化后由 worker 恢复会话续跑。
+         */
+        post: operations["reply_checkpoint_api_acp_runs__run_id__reply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/acp/runs/{run_id}/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream Run Events
+         * @description SSE:先回放数据库事件,再通过 PG NOTIFY 推送增量。
+         *
+         *     SSE ``id`` 等于事件 seq,断线重连带 ``Last-Event-ID`` 从该 seq 续读。
+         */
+        get: operations["stream_run_events_api_acp_runs__run_id__stream_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/dead-jobs": {
         parameters: {
             query?: never;
@@ -160,12 +617,12 @@ export interface paths {
         };
         /**
          * Get Config
-         * @description 返回指定配置项目的全部配置(缺省为默认项目,缺失字段为空字符串)。
+         * @description 返回全部配置(缺失字段为空字符串)。
          */
         get: operations["get_config_api_config_get"];
         /**
          * Update Config
-         * @description 更新指定配置项目(子集 upsert)。
+         * @description 更新配置(子集 upsert)。
          *
          *     - 未提供的字段保持不变
          *     - 字段值为空字符串表示清空
@@ -174,74 +631,6 @@ export interface paths {
          */
         put: operations["update_config_api_config_put"];
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/config/profiles": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Profiles
-         * @description 列出全部配置项目。
-         */
-        get: operations["get_profiles_api_config_profiles_get"];
-        put?: never;
-        /**
-         * Post Profile
-         * @description 新建配置项目,可选从现有项目复制配置值。
-         */
-        post: operations["post_profile_api_config_profiles_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/config/profiles/{profile_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /**
-         * Delete Profile Route
-         * @description 删除配置项目(默认项目或被题目引用时拒绝)。
-         */
-        delete: operations["delete_profile_route_api_config_profiles__profile_id__delete"];
-        options?: never;
-        head?: never;
-        /**
-         * Patch Profile
-         * @description 重命名配置项目。
-         */
-        patch: operations["patch_profile_api_config_profiles__profile_id__patch"];
-        trace?: never;
-    };
-    "/api/config/profiles/{profile_id}/default": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Post Profile Default
-         * @description 将指定项目设为默认(新题目未指定时回退)。
-         */
-        post: operations["post_profile_default_api_config_profiles__profile_id__default_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -505,26 +894,6 @@ export interface paths {
         head?: never;
         /** Rename Question */
         patch: operations["rename_question_api_questions__question_id__patch"];
-        trace?: never;
-    };
-    "/api/questions/{question_id}/config-profile": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /**
-         * Change Question Config Profile
-         * @description 切换题目使用的配置项目。
-         */
-        patch: operations["change_question_config_profile_api_questions__question_id__config_profile_patch"];
         trace?: never;
     };
     "/api/questions/{question_id}/grading-prompt": {
@@ -829,6 +1198,376 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AcpAgentListResponse */
+        AcpAgentListResponse: {
+            /** Agents */
+            agents: components["schemas"]["AcpAgentOut"][];
+            /** Fetched At */
+            fetched_at?: string | null;
+            /** Registry Version */
+            registry_version?: string | null;
+        };
+        /** AcpAgentOut */
+        AcpAgentOut: {
+            /** Agent Id */
+            agent_id: string;
+            /** Available Version */
+            available_version?: string | null;
+            /**
+             * Connection Status
+             * @enum {string}
+             */
+            connection_status: "ready" | "needs_auth" | "unsupported" | "failed" | "unknown";
+            /** Display Name */
+            display_name: string;
+            /** Distributions */
+            distributions: string[];
+            /** Installed Version */
+            installed_version?: string | null;
+            /** Whitelist Package */
+            whitelist_package: string;
+        };
+        /**
+         * AcpChatConfigurationUpdateRequest
+         * @description 已有会话的配置热更新;permission_mode 缺省表示保持不变。
+         */
+        AcpChatConfigurationUpdateRequest: {
+            /**
+             * Fast Confirmed
+             * @default false
+             */
+            fast_confirmed: boolean;
+            /** Model Id */
+            model_id?: string | null;
+            /** Permission Mode */
+            permission_mode?: ("ask" | "auto_review") | null;
+            /** Reasoning Effort */
+            reasoning_effort?: string | null;
+            /**
+             * Speed Mode
+             * @default standard
+             * @enum {string}
+             */
+            speed_mode: "standard" | "fast";
+        };
+        /** AcpChatCreateRequest */
+        AcpChatCreateRequest: {
+            codex_config?: components["schemas"]["CodexConfigRequest"];
+            /**
+             * Permission Mode
+             * @default ask
+             * @enum {string}
+             */
+            permission_mode: "ask" | "auto_review";
+            /** Submission Id */
+            submission_id: number;
+        };
+        /** AcpChatEventOut */
+        AcpChatEventOut: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Kind */
+            kind: string;
+            /** Payload */
+            payload: {
+                [key: string]: unknown;
+            };
+            /** Seq */
+            seq: number;
+        };
+        /** AcpChatMessageRequest */
+        AcpChatMessageRequest: {
+            /** Text */
+            text: string;
+        };
+        /** AcpChatPermissionRequest */
+        AcpChatPermissionRequest: {
+            /** Allow */
+            allow: boolean;
+            /** Option Id */
+            option_id?: string | null;
+            /** Permission Id */
+            permission_id: string;
+        };
+        /** AcpChatSessionListResponse */
+        AcpChatSessionListResponse: {
+            /** Sessions */
+            sessions: components["schemas"]["AcpChatSessionOut"][];
+        };
+        /** AcpChatSessionOut */
+        AcpChatSessionOut: {
+            /** Agent Id */
+            agent_id: string;
+            applied_codex_config?: components["schemas"]["CodexConfigSnapshot"] | null;
+            applied_config?: components["schemas"]["CodexConfigSnapshot"] | null;
+            codex_config: components["schemas"]["CodexConfigSnapshot"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            desired_config?: components["schemas"]["CodexConfigSnapshot"] | null;
+            /**
+             * Effective At
+             * @default current
+             * @enum {string}
+             */
+            effective_at: "current" | "next_turn";
+            /** Id */
+            id: number;
+            /** Last Error */
+            last_error?: string | null;
+            /**
+             * Latest Seq
+             * @default 0
+             */
+            latest_seq: number;
+            pending_codex_config?: components["schemas"]["CodexConfigSnapshot"] | null;
+            pending_config?: components["schemas"]["CodexConfigSnapshot"] | null;
+            /**
+             * Permission Mode
+             * @default ask
+             * @enum {string}
+             */
+            permission_mode: "ask" | "auto_review";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "idle" | "running" | "waiting_permission" | "closed" | "error";
+            /** Submission Id */
+            submission_id: number;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** AcpCheckpointOut */
+        AcpCheckpointOut: {
+            /** Asked At */
+            asked_at?: string | null;
+            /** Expires At */
+            expires_at?: string | null;
+            /** Message */
+            message: string;
+            /** Type */
+            type: string;
+        };
+        /** AcpCodexConfigurationResponse */
+        AcpCodexConfigurationResponse: {
+            /**
+             * Agent Id
+             * @constant
+             */
+            agent_id: "codex-acp";
+            /** Agent Version */
+            agent_version: string;
+            /** Capability Error */
+            capability_error?: string | null;
+            /** Models */
+            models?: {
+                [key: string]: unknown;
+            }[];
+            /** Reasoning Efforts */
+            reasoning_efforts?: {
+                [key: string]: unknown;
+            }[];
+            /** Selected Model Id */
+            selected_model_id?: string | null;
+            /** Speed Modes */
+            speed_modes?: {
+                [key: string]: unknown;
+            }[];
+        };
+        /** AcpConfigurationUpdateRequest */
+        AcpConfigurationUpdateRequest: {
+            /**
+             * Fast Confirmed
+             * @default false
+             */
+            fast_confirmed: boolean;
+            /** Model Id */
+            model_id?: string | null;
+            /** Reasoning Effort */
+            reasoning_effort?: string | null;
+            /**
+             * Speed Mode
+             * @default standard
+             * @enum {string}
+             */
+            speed_mode: "standard" | "fast";
+        };
+        /** AcpInstallResponse */
+        AcpInstallResponse: {
+            /** Agent Id */
+            agent_id: string;
+            /** Distribution */
+            distribution: string;
+            /**
+             * Reinstalled
+             * @default true
+             */
+            reinstalled: boolean;
+            /** Version */
+            version: string;
+        };
+        /** AcpRunCreateRequest */
+        AcpRunCreateRequest: {
+            codex_config?: components["schemas"]["CodexConfigRequest"];
+            /**
+             * Permission Mode
+             * @default ask
+             * @enum {string}
+             */
+            permission_mode: "ask" | "auto_review";
+            /** Submission Id */
+            submission_id: number;
+        };
+        /** AcpRunDetailResponse */
+        AcpRunDetailResponse: {
+            applied_config?: components["schemas"]["CodexConfigSnapshot"] | null;
+            desired_config: components["schemas"]["CodexConfigSnapshot"];
+            /**
+             * Effective At
+             * @default current
+             * @enum {string}
+             */
+            effective_at: "current" | "next_turn";
+            /**
+             * Latest Seq
+             * @default 0
+             */
+            latest_seq: number;
+            pending_config?: components["schemas"]["CodexConfigSnapshot"] | null;
+            run: components["schemas"]["AcpRunOut"];
+        };
+        /** AcpRunEventOut */
+        AcpRunEventOut: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Kind */
+            kind: string;
+            /** Payload */
+            payload: {
+                [key: string]: unknown;
+            };
+            /** Seq */
+            seq: number;
+        };
+        /** AcpRunOut */
+        AcpRunOut: {
+            /** Acp Session Id */
+            acp_session_id?: string | null;
+            /** Agent Id */
+            agent_id: string;
+            applied_codex_config?: components["schemas"]["CodexConfigSnapshot"] | null;
+            /**
+             * Attempts
+             * @default 0
+             */
+            attempts: number;
+            checkpoint?: components["schemas"]["AcpCheckpointOut"] | null;
+            codex_config: components["schemas"]["CodexConfigSnapshot"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Effective At
+             * @default current
+             * @enum {string}
+             */
+            effective_at: "current" | "next_turn";
+            /** Error Message */
+            error_message?: string | null;
+            /** Finished At */
+            finished_at?: string | null;
+            /** Id */
+            id: number;
+            /**
+             * Max Attempts
+             * @default 3
+             */
+            max_attempts: number;
+            pending_codex_config?: components["schemas"]["CodexConfigSnapshot"] | null;
+            /**
+             * Permission Mode
+             * @default ask
+             * @enum {string}
+             */
+            permission_mode: "ask" | "auto_review";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "queued" | "starting" | "running" | "waiting_for_teacher" | "cancelling" | "completed" | "failed" | "cancelled";
+            /** Submission Id */
+            submission_id: number;
+            /** Teacher Note */
+            teacher_note?: string | null;
+            /** Teacher Verdict */
+            teacher_verdict?: ("consistent" | "mismatch") | null;
+        };
+        /** AcpRunReplyRequest */
+        AcpRunReplyRequest: {
+            /** Note */
+            note?: string | null;
+            /**
+             * Verdict
+             * @enum {string}
+             */
+            verdict: "consistent" | "mismatch";
+        };
+        /** AcpTestConnectionResponse */
+        AcpTestConnectionResponse: {
+            /** Agent Id */
+            agent_id: string;
+            /** Agent Info */
+            agent_info?: string | null;
+            /** Detail */
+            detail?: string | null;
+            /**
+             * Mcp Visible
+             * @default false
+             */
+            mcp_visible: boolean;
+            /** Protocol Version */
+            protocol_version?: number | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ready" | "needs_auth" | "unsupported" | "failed";
+            /** Steps */
+            steps?: {
+                [key: string]: string;
+            };
+        };
+        /** AcpUninstallResponse */
+        AcpUninstallResponse: {
+            /** Agent Id */
+            agent_id: string;
+            /**
+             * Removed Cache
+             * @default false
+             */
+            removed_cache: boolean;
+            /**
+             * Uninstalled
+             * @default true
+             */
+            uninstalled: boolean;
+            /** Version */
+            version?: string | null;
+        };
         /** AssessmentReviewItemOut */
         AssessmentReviewItemOut: {
             /** Comment */
@@ -905,8 +1644,6 @@ export interface components {
         };
         /** Body_create_question_api_questions_post */
         Body_create_question_api_questions_post: {
-            /** Config Profile Id */
-            config_profile_id?: number | null;
             /** File */
             file: string;
             /** Name */
@@ -959,6 +1696,46 @@ export interface components {
             file?: string | null;
         };
         /**
+         * CodexConfigRequest
+         * @description Only product-level Codex fields are accepted from the browser.
+         */
+        CodexConfigRequest: {
+            /**
+             * Fast Confirmed
+             * @default false
+             */
+            fast_confirmed: boolean;
+            /** Model Id */
+            model_id?: string | null;
+            /** Reasoning Effort */
+            reasoning_effort?: string | null;
+            /**
+             * Speed Mode
+             * @default standard
+             * @enum {string}
+             */
+            speed_mode: "standard" | "fast";
+        };
+        /** CodexConfigSnapshot */
+        CodexConfigSnapshot: {
+            /** Catalog Version */
+            catalog_version?: string | null;
+            /** Model Id */
+            model_id?: string | null;
+            /** Option Ids */
+            option_ids?: {
+                [key: string]: string;
+            };
+            /** Reasoning Effort */
+            reasoning_effort?: string | null;
+            /**
+             * Speed Mode
+             * @default standard
+             * @enum {string}
+             */
+            speed_mode: "standard" | "fast";
+        };
+        /**
          * ConfigOut
          * @description 配置完整输出结构。
          */
@@ -979,49 +1756,6 @@ export interface components {
              */
             review_enabled: boolean;
             rubric_definition?: components["schemas"]["RubricDefinition"] | null;
-        };
-        /**
-         * ConfigProfileCreate
-         * @description 新建配置项目入参。
-         */
-        ConfigProfileCreate: {
-            /**
-             * Copy From Id
-             * @description 非空时复制该项目的全部配置值
-             */
-            copy_from_id?: number | null;
-            /** Name */
-            name: string;
-        };
-        /**
-         * ConfigProfileOut
-         * @description 配置项目元信息输出。
-         */
-        ConfigProfileOut: {
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-            /** Id */
-            id: number;
-            /** Is Default */
-            is_default: boolean;
-            /** Name */
-            name: string;
-            /**
-             * Updated At
-             * Format: date-time
-             */
-            updated_at: string;
-        };
-        /**
-         * ConfigProfileRename
-         * @description 重命名配置项目入参。
-         */
-        ConfigProfileRename: {
-            /** Name */
-            name: string;
         };
         /**
          * ConfigUpdate
@@ -1594,14 +2328,6 @@ export interface components {
             /** Total */
             total: number;
         };
-        /** QuestionConfigProfileRequest */
-        QuestionConfigProfileRequest: {
-            /**
-             * Config Profile Id
-             * @description 配置项目 ID
-             */
-            config_profile_id: number;
-        };
         /** QuestionConfirmRequest */
         QuestionConfirmRequest: {
             /** Confirmation Name */
@@ -1609,8 +2335,6 @@ export interface components {
         };
         /** QuestionDetail */
         QuestionDetail: {
-            /** Config Profile Id */
-            config_profile_id: number;
             /**
              * Created At
              * Format: date-time
@@ -1650,8 +2374,6 @@ export interface components {
         };
         /** QuestionOut */
         QuestionOut: {
-            /** Config Profile Id */
-            config_profile_id: number;
             /**
              * Created At
              * Format: date-time
@@ -1906,6 +2628,10 @@ export interface components {
             ocr_text?: string | null;
             /** Original Filename */
             original_filename: string;
+            /** Question Id */
+            question_id?: string | null;
+            /** Question Name */
+            question_name?: string | null;
             /** Question Ocr Text */
             question_ocr_text?: string | null;
             /** Question Original Filename */
@@ -1957,6 +2683,8 @@ export interface components {
             max_score?: number | null;
             /** Original Filename */
             original_filename: string;
+            /** Question Name */
+            question_name?: string | null;
             /** Question Original Filename */
             question_original_filename?: string | null;
             /** Score */
@@ -2032,6 +2760,866 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    list_agents_api_acp_agents_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcpAgentListResponse"];
+                };
+            };
+        };
+    };
+    refresh_registry_api_acp_agents_refresh_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    install_agent_api_acp_agents__agent_id__install_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcpInstallResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    uninstall_agent_api_acp_agents__agent_id__install_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcpUninstallResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_default_agent_api_acp_agents__agent_id__set_default_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_agent_connection_api_acp_agents__agent_id__test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcpTestConnectionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_chat_sessions_api_acp_chat_sessions_get: {
+        parameters: {
+            query: {
+                submission_id: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcpChatSessionListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_chat_session_api_acp_chat_sessions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcpChatCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcpChatSessionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_chat_session_detail_api_acp_chat_sessions__chat_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chat_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcpChatSessionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    close_chat_session_api_acp_chat_sessions__chat_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chat_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_chat_turn_api_acp_chat_sessions__chat_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chat_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_chat_codex_configuration_api_acp_chat_sessions__chat_id__codex_configuration_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chat_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcpChatConfigurationUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcpChatSessionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_chat_events_api_acp_chat_sessions__chat_id__events_get: {
+        parameters: {
+            query?: {
+                after_seq?: number;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                chat_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcpChatEventOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    send_chat_message_api_acp_chat_sessions__chat_id__messages_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chat_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcpChatMessageRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcpChatSessionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_chat_session_permanently_api_acp_chat_sessions__chat_id__permanent_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chat_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    answer_chat_permission_api_acp_chat_sessions__chat_id__permission_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chat_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcpChatPermissionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stream_chat_events_api_acp_chat_sessions__chat_id__stream_get: {
+        parameters: {
+            query?: {
+                after_seq?: number;
+            };
+            header?: {
+                "Last-Event-ID"?: string | null;
+            };
+            path: {
+                chat_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_codex_configuration_catalog_api_acp_codex_configuration_get: {
+        parameters: {
+            query?: {
+                model_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcpCodexConfigurationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_default_agent_api_acp_default_agent_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    create_run_api_acp_runs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcpRunCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcpRunDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_active_run_by_submission_api_acp_runs_by_submission__submission_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                submission_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcpRunDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_run_api_acp_runs__run_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcpRunDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_run_api_acp_runs__run_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_run_codex_configuration_api_acp_runs__run_id__codex_configuration_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcpConfigurationUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcpRunDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_run_events_api_acp_runs__run_id__events_get: {
+        parameters: {
+            query?: {
+                after_seq?: number;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                run_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcpRunEventOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reply_checkpoint_api_acp_runs__run_id__reply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcpRunReplyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stream_run_events_api_acp_runs__run_id__stream_get: {
+        parameters: {
+            query?: {
+                after_seq?: number;
+            };
+            header?: {
+                "Last-Event-ID"?: string | null;
+            };
+            path: {
+                run_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_dead_jobs_api_admin_dead_jobs_get: {
         parameters: {
             query?: never;
@@ -2215,9 +3803,7 @@ export interface operations {
     };
     get_config_api_config_get: {
         parameters: {
-            query?: {
-                profile_id?: number | null;
-            };
+            query?: never;
             header?: never;
             path?: never;
             cookie?: never;
@@ -2233,22 +3819,11 @@ export interface operations {
                     "application/json": components["schemas"]["ConfigOut"];
                 };
             };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
         };
     };
     update_config_api_config_put: {
         parameters: {
-            query?: {
-                profile_id?: number | null;
-            };
+            query?: never;
             header?: never;
             path?: never;
             cookie?: never;
@@ -2266,154 +3841,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ConfigOut"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_profiles_api_config_profiles_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ConfigProfileOut"][];
-                };
-            };
-        };
-    };
-    post_profile_api_config_profiles_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ConfigProfileCreate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ConfigProfileOut"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    delete_profile_route_api_config_profiles__profile_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                profile_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    patch_profile_api_config_profiles__profile_id__patch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                profile_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ConfigProfileRename"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ConfigProfileOut"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    post_profile_default_api_config_profiles__profile_id__default_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                profile_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ConfigProfileOut"];
                 };
             };
             /** @description Validation Error */
@@ -2905,41 +4332,6 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["QuestionRenameRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["QuestionOut"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    change_question_config_profile_api_questions__question_id__config_profile_patch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                question_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["QuestionConfigProfileRequest"];
             };
         };
         responses: {

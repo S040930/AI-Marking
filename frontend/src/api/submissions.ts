@@ -48,6 +48,60 @@ async function exportError(error: unknown): Promise<Error> {
   return error instanceof Error ? error : new Error('Excel export failed');
 }
 
+export interface SubmissionCodeInput {
+  file: File;
+  /** 小题号（1 起）；与文件名 q<N>.<ext> 自动推导逻辑对应 */
+  questionNumber: number;
+  /** 是否入口文件（每道小题恰好一个，不同小题可各有一个入口） */
+  entrypoint: boolean;
+}
+
+export interface CreateSubmissionPayload {
+  /** 学生报告 PDF */
+  file: File;
+  /** 题目 ID（slug） */
+  questionId: string;
+  /** 可选的多语言代码文件 + 小题映射 */
+  codeInputs?: SubmissionCodeInput[];
+}
+
+/** 网页端上传作业：报告 PDF + 可选代码文件（含小题映射），返回新提交的 id/status。 */
+export function useCreateSubmission() {
+  return useMutation<SubmissionCreateResponse, Error, CreateSubmissionPayload>({
+    mutationFn: async ({ file, questionId, codeInputs }) => {
+      const form = new FormData();
+      form.append('file', file);
+      form.append('question_id', questionId);
+      const inputs = codeInputs ?? [];
+      for (const input of inputs) {
+        form.append('code_files', input.file);
+      }
+      if (inputs.length > 0) {
+        // 显式 manifest 必须覆盖全部代码文件（含 qN 命名文件）
+        form.append(
+          'code_manifest',
+          JSON.stringify(
+            inputs.map((input) => ({
+              filename: input.file.name,
+              question_number: input.questionNumber,
+              entrypoint: input.entrypoint,
+            })),
+          ),
+        );
+      }
+      const response = await apiClient.post<SubmissionCreateResponse>(
+        '/submissions',
+        form,
+        {
+          headers: { 'Content-Type': 'multipart/form-data' },
+          skipErrorToast: true,
+        },
+      );
+      return response.data;
+    },
+  });
+}
+
 export function useExportQuestionResults() {
   return useMutation<void, Error, ExportQuestionResultsInput>({
     mutationFn: async ({ questionId, passThreshold, locale }) => {

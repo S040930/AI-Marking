@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { toast } from 'sonner';
@@ -7,11 +7,6 @@ import { Loader2, AlertCircle } from 'lucide-react';
 import {
   type ConfigOut,
   useConfig,
-  useConfigProfiles,
-  useCreateConfigProfile,
-  useDeleteConfigProfile,
-  useRenameConfigProfile,
-  useSetDefaultConfigProfile,
   useUpdateConfig,
 } from '@/api/config';
 import { Card, CardContent } from '@/components/ui/card';
@@ -20,61 +15,24 @@ import {
   AlertDescription,
   AlertTitle,
 } from '@/components/ui/alert';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { ProfileDialog } from '@/components/settings/ProfileDialog';
-import { ProfileManagerCard } from '@/components/settings/ProfileManagerCard';
 import { ConfigSettingsForm } from '@/components/settings/ConfigSettingsForm';
-import { useLanguage } from '@/i18n';
 import {
-  CLOSED_PROFILE_DIALOG,
+  AcpAgentDirectory,
+  AcpAgentDirectoryHint,
+} from '@/components/settings/AcpAgentDirectory';
+import { useLanguage } from '@/i18n';
+import { PageHeader } from '@/components/common/PageHeader';
+import {
   configSchema,
   defaultConfigFormValues,
   errorText,
   type ConfigFormValues,
-  type ProfileDialogState,
 } from '@/lib/settingsForm';
 
 export default function SettingsPage() {
   const { t } = useLanguage();
-  const { data: profiles, isLoading: profilesLoading } = useConfigProfiles();
-  const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [dialog, setDialog] = useState<ProfileDialogState>(CLOSED_PROFILE_DIALOG);
-  const [confirmDelete, setConfirmDelete] = useState(false);
-
-  const defaultProfile = useMemo(
-    () => profiles?.find((p) => p.is_default) ?? null,
-    [profiles],
-  );
-  const selectedProfile = useMemo(
-    () => profiles?.find((p) => p.id === selectedId) ?? null,
-    [profiles, selectedId],
-  );
-  const displayProfileId = selectedProfile?.id ?? defaultProfile?.id;
-
-  // 打开页面时默认选中默认项目
-  useEffect(() => {
-    if (selectedId === null && defaultProfile) {
-      setSelectedId(defaultProfile.id);
-    }
-  }, [defaultProfile, selectedId]);
-
-  const { data, isLoading, isError, error } = useConfig(
-    displayProfileId ?? undefined,
-  );
-  const updateMutation = useUpdateConfig(displayProfileId ?? undefined);
-  const createMutation = useCreateConfigProfile();
-  const renameMutation = useRenameConfigProfile();
-  const deleteMutation = useDeleteConfigProfile();
-  const setDefaultMutation = useSetDefaultConfigProfile();
+  const { data, isLoading, isError, error } = useConfig();
+  const updateMutation = useUpdateConfig();
 
   const form = useForm<ConfigFormValues>({
     resolver: zodResolver(configSchema),
@@ -120,89 +78,7 @@ export default function SettingsPage() {
     toast.info(t('Rubric 已清空，保存后评分标准将由客户端从题目中提取'));
   };
 
-  const openDialog = (mode: 'create' | 'rename' | 'copy') => {
-    if (mode === 'rename' || mode === 'copy') {
-      if (!selectedProfile) return;
-      setDialog({
-        open: true,
-        mode,
-        profileId: selectedProfile.id,
-        profileName:
-          mode === 'copy' ? `${selectedProfile.name}-副本` : selectedProfile.name,
-      });
-    } else {
-      setDialog({ open: true, mode, profileName: '' });
-    }
-  };
-
-  const handleDialogSubmit = (name: string) => {
-    const trimmed = name.trim();
-    if (!trimmed) {
-      toast.error(t('请输入配置项目名称'));
-      return;
-    }
-    if (dialog.mode === 'create') {
-      createMutation.mutate(
-        { name: trimmed },
-        {
-          onSuccess: (created) => {
-            toast.success(t('配置项目已创建'));
-            setDialog(CLOSED_PROFILE_DIALOG);
-            setSelectedId(created.id);
-          },
-          onError: (err) => toast.error(errorText(err)),
-        },
-      );
-    } else if (dialog.mode === 'rename') {
-      renameMutation.mutate(
-        { id: dialog.profileId!, name: trimmed },
-        {
-          onSuccess: () => {
-            toast.success(t('配置项目已重命名'));
-            setDialog(CLOSED_PROFILE_DIALOG);
-          },
-          onError: (err) => toast.error(errorText(err)),
-        },
-      );
-    } else if (dialog.mode === 'copy') {
-      createMutation.mutate(
-        { name: trimmed, copy_from_id: dialog.profileId },
-        {
-          onSuccess: (created) => {
-            toast.success(t('已复制为新配置项目'));
-            setDialog(CLOSED_PROFILE_DIALOG);
-            setSelectedId(created.id);
-          },
-          onError: (err) => toast.error(errorText(err)),
-        },
-      );
-    }
-  };
-
-  const handleDelete = () => {
-    if (!selectedProfile || selectedProfile.is_default) return;
-    deleteMutation.mutate(selectedProfile.id, {
-      onSuccess: () => {
-        toast.success(t('配置项目已删除'));
-        setSelectedId(defaultProfile?.id ?? null);
-        setConfirmDelete(false);
-      },
-      onError: (err) => {
-        toast.error(errorText(err));
-        setConfirmDelete(false);
-      },
-    });
-  };
-
-  const handleSetDefault = () => {
-    if (!selectedProfile || selectedProfile.is_default) return;
-    setDefaultMutation.mutate(selectedProfile.id, {
-      onSuccess: () => toast.success(t('已设为默认配置项目')),
-      onError: (err) => toast.error(errorText(err)),
-    });
-  };
-
-  if (isLoading || profilesLoading) {
+  if (isLoading) {
     return (
       <div className="flex flex-col items-center justify-center gap-3 py-32">
         <Loader2 className="size-8 animate-spin text-primary" />
@@ -229,72 +105,22 @@ export default function SettingsPage() {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">
-          {t('系统设置')}
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {t('配置 OCR 解析、评分标准与 MCP 自检开关，支持多套独立配置项目')}
-        </p>
-      </div>
-
-      {/* 配置项目管理 */}
-      <ProfileManagerCard
-        profiles={profiles}
-        selectedProfile={selectedProfile}
-        displayProfileId={displayProfileId}
-        onSelect={setSelectedId}
-        onOpenDialog={openDialog}
-        onSetDefault={handleSetDefault}
-        onRequestDelete={() => setConfirmDelete(true)}
+      <PageHeader
+        className="mb-6"
+        title={t('系统设置')}
+        description={t('配置 OCR 解析、评分标准与 MCP 自检开关')}
       />
 
-      {!selectedProfile ? (
-        <Card className="elevated-card">
-          <CardContent className="pt-6">
-            <Alert>
-              <AlertTitle>{t('请选择一个配置项目')}</AlertTitle>
-              <AlertDescription>
-                {t('选择或新建配置项目后可编辑其详细配置')}
-              </AlertDescription>
-            </Alert>
-          </CardContent>
-        </Card>
-      ) : (
-        <ConfigSettingsForm
-          form={form}
-          isSaving={updateMutation.isPending}
-          onSubmit={onSubmit}
-          onResetRubric={handleResetRubric}
-        />
-      )}
+      {/* 批改助手目录(ACP) */}
+      <AcpAgentDirectory />
+      <AcpAgentDirectoryHint />
 
-      <ProfileDialog
-        dialog={dialog}
-        busy={createMutation.isPending || renameMutation.isPending}
-        onSubmit={handleDialogSubmit}
-        onClose={() => setDialog(CLOSED_PROFILE_DIALOG)}
+      <ConfigSettingsForm
+        form={form}
+        isSaving={updateMutation.isPending}
+        onSubmit={onSubmit}
+        onResetRubric={handleResetRubric}
       />
-
-      <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t('删除配置项目')}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t('确定删除配置项目')}「{selectedProfile?.name}」？{t('该项目的配置将从当前生效集合中移除。')}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t('取消')}</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} disabled={deleteMutation.isPending}>
-              {deleteMutation.isPending ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : null}
-              {t('删除')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }

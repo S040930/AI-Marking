@@ -1,6 +1,1013 @@
 {
   "components": {
     "schemas": {
+      "AcpAgentListResponse": {
+        "properties": {
+          "agents": {
+            "items": {
+              "$ref": "#/components/schemas/AcpAgentOut"
+            },
+            "title": "Agents",
+            "type": "array"
+          },
+          "fetched_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fetched At"
+          },
+          "registry_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Registry Version"
+          }
+        },
+        "required": [
+          "agents"
+        ],
+        "title": "AcpAgentListResponse",
+        "type": "object"
+      },
+      "AcpAgentOut": {
+        "properties": {
+          "agent_id": {
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "available_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Available Version"
+          },
+          "connection_status": {
+            "enum": [
+              "ready",
+              "needs_auth",
+              "unsupported",
+              "failed",
+              "unknown"
+            ],
+            "title": "Connection Status",
+            "type": "string"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "distributions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Distributions",
+            "type": "array"
+          },
+          "installed_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Installed Version"
+          },
+          "whitelist_package": {
+            "title": "Whitelist Package",
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent_id",
+          "display_name",
+          "whitelist_package",
+          "distributions",
+          "connection_status"
+        ],
+        "title": "AcpAgentOut",
+        "type": "object"
+      },
+      "AcpChatConfigurationUpdateRequest": {
+        "additionalProperties": false,
+        "description": "已有会话的配置热更新;permission_mode 缺省表示保持不变。",
+        "properties": {
+          "fast_confirmed": {
+            "default": false,
+            "title": "Fast Confirmed",
+            "type": "boolean"
+          },
+          "model_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Id"
+          },
+          "permission_mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "ask",
+                  "auto_review"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Permission Mode"
+          },
+          "reasoning_effort": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reasoning Effort"
+          },
+          "speed_mode": {
+            "default": "standard",
+            "enum": [
+              "standard",
+              "fast"
+            ],
+            "title": "Speed Mode",
+            "type": "string"
+          }
+        },
+        "title": "AcpChatConfigurationUpdateRequest",
+        "type": "object"
+      },
+      "AcpChatCreateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "codex_config": {
+            "$ref": "#/components/schemas/CodexConfigRequest"
+          },
+          "permission_mode": {
+            "default": "ask",
+            "enum": [
+              "ask",
+              "auto_review"
+            ],
+            "title": "Permission Mode",
+            "type": "string"
+          },
+          "submission_id": {
+            "title": "Submission Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "submission_id"
+        ],
+        "title": "AcpChatCreateRequest",
+        "type": "object"
+      },
+      "AcpChatEventOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "seq": {
+            "title": "Seq",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "seq",
+          "kind",
+          "payload",
+          "created_at"
+        ],
+        "title": "AcpChatEventOut",
+        "type": "object"
+      },
+      "AcpChatMessageRequest": {
+        "properties": {
+          "text": {
+            "maxLength": 8000,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "AcpChatMessageRequest",
+        "type": "object"
+      },
+      "AcpChatPermissionRequest": {
+        "properties": {
+          "allow": {
+            "title": "Allow",
+            "type": "boolean"
+          },
+          "option_id": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Option Id"
+          },
+          "permission_id": {
+            "maxLength": 64,
+            "minLength": 8,
+            "title": "Permission Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "permission_id",
+          "allow"
+        ],
+        "title": "AcpChatPermissionRequest",
+        "type": "object"
+      },
+      "AcpChatSessionListResponse": {
+        "properties": {
+          "sessions": {
+            "items": {
+              "$ref": "#/components/schemas/AcpChatSessionOut"
+            },
+            "title": "Sessions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "sessions"
+        ],
+        "title": "AcpChatSessionListResponse",
+        "type": "object"
+      },
+      "AcpChatSessionOut": {
+        "properties": {
+          "agent_id": {
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "applied_codex_config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CodexConfigSnapshot"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "applied_config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CodexConfigSnapshot"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "codex_config": {
+            "$ref": "#/components/schemas/CodexConfigSnapshot"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "desired_config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CodexConfigSnapshot"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "effective_at": {
+            "default": "current",
+            "enum": [
+              "current",
+              "next_turn"
+            ],
+            "title": "Effective At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "latest_seq": {
+            "default": 0,
+            "title": "Latest Seq",
+            "type": "integer"
+          },
+          "pending_codex_config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CodexConfigSnapshot"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pending_config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CodexConfigSnapshot"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "permission_mode": {
+            "default": "ask",
+            "enum": [
+              "ask",
+              "auto_review"
+            ],
+            "title": "Permission Mode",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "idle",
+              "running",
+              "waiting_permission",
+              "closed",
+              "error"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "submission_id": {
+            "title": "Submission Id",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "submission_id",
+          "agent_id",
+          "codex_config",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "AcpChatSessionOut",
+        "type": "object"
+      },
+      "AcpCheckpointOut": {
+        "properties": {
+          "asked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asked At"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "message"
+        ],
+        "title": "AcpCheckpointOut",
+        "type": "object"
+      },
+      "AcpCodexConfigurationResponse": {
+        "properties": {
+          "agent_id": {
+            "const": "codex-acp",
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "agent_version": {
+            "title": "Agent Version",
+            "type": "string"
+          },
+          "capability_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capability Error"
+          },
+          "models": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Models",
+            "type": "array"
+          },
+          "reasoning_efforts": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Reasoning Efforts",
+            "type": "array"
+          },
+          "selected_model_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Model Id"
+          },
+          "speed_modes": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Speed Modes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "agent_id",
+          "agent_version"
+        ],
+        "title": "AcpCodexConfigurationResponse",
+        "type": "object"
+      },
+      "AcpConfigurationUpdateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "fast_confirmed": {
+            "default": false,
+            "title": "Fast Confirmed",
+            "type": "boolean"
+          },
+          "model_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Id"
+          },
+          "reasoning_effort": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reasoning Effort"
+          },
+          "speed_mode": {
+            "default": "standard",
+            "enum": [
+              "standard",
+              "fast"
+            ],
+            "title": "Speed Mode",
+            "type": "string"
+          }
+        },
+        "title": "AcpConfigurationUpdateRequest",
+        "type": "object"
+      },
+      "AcpInstallResponse": {
+        "properties": {
+          "agent_id": {
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "distribution": {
+            "title": "Distribution",
+            "type": "string"
+          },
+          "reinstalled": {
+            "default": true,
+            "title": "Reinstalled",
+            "type": "boolean"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent_id",
+          "version",
+          "distribution"
+        ],
+        "title": "AcpInstallResponse",
+        "type": "object"
+      },
+      "AcpRunCreateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "codex_config": {
+            "$ref": "#/components/schemas/CodexConfigRequest"
+          },
+          "permission_mode": {
+            "default": "ask",
+            "enum": [
+              "ask",
+              "auto_review"
+            ],
+            "title": "Permission Mode",
+            "type": "string"
+          },
+          "submission_id": {
+            "title": "Submission Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "submission_id"
+        ],
+        "title": "AcpRunCreateRequest",
+        "type": "object"
+      },
+      "AcpRunDetailResponse": {
+        "properties": {
+          "applied_config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CodexConfigSnapshot"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "desired_config": {
+            "$ref": "#/components/schemas/CodexConfigSnapshot"
+          },
+          "effective_at": {
+            "default": "current",
+            "enum": [
+              "current",
+              "next_turn"
+            ],
+            "title": "Effective At",
+            "type": "string"
+          },
+          "latest_seq": {
+            "default": 0,
+            "title": "Latest Seq",
+            "type": "integer"
+          },
+          "pending_config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CodexConfigSnapshot"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "run": {
+            "$ref": "#/components/schemas/AcpRunOut"
+          }
+        },
+        "required": [
+          "run",
+          "desired_config"
+        ],
+        "title": "AcpRunDetailResponse",
+        "type": "object"
+      },
+      "AcpRunEventOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "seq": {
+            "title": "Seq",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "seq",
+          "kind",
+          "payload",
+          "created_at"
+        ],
+        "title": "AcpRunEventOut",
+        "type": "object"
+      },
+      "AcpRunOut": {
+        "properties": {
+          "acp_session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acp Session Id"
+          },
+          "agent_id": {
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "applied_codex_config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CodexConfigSnapshot"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "attempts": {
+            "default": 0,
+            "title": "Attempts",
+            "type": "integer"
+          },
+          "checkpoint": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AcpCheckpointOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "codex_config": {
+            "$ref": "#/components/schemas/CodexConfigSnapshot"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "effective_at": {
+            "default": "current",
+            "enum": [
+              "current",
+              "next_turn"
+            ],
+            "title": "Effective At",
+            "type": "string"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "max_attempts": {
+            "default": 3,
+            "title": "Max Attempts",
+            "type": "integer"
+          },
+          "pending_codex_config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CodexConfigSnapshot"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "permission_mode": {
+            "default": "ask",
+            "enum": [
+              "ask",
+              "auto_review"
+            ],
+            "title": "Permission Mode",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "starting",
+              "running",
+              "waiting_for_teacher",
+              "cancelling",
+              "completed",
+              "failed",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "submission_id": {
+            "title": "Submission Id",
+            "type": "integer"
+          },
+          "teacher_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Teacher Note"
+          },
+          "teacher_verdict": {
+            "anyOf": [
+              {
+                "enum": [
+                  "consistent",
+                  "mismatch"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Teacher Verdict"
+          }
+        },
+        "required": [
+          "id",
+          "submission_id",
+          "agent_id",
+          "codex_config",
+          "status",
+          "created_at"
+        ],
+        "title": "AcpRunOut",
+        "type": "object"
+      },
+      "AcpRunReplyRequest": {
+        "properties": {
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "verdict": {
+            "enum": [
+              "consistent",
+              "mismatch"
+            ],
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "verdict"
+        ],
+        "title": "AcpRunReplyRequest",
+        "type": "object"
+      },
+      "AcpTestConnectionResponse": {
+        "properties": {
+          "agent_id": {
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "agent_info": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Info"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "mcp_visible": {
+            "default": false,
+            "title": "Mcp Visible",
+            "type": "boolean"
+          },
+          "protocol_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Protocol Version"
+          },
+          "status": {
+            "enum": [
+              "ready",
+              "needs_auth",
+              "unsupported",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "steps": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Steps",
+            "type": "object"
+          }
+        },
+        "required": [
+          "agent_id",
+          "status"
+        ],
+        "title": "AcpTestConnectionResponse",
+        "type": "object"
+      },
+      "AcpUninstallResponse": {
+        "properties": {
+          "agent_id": {
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "removed_cache": {
+            "default": false,
+            "title": "Removed Cache",
+            "type": "boolean"
+          },
+          "uninstalled": {
+            "default": true,
+            "title": "Uninstalled",
+            "type": "boolean"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": [
+          "agent_id"
+        ],
+        "title": "AcpUninstallResponse",
+        "type": "object"
+      },
       "AssessmentReviewItemOut": {
         "properties": {
           "comment": {
@@ -210,17 +1217,6 @@
       },
       "Body_create_question_api_questions_post": {
         "properties": {
-          "config_profile_id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Config Profile Id"
-          },
           "file": {
             "contentMediaType": "application/octet-stream",
             "title": "File",
@@ -346,6 +1342,110 @@
         "title": "Body_retry_submission_api_submissions__submission_id__retry_post",
         "type": "object"
       },
+      "CodexConfigRequest": {
+        "additionalProperties": false,
+        "description": "Only product-level Codex fields are accepted from the browser.",
+        "properties": {
+          "fast_confirmed": {
+            "default": false,
+            "title": "Fast Confirmed",
+            "type": "boolean"
+          },
+          "model_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Id"
+          },
+          "reasoning_effort": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reasoning Effort"
+          },
+          "speed_mode": {
+            "default": "standard",
+            "enum": [
+              "standard",
+              "fast"
+            ],
+            "title": "Speed Mode",
+            "type": "string"
+          }
+        },
+        "title": "CodexConfigRequest",
+        "type": "object"
+      },
+      "CodexConfigSnapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "catalog_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Catalog Version"
+          },
+          "model_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Id"
+          },
+          "option_ids": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Option Ids",
+            "type": "object"
+          },
+          "reasoning_effort": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reasoning Effort"
+          },
+          "speed_mode": {
+            "default": "standard",
+            "enum": [
+              "standard",
+              "fast"
+            ],
+            "title": "Speed Mode",
+            "type": "string"
+          }
+        },
+        "title": "CodexConfigSnapshot",
+        "type": "object"
+      },
       "ConfigOut": {
         "description": "配置完整输出结构。",
         "properties": {
@@ -376,88 +1476,6 @@
           }
         },
         "title": "ConfigOut",
-        "type": "object"
-      },
-      "ConfigProfileCreate": {
-        "additionalProperties": false,
-        "description": "新建配置项目入参。",
-        "properties": {
-          "copy_from_id": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "非空时复制该项目的全部配置值",
-            "title": "Copy From Id"
-          },
-          "name": {
-            "maxLength": 100,
-            "minLength": 1,
-            "title": "Name",
-            "type": "string"
-          }
-        },
-        "required": [
-          "name"
-        ],
-        "title": "ConfigProfileCreate",
-        "type": "object"
-      },
-      "ConfigProfileOut": {
-        "description": "配置项目元信息输出。",
-        "properties": {
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "id": {
-            "title": "Id",
-            "type": "integer"
-          },
-          "is_default": {
-            "title": "Is Default",
-            "type": "boolean"
-          },
-          "name": {
-            "title": "Name",
-            "type": "string"
-          },
-          "updated_at": {
-            "format": "date-time",
-            "title": "Updated At",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "name",
-          "is_default",
-          "created_at",
-          "updated_at"
-        ],
-        "title": "ConfigProfileOut",
-        "type": "object"
-      },
-      "ConfigProfileRename": {
-        "additionalProperties": false,
-        "description": "重命名配置项目入参。",
-        "properties": {
-          "name": {
-            "maxLength": 100,
-            "minLength": 1,
-            "title": "Name",
-            "type": "string"
-          }
-        },
-        "required": [
-          "name"
-        ],
-        "title": "ConfigProfileRename",
         "type": "object"
       },
       "ConfigUpdate": {
@@ -1889,21 +2907,6 @@
         "title": "PaginatedSubmissions",
         "type": "object"
       },
-      "QuestionConfigProfileRequest": {
-        "properties": {
-          "config_profile_id": {
-            "description": "配置项目 ID",
-            "minimum": 1.0,
-            "title": "Config Profile Id",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "config_profile_id"
-        ],
-        "title": "QuestionConfigProfileRequest",
-        "type": "object"
-      },
       "QuestionConfirmRequest": {
         "properties": {
           "confirmation_name": {
@@ -1921,10 +2924,6 @@
       },
       "QuestionDetail": {
         "properties": {
-          "config_profile_id": {
-            "title": "Config Profile Id",
-            "type": "integer"
-          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -2013,7 +3012,6 @@
         },
         "required": [
           "id",
-          "config_profile_id",
           "name",
           "original_filename",
           "status",
@@ -2038,10 +3036,6 @@
       },
       "QuestionOut": {
         "properties": {
-          "config_profile_id": {
-            "title": "Config Profile Id",
-            "type": "integer"
-          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -2119,7 +3113,6 @@
         },
         "required": [
           "id",
-          "config_profile_id",
           "name",
           "original_filename",
           "status",
@@ -2760,6 +3753,28 @@
             "title": "Original Filename",
             "type": "string"
           },
+          "question_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Question Id"
+          },
+          "question_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Question Name"
+          },
           "question_ocr_text": {
             "anyOf": [
               {
@@ -2911,6 +3926,17 @@
           "original_filename": {
             "title": "Original Filename",
             "type": "string"
+          },
+          "question_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Question Name"
           },
           "question_original_filename": {
             "anyOf": [
@@ -3108,6 +4134,1289 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/acp/agents": {
+      "get": {
+        "description": "白名单 agent 目录;Registry 不可达时返回缓存或空目录(可离线浏览)。",
+        "operationId": "list_agents_api_acp_agents_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcpAgentListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Agents",
+        "tags": [
+          "acp",
+          "acp"
+        ]
+      }
+    },
+    "/api/acp/agents/refresh": {
+      "post": {
+        "operationId": "refresh_registry_api_acp_agents_refresh_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Refresh Registry Api Acp Agents Refresh Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Refresh Registry",
+        "tags": [
+          "acp",
+          "acp"
+        ]
+      }
+    },
+    "/api/acp/agents/{agent_id}/install": {
+      "delete": {
+        "description": "卸载已安装链接:删除安装标记与该版本下载缓存。\n\n与\"移出白名单\"不同:卸载后 agent 仍留在目录中(状态回到未安装),\n可随时重新安装;npx/uvx 发行不触碰本机全局包缓存。",
+        "operationId": "uninstall_agent_api_acp_agents__agent_id__install_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcpUninstallResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Uninstall Agent",
+        "tags": [
+          "acp",
+          "acp"
+        ]
+      },
+      "post": {
+        "description": "安装白名单 agent 的精确版本;已缓存同版本时不重复下载。\n\nnpm/uvx 发行:安装即解析并审核精确版本快照(npx/uvx 在 spawn 时按\n精确版本拉取);binary 发行:下载归档 → SHA-256 校验 → 安全解压到\n受控缓存,并把 command 指向解压出的可执行文件。",
+        "operationId": "install_agent_api_acp_agents__agent_id__install_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcpInstallResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Install Agent",
+        "tags": [
+          "acp",
+          "acp"
+        ]
+      }
+    },
+    "/api/acp/agents/{agent_id}/set-default": {
+      "post": {
+        "description": "教师显式选择机器级默认 agent;要求该 agent 已安装。",
+        "operationId": "set_default_agent_api_acp_agents__agent_id__set_default_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Set Default Agent Api Acp Agents  Agent Id  Set Default Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Default Agent",
+        "tags": [
+          "acp",
+          "acp"
+        ]
+      }
+    },
+    "/api/acp/agents/{agent_id}/test": {
+      "post": {
+        "description": "连接诊断:initialize → 能力协商 → 安全关闭;不保存认证秘密。",
+        "operationId": "test_agent_connection_api_acp_agents__agent_id__test_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "agent_id",
+            "required": true,
+            "schema": {
+              "title": "Agent Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcpTestConnectionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Test Agent Connection",
+        "tags": [
+          "acp",
+          "acp"
+        ]
+      }
+    },
+    "/api/acp/chat/sessions": {
+      "get": {
+        "operationId": "list_chat_sessions_api_acp_chat_sessions_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "submission_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "title": "Submission Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcpChatSessionListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Chat Sessions",
+        "tags": [
+          "acp-chat",
+          "acp-chat"
+        ]
+      },
+      "post": {
+        "operationId": "create_chat_session_api_acp_chat_sessions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcpChatCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcpChatSessionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Chat Session",
+        "tags": [
+          "acp-chat",
+          "acp-chat"
+        ]
+      }
+    },
+    "/api/acp/chat/sessions/{chat_id}": {
+      "delete": {
+        "operationId": "close_chat_session_api_acp_chat_sessions__chat_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "chat_id",
+            "required": true,
+            "schema": {
+              "title": "Chat Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Close Chat Session Api Acp Chat Sessions  Chat Id  Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Close Chat Session",
+        "tags": [
+          "acp-chat",
+          "acp-chat"
+        ]
+      },
+      "get": {
+        "operationId": "get_chat_session_detail_api_acp_chat_sessions__chat_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "chat_id",
+            "required": true,
+            "schema": {
+              "title": "Chat Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcpChatSessionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Chat Session Detail",
+        "tags": [
+          "acp-chat",
+          "acp-chat"
+        ]
+      }
+    },
+    "/api/acp/chat/sessions/{chat_id}/cancel": {
+      "post": {
+        "operationId": "cancel_chat_turn_api_acp_chat_sessions__chat_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "chat_id",
+            "required": true,
+            "schema": {
+              "title": "Chat Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Cancel Chat Turn Api Acp Chat Sessions  Chat Id  Cancel Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Chat Turn",
+        "tags": [
+          "acp-chat",
+          "acp-chat"
+        ]
+      }
+    },
+    "/api/acp/chat/sessions/{chat_id}/codex-configuration": {
+      "patch": {
+        "operationId": "update_chat_codex_configuration_api_acp_chat_sessions__chat_id__codex_configuration_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "chat_id",
+            "required": true,
+            "schema": {
+              "title": "Chat Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcpChatConfigurationUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcpChatSessionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Chat Codex Configuration",
+        "tags": [
+          "acp-chat",
+          "acp-chat"
+        ]
+      }
+    },
+    "/api/acp/chat/sessions/{chat_id}/events": {
+      "get": {
+        "operationId": "list_chat_events_api_acp_chat_sessions__chat_id__events_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "chat_id",
+            "required": true,
+            "schema": {
+              "title": "Chat Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "after_seq",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "After Seq",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AcpChatEventOut"
+                  },
+                  "title": "Response List Chat Events Api Acp Chat Sessions  Chat Id  Events Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Chat Events",
+        "tags": [
+          "acp-chat",
+          "acp-chat"
+        ]
+      }
+    },
+    "/api/acp/chat/sessions/{chat_id}/messages": {
+      "post": {
+        "operationId": "send_chat_message_api_acp_chat_sessions__chat_id__messages_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "chat_id",
+            "required": true,
+            "schema": {
+              "title": "Chat Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcpChatMessageRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcpChatSessionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Send Chat Message",
+        "tags": [
+          "acp-chat",
+          "acp-chat"
+        ]
+      }
+    },
+    "/api/acp/chat/sessions/{chat_id}/permanent": {
+      "delete": {
+        "description": "永久删除对话:停止运行中的会话,删除会话行、事件转录与专属工作区。\n\n与上面的\"关闭会话\"不同,此操作不可恢复。",
+        "operationId": "delete_chat_session_permanently_api_acp_chat_sessions__chat_id__permanent_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "chat_id",
+            "required": true,
+            "schema": {
+              "title": "Chat Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Delete Chat Session Permanently Api Acp Chat Sessions  Chat Id  Permanent Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Chat Session Permanently",
+        "tags": [
+          "acp-chat",
+          "acp-chat"
+        ]
+      }
+    },
+    "/api/acp/chat/sessions/{chat_id}/permission": {
+      "post": {
+        "operationId": "answer_chat_permission_api_acp_chat_sessions__chat_id__permission_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "chat_id",
+            "required": true,
+            "schema": {
+              "title": "Chat Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcpChatPermissionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Answer Chat Permission Api Acp Chat Sessions  Chat Id  Permission Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Answer Chat Permission",
+        "tags": [
+          "acp-chat",
+          "acp-chat"
+        ]
+      }
+    },
+    "/api/acp/chat/sessions/{chat_id}/stream": {
+      "get": {
+        "description": "SSE:先回放数据库事件,再通过 PG NOTIFY 推送增量。\n\nSSE ``id`` 等于事件 seq;会话进入终态且读尽后发送 ``: done``。",
+        "operationId": "stream_chat_events_api_acp_chat_sessions__chat_id__stream_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "chat_id",
+            "required": true,
+            "schema": {
+              "title": "Chat Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "after_seq",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "After Seq",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Last-Event-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Last-Event-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stream Chat Events",
+        "tags": [
+          "acp-chat",
+          "acp-chat"
+        ]
+      }
+    },
+    "/api/acp/codex/configuration": {
+      "get": {
+        "description": "Return the live Codex model/thought/speed catalog for the UI.",
+        "operationId": "get_codex_configuration_catalog_api_acp_codex_configuration_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "model_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Model Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcpCodexConfigurationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Codex Configuration Catalog",
+        "tags": [
+          "acp",
+          "acp"
+        ]
+      }
+    },
+    "/api/acp/default-agent": {
+      "get": {
+        "operationId": "get_default_agent_api_acp_default_agent_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Default Agent Api Acp Default Agent Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Default Agent",
+        "tags": [
+          "acp",
+          "acp"
+        ]
+      }
+    },
+    "/api/acp/runs": {
+      "post": {
+        "operationId": "create_run_api_acp_runs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcpRunCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcpRunDetailResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Run",
+        "tags": [
+          "acp",
+          "acp"
+        ]
+      }
+    },
+    "/api/acp/runs/by-submission/{submission_id}": {
+      "get": {
+        "description": "查询作业当前的活跃 run;不存在返回 404(前端视为无运行)。",
+        "operationId": "get_active_run_by_submission_api_acp_runs_by_submission__submission_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "submission_id",
+            "required": true,
+            "schema": {
+              "title": "Submission Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcpRunDetailResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Active Run By Submission",
+        "tags": [
+          "acp",
+          "acp"
+        ]
+      }
+    },
+    "/api/acp/runs/{run_id}": {
+      "get": {
+        "operationId": "get_run_api_acp_runs__run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcpRunDetailResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Run",
+        "tags": [
+          "acp",
+          "acp"
+        ]
+      }
+    },
+    "/api/acp/runs/{run_id}/cancel": {
+      "post": {
+        "operationId": "cancel_run_api_acp_runs__run_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Cancel Run Api Acp Runs  Run Id  Cancel Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Run",
+        "tags": [
+          "acp",
+          "acp"
+        ]
+      }
+    },
+    "/api/acp/runs/{run_id}/codex-configuration": {
+      "patch": {
+        "operationId": "update_run_codex_configuration_api_acp_runs__run_id__codex_configuration_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcpConfigurationUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcpRunDetailResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Run Codex Configuration",
+        "tags": [
+          "acp",
+          "acp"
+        ]
+      }
+    },
+    "/api/acp/runs/{run_id}/events": {
+      "get": {
+        "operationId": "list_run_events_api_acp_runs__run_id__events_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "after_seq",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "After Seq",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AcpRunEventOut"
+                  },
+                  "title": "Response List Run Events Api Acp Runs  Run Id  Events Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Run Events",
+        "tags": [
+          "acp",
+          "acp"
+        ]
+      }
+    },
+    "/api/acp/runs/{run_id}/reply": {
+      "post": {
+        "description": "教师答复检查点;答复持久化后由 worker 恢复会话续跑。",
+        "operationId": "reply_checkpoint_api_acp_runs__run_id__reply_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcpRunReplyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Reply Checkpoint Api Acp Runs  Run Id  Reply Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reply Checkpoint",
+        "tags": [
+          "acp",
+          "acp"
+        ]
+      }
+    },
+    "/api/acp/runs/{run_id}/stream": {
+      "get": {
+        "description": "SSE:先回放数据库事件,再通过 PG NOTIFY 推送增量。\n\nSSE ``id`` 等于事件 seq,断线重连带 ``Last-Event-ID`` 从该 seq 续读。",
+        "operationId": "stream_run_events_api_acp_runs__run_id__stream_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "after_seq",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "After Seq",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Last-Event-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Last-Event-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stream Run Events",
+        "tags": [
+          "acp",
+          "acp"
+        ]
+      }
+    },
     "/api/admin/dead-jobs": {
       "get": {
         "description": "列出所有死信任务(按 ``updated_at`` 降序)。",
@@ -3343,26 +5652,8 @@
     },
     "/api/config": {
       "get": {
-        "description": "返回指定配置项目的全部配置(缺省为默认项目,缺失字段为空字符串)。",
+        "description": "返回全部配置(缺失字段为空字符串)。",
         "operationId": "get_config_api_config_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "profile_id",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Profile Id"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
@@ -3373,16 +5664,6 @@
               }
             },
             "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
           }
         },
         "summary": "Get Config",
@@ -3391,26 +5672,8 @@
         ]
       },
       "put": {
-        "description": "更新指定配置项目(子集 upsert)。\n\n- 未提供的字段保持不变\n- 字段值为空字符串表示清空\n- 未知 key 返回 400\n- 返回更新后的完整配置",
+        "description": "更新配置(子集 upsert)。\n\n- 未提供的字段保持不变\n- 字段值为空字符串表示清空\n- 未知 key 返回 400\n- 返回更新后的完整配置",
         "operationId": "update_config_api_config_put",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "profile_id",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Profile Id"
-            }
-          }
-        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -3444,202 +5707,6 @@
           }
         },
         "summary": "Update Config",
-        "tags": [
-          "config"
-        ]
-      }
-    },
-    "/api/config/profiles": {
-      "get": {
-        "description": "列出全部配置项目。",
-        "operationId": "get_profiles_api_config_profiles_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/ConfigProfileOut"
-                  },
-                  "title": "Response Get Profiles Api Config Profiles Get",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Get Profiles",
-        "tags": [
-          "config"
-        ]
-      },
-      "post": {
-        "description": "新建配置项目,可选从现有项目复制配置值。",
-        "operationId": "post_profile_api_config_profiles_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ConfigProfileCreate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ConfigProfileOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Post Profile",
-        "tags": [
-          "config"
-        ]
-      }
-    },
-    "/api/config/profiles/{profile_id}": {
-      "delete": {
-        "description": "删除配置项目(默认项目或被题目引用时拒绝)。",
-        "operationId": "delete_profile_route_api_config_profiles__profile_id__delete",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "profile_id",
-            "required": true,
-            "schema": {
-              "title": "Profile Id",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Delete Profile Route",
-        "tags": [
-          "config"
-        ]
-      },
-      "patch": {
-        "description": "重命名配置项目。",
-        "operationId": "patch_profile_api_config_profiles__profile_id__patch",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "profile_id",
-            "required": true,
-            "schema": {
-              "title": "Profile Id",
-              "type": "integer"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ConfigProfileRename"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ConfigProfileOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Patch Profile",
-        "tags": [
-          "config"
-        ]
-      }
-    },
-    "/api/config/profiles/{profile_id}/default": {
-      "post": {
-        "description": "将指定项目设为默认(新题目未指定时回退)。",
-        "operationId": "post_profile_default_api_config_profiles__profile_id__default_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "profile_id",
-            "required": true,
-            "schema": {
-              "title": "Profile Id",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ConfigProfileOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Post Profile Default",
         "tags": [
           "config"
         ]
@@ -4399,59 +6466,6 @@
           }
         },
         "summary": "Rename Question",
-        "tags": [
-          "questions"
-        ]
-      }
-    },
-    "/api/questions/{question_id}/config-profile": {
-      "patch": {
-        "description": "切换题目使用的配置项目。",
-        "operationId": "change_question_config_profile_api_questions__question_id__config_profile_patch",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "question_id",
-            "required": true,
-            "schema": {
-              "title": "Question Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/QuestionConfigProfileRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/QuestionOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Change Question Config Profile",
         "tags": [
           "questions"
         ]

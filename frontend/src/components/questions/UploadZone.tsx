@@ -17,13 +17,20 @@ import {
 import { cn } from '@/lib/utils';
 import { useLanguage } from '@/i18n';
 
-export type UploadEntryStatus = 'ready' | 'uploading' | 'success' | 'error';
+export type UploadEntryStatus =
+  | 'ready'
+  | 'uploading'
+  | 'watching'
+  | 'success'
+  | 'error';
 
 export interface UploadEntry {
   id: string;
   file: File;
   name: string;
   status: UploadEntryStatus;
+  /** 上传成功后由后端返回的题目 ID，用于等待 OCR 识别 */
+  questionId?: string;
   error?: string;
 }
 
@@ -49,7 +56,8 @@ function formatSize(bytes: number): string {
 const statusMeta: Record<UploadEntryStatus, [string, string]> = {
   ready: ['待上传', 'text-muted-foreground'],
   uploading: ['上传中', 'text-primary'],
-  success: ['已上传，识别中', 'text-emerald-600'],
+  watching: ['识别中', 'text-primary'],
+  success: ['识别完成', 'text-emerald-600'],
   error: ['失败', 'text-destructive'],
 };
 
@@ -98,7 +106,9 @@ export function UploadZone({
     acceptFiles(Array.from(event.dataTransfer.files));
   };
 
-  const uploading = entries.some((entry) => entry.status === 'uploading');
+  const uploading = entries.some(
+    (entry) => entry.status === 'uploading' || entry.status === 'watching',
+  );
 
   return (
     <div className="space-y-4">
@@ -160,7 +170,7 @@ export function UploadZone({
                 className="flex items-center gap-3 px-4 py-3"
               >
                 <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                  {entry.status === 'uploading' ? (
+                  {entry.status === 'uploading' || entry.status === 'watching' ? (
                     <Loader2 className="size-4 animate-spin" />
                   ) : entry.status === 'success' ? (
                     <Check className="size-4 text-emerald-600" />

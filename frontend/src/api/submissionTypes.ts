@@ -61,6 +61,7 @@ export interface DetailItem {
 }
 
 export interface SubmissionDetail extends SubmissionOut {
+  question_id?: string | null;
   ocr_text: string | null;
   question_ocr_text: string | null;
   feedback: string | null;
@@ -73,7 +74,6 @@ export interface SubmissionDetail extends SubmissionOut {
   code_files: SubmissionCodeFile[];
   code_input_files: SubmissionCodeInputFile[];
 }
-
 // 轻量状态:处理中轮询用,字段集合刻意比 SubmissionOut 小
 // 含 original_filename/uploaded_at 供 processing UI 显示,避免处理中拉完整详情
 export type SubmissionStatusOut = components['schemas']['SubmissionStatusOut'];

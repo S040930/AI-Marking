@@ -22,10 +22,20 @@ interface ManualReviewPanelProps {
 
 interface EditableDetail {
   criterion: string;
-  score: number;
+  // '' 表示输入框被清空的中间态:不清零、不参与合计,提交前必须补全
+  score: number | '';
   max_score: number;
   comment: string;
   evidence: string[];
+}
+
+function scoreIsValid(item: EditableDetail): item is EditableDetail & { score: number } {
+  return (
+    typeof item.score === 'number' &&
+    Number.isFinite(item.score) &&
+    item.score >= 0 &&
+    item.score <= item.max_score
+  );
 }
 
 function toEditable(suggestion: AiSuggestion | null): EditableDetail[] {
@@ -74,7 +84,14 @@ export default function ManualReviewPanel({
 
   const maxScore = suggestion?.max_score ?? 0;
   const totalScore = useMemo(
-    () => details.reduce((sum, item) => sum + (item.score || 0), 0),
+    () =>
+      details.reduce(
+        (sum, item) =>
+          typeof item.score === 'number' && Number.isFinite(item.score)
+            ? sum + item.score
+            : sum,
+        0,
+      ),
     [details],
   );
   const totalMax = useMemo(
@@ -85,10 +102,16 @@ export default function ManualReviewPanel({
   // the rubric's maximum unless the student received full marks.
   const totalsMatch = totalScore <= maxScore + 0.01;
   const totalMaxMatch = Math.abs(totalMax - maxScore) < 0.01;
+  // 每一项都已填写且在 [0, 满分] 内才允许提交;空串/负数/超满分均视为非法
+  const allScoresValid = details.every(scoreIsValid);
+  const invalidCriteria = details
+    .filter((item) => !scoreIsValid(item))
+    .map((item) => item.criterion);
   const canSubmit =
     !isReadOnly &&
     suggestion !== null &&
     details.length > 0 &&
+    allScoresValid &&
     totalsMatch &&
     totalMaxMatch &&
     feedback.trim().length > 0;
@@ -108,7 +131,8 @@ export default function ManualReviewPanel({
       feedback: feedback.trim(),
       details: details.map((d) => ({
         criterion: d.criterion,
-        score: d.score,
+        // canSubmit 已保证全部为合法数字
+        score: d.score as number,
         max_score: d.max_score,
         comment: d.comment,
         evidence: d.evidence ?? [],
@@ -169,7 +193,11 @@ export default function ManualReviewPanel({
           {/* 逐项改分 */}
           <div className="mt-5 space-y-4">
             {details.map((item, idx) => {
-              const outOfRange = item.score > item.max_score;
+              const scoreNumeric = typeof item.score === 'number';
+              const negative = scoreNumeric && (item.score as number) < 0;
+              const outOfRange =
+                scoreNumeric &&
+                (!Number.isFinite(item.score) || negative || (item.score as number) > item.max_score);
               return (
                 <div
                   key={idx}
@@ -188,7 +216,10 @@ export default function ManualReviewPanel({
                         value={item.score}
                         disabled={isReadOnly}
                         onChange={(e) =>
-                          updateDetail(idx, { score: Number(e.target.value) })
+                          updateDetail(idx, {
+                            // 空串保留为 ''(不清零),其余转数字
+                            score: e.target.value === '' ? '' : Number(e.target.value),
+                          })
                         }
                         className={`h-7 w-16 px-2 text-right tabular-nums ${
                           outOfRange ? 'border-destructive text-destructive' : ''
@@ -199,10 +230,15 @@ export default function ManualReviewPanel({
                       </span>
                     </div>
                   </div>
-                  <ScoreBar score={item.score} maxScore={item.max_score} />
+                  <ScoreBar
+                    score={scoreNumeric && Number.isFinite(item.score) ? (item.score as number) : 0}
+                    maxScore={item.max_score}
+                  />
                   {outOfRange && (
                     <p className="text-[10px] text-destructive">
-                      {t('单项得分不能超过该项满分')}
+                      {negative
+                        ? t('单项得分不能为负数')
+                        : t('单项得分不能超过该项满分')}
                     </p>
                   )}
                   <Textarea
@@ -232,6 +268,12 @@ export default function ManualReviewPanel({
           </div>
 
           {/* 分数一致性提示 */}
+          {!allScoresValid && (
+            <p className="mt-4 text-xs text-destructive">
+              {t('以下评分项得分未填写或非法：')}
+              {invalidCriteria.join('、')}
+            </p>
+          )}
           {!totalsMatch && (
             <p className="mt-4 text-xs text-destructive">
               {t('各评分项得分之和')} {totalScore} {t('超过总分')} {maxScore}，{t('暂不可提交。')}

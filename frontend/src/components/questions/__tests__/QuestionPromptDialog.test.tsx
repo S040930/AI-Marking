@@ -19,7 +19,6 @@ import { QuestionPromptDialog } from '@/components/questions/QuestionPromptDialo
 
 const QUESTION = {
   id: 'DTS208TC_CW1_Paper',
-  config_profile_id: 1,
   name: '期末作文',
   original_filename: 'essay.pdf',
   status: 'ready' as const,

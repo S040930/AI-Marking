@@ -51,14 +51,44 @@ export function useQuestions(search = '', limit = 50) {
   });
 }
 
+// 轮询单个题目的状态，直到 OCR 识别结束（ready / failed）或超过 maxPolls 次。
+// 用于上传题目后在本页等待识别完成再进入下一步。
+export function useQuestionWatch(questionId: string | null, maxPolls = 120) {
+  const queryClient = useQueryClient();
+  useEffect(
+    () => subscribeToQuestionEvents(() => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.questions.watch(questionId) });
+    }),
+    [queryClient, questionId],
+  );
+  return useQuery<Question | null>({
+    queryKey: queryKeys.questions.watch(questionId),
+    queryFn: () =>
+      apiClient
+        .get<components['schemas']['QuestionDetail']>(`/questions/${questionId}`, {
+          skipErrorToast: true,
+        })
+        .then((response) => response.data as Question),
+    enabled: questionId !== null,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      if (status === 'ready' || status === 'failed') return false;
+      // 超过 maxPolls 次（约 maxPolls × 3 秒）后停止轮询，避免无限等待
+      if (query.state.dataUpdateCount + query.state.fetchFailureCount >= maxPolls) {
+        return false;
+      }
+      return 3000;
+    },
+  });
+}
+
 export function useCreateQuestion() {
   const queryClient = useQueryClient();
-  return useMutation<Question, Error, { file: File; name?: string; configProfileId?: number }>({
-    mutationFn: ({ file, name, configProfileId }) => {
+  return useMutation<Question, Error, { file: File; name?: string }>({
+    mutationFn: ({ file, name }) => {
       const form = new FormData();
       form.append('file', file);
       if (name) form.append('name', name);
-      if (configProfileId) form.append('config_profile_id', String(configProfileId));
       return apiClient
         .post<Question>('/questions', form, {
           headers: { 'Content-Type': 'multipart/form-data' },
@@ -96,19 +126,6 @@ export function useRetryQuestionOcr() {
         .then((response) => response.data)
       );
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.questions.all }),
-  });
-}
-
-export function useChangeQuestionConfigProfile() {
-  const queryClient = useQueryClient();
-  return useMutation<Question, Error, { id: string; configProfileId: number }>({
-    mutationFn: ({ id, configProfileId }) =>
-      apiClient
-        .patch<Question>(`/questions/${id}/config-profile`, {
-          config_profile_id: configProfileId,
-        })
-        .then((response) => response.data),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.questions.all }),
   });
 }

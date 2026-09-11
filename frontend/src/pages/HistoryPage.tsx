@@ -44,6 +44,7 @@ import {
 } from '@/components/ui/tooltip';
 import { StatusBadge } from '@/components/history/StatusBadge';
 import { useLanguage } from '@/i18n';
+import { PageHeader } from '@/components/common/PageHeader';
 import {
   isDeletableStatus,
   resolveDeleteError,
@@ -137,36 +138,35 @@ export default function HistoryPage() {
 
   return (
     <div className="mx-auto max-w-5xl">
-      <div className="mb-6 flex items-end justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">
-            {t('历史记录')}
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {t('查看已上传作业的批改状态与评分结果')}
-          </p>
-        </div>
-        {!isLoading && selectedIds.size === 0 && (
-          <span className="text-xs font-medium text-muted-foreground">
-            {t('共')} {total} {t('条记录')}
-          </span>
-        )}
-        {selectedIds.size > 0 && (
-          <div className="flex items-center gap-3">
-            <span className="text-sm font-medium text-muted-foreground">
-              {t('已选')} {selectedIds.size} {t('项')}
-            </span>
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={() => setDeleteDialogOpen(true)}
-            >
-              <Trash2 className="size-4" />
-              {t('删除')}
-            </Button>
-          </div>
-        )}
-      </div>
+      <PageHeader
+        className="mb-6 items-end"
+        title={t('历史记录')}
+        description={t('查看已上传作业的批改状态与评分结果')}
+        actions={
+          <>
+            {!isLoading && selectedIds.size === 0 && (
+              <span className="text-xs font-medium text-muted-foreground">
+                {t('共')} {total} {t('条记录')}
+              </span>
+            )}
+            {selectedIds.size > 0 && (
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-medium text-muted-foreground">
+                  {t('已选')} {selectedIds.size} {t('项')}
+                </span>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => setDeleteDialogOpen(true)}
+                >
+                  <Trash2 className="size-4" />
+                  {t('删除')}
+                </Button>
+              </div>
+            )}
+          </>
+        }
+      />
 
       <Card className="elevated-card overflow-hidden">
         <CardHeader className="pb-4">

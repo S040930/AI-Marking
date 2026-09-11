@@ -1,8 +1,6 @@
 import {
-  Loader2,
   AlertCircle,
   FileText,
-  ChevronLeft,
   CheckCircle2,
   ShieldCheck,
 } from 'lucide-react';
@@ -32,6 +30,9 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Empty } from '@/components/Empty';
 import { useLanguage } from '@/i18n';
+import { PageHeader } from '@/components/common/PageHeader';
+import { PageLoading } from '@/components/common/PageLoading';
+import { BackToHistoryButton } from '@/components/common/BackToHistoryButton';
 
 export default function ResultPage() {
   const { t } = useLanguage();
@@ -45,9 +46,18 @@ export default function ResultPage() {
 
   // P2-L3:轻量 status 先拉,处理中只靠 status 轮询;终态后再 enable 完整详情。
   // 避免处理中阶段拉取 ocr_text/assessment_suggestion 等大字段(此时均为 null,属浪费)。
-  const { data: statusData } = useSubmissionStatus(numericId);
+  const {
+    data: statusData,
+    isError: isStatusError,
+    error: statusError,
+  } = useSubmissionStatus(numericId);
   const detailEnabled = statusData ? isTerminal(statusData.status) : false;
-  const { data, isLoading: isDetailLoading } = useSubmission(
+  const {
+    data,
+    isLoading: isDetailLoading,
+    isError: isDetailError,
+    error: detailError,
+  } = useSubmission(
     numericId,
     detailEnabled,
     statusData?.status,
@@ -56,14 +66,7 @@ export default function ResultPage() {
   if (numericId === undefined) {
     return (
       <div className="mx-auto max-w-2xl">
-        <Button
-          variant="ghost"
-          onClick={() => navigate('/history')}
-          className="-ml-2 mb-4 text-muted-foreground hover:text-foreground"
-        >
-          <ChevronLeft />
-          {t('返回历史')}
-        </Button>
+        <BackToHistoryButton className="mb-4" />
         <Card className="elevated-card border-0">
           <CardContent className="flex flex-col items-center gap-4 py-16">
             <div className="flex size-14 items-center justify-center rounded-full bg-muted">
@@ -76,13 +79,24 @@ export default function ResultPage() {
     );
   }
 
+  // status 拉取失败:显示错误而不是永久 loading
+  if (isStatusError) {
+    return (
+      <div className="mx-auto max-w-2xl py-12">
+        <BackToHistoryButton className="mb-4" />
+        <Alert variant="destructive" className="border-0 shadow-lg">
+          <AlertCircle />
+          <AlertTitle>{t('加载记录失败')}</AlertTitle>
+          <AlertDescription>{statusError?.message}</AlertDescription>
+        </Alert>
+      </div>
+    );
+  }
+
   // status 首次拉取中
   if (!statusData) {
     return (
-      <div className="flex flex-col items-center justify-center gap-3 py-32">
-        <Loader2 className="size-8 animate-spin text-primary" />
-        <p className="text-sm text-muted-foreground">{t('加载中...')}</p>
-      </div>
+      <PageLoading />
     );
   }
 
@@ -91,13 +105,24 @@ export default function ResultPage() {
     return <Navigate to={`/review/${numericId}`} replace />;
   }
 
+  // 详情拉取失败:显示错误而不是永久 loading
+  if (isDetailError) {
+    return (
+      <div className="mx-auto max-w-2xl py-12">
+        <BackToHistoryButton className="mb-4" />
+        <Alert variant="destructive" className="border-0 shadow-lg">
+          <AlertCircle />
+          <AlertTitle>{t('加载详情失败')}</AlertTitle>
+          <AlertDescription>{detailError?.message}</AlertDescription>
+        </Alert>
+      </div>
+    );
+  }
+
   // 终态:详情拉取中
   if (isDetailLoading || !data) {
     return (
-      <div className="flex flex-col items-center justify-center gap-3 py-32">
-        <Loader2 className="size-8 animate-spin text-primary" />
-        <p className="text-sm text-muted-foreground">{t('加载结果中...')}</p>
-      </div>
+      <PageLoading text={t('加载结果中...')} />
     );
   }
 
@@ -109,14 +134,7 @@ export default function ResultPage() {
   if (data.status === 'failed') {
     return (
       <div className="mx-auto max-w-2xl py-12">
-        <Button
-          variant="ghost"
-          onClick={() => navigate('/history')}
-          className="-ml-2 mb-4 text-muted-foreground hover:text-foreground"
-        >
-          <ChevronLeft />
-          {t('返回历史')}
-        </Button>
+        <BackToHistoryButton className="mb-4" />
         <Alert variant="destructive" className="border-0 shadow-lg">
           <AlertCircle />
           <AlertTitle>{t('批改失败')}</AlertTitle>
@@ -136,31 +154,21 @@ export default function ResultPage() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-5">
-      <Button
-        variant="ghost"
-        onClick={() => navigate('/history')}
-        className="-ml-2 text-muted-foreground hover:text-foreground"
-      >
-        <ChevronLeft />
-        {t('返回历史')}
-      </Button>
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">
-            {t('批改结果')}
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {t('查看 AI 生成的评分、反馈与 OCR 原文')}
-          </p>
-        </div>
-        <Badge
-          variant="outline"
-          className="gap-1.5 border-success/20 bg-success/10 text-success"
-        >
-          <CheckCircle2 className="size-3.5" />
-          {t('已审阅')}
-        </Badge>
-      </div>
+      <BackToHistoryButton />
+      <PageHeader
+        className="mb-6 items-center"
+        title={t('批改结果')}
+        description={t('查看 AI 生成的评分、反馈与 OCR 原文')}
+        actions={
+          <Badge
+            variant="outline"
+            className="gap-1.5 border-success/20 bg-success/10 text-success"
+          >
+            <CheckCircle2 className="size-3.5" />
+            {t('已审阅')}
+          </Badge>
+        }
+      />
 
       <Card className="elevated-card overflow-hidden">
         <CardContent className="flex items-start justify-between gap-6 p-6">

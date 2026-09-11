@@ -8,6 +8,7 @@ import {
   ReviewPage,
   SettingsPage,
   UploadQuestionsPage,
+  UploadSubmissionPage,
 } from './lazyPages';
 
 export const router = createBrowserRouter([
@@ -19,6 +20,7 @@ export const router = createBrowserRouter([
       { path: 'history', element: <HistoryPage /> },
       { path: 'questions', element: <QuestionsPage /> },
       { path: 'questions/upload', element: <UploadQuestionsPage /> },
+      { path: 'submissions/upload', element: <UploadSubmissionPage /> },
       { path: 'result/:id', element: <ResultPage /> },
       { path: 'review/:id', element: <ReviewPage /> },
       { path: 'settings', element: <SettingsPage /> },

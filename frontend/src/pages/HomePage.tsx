@@ -1,30 +1,27 @@
 import { Link } from 'react-router-dom';
-import { Check, History, Upload } from 'lucide-react';
+import { Check, FileUp, History, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
 import { useLanguage } from '@/i18n';
+import { PageHeader } from '@/components/common/PageHeader';
 
 export default function HomePage() {
   const { t } = useLanguage();
 
   return (
     <div className="mx-auto max-w-3xl">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">
-          {t('AI 作业批改')}
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {t(
-            '学生作业通过编程助手（如 Codex）提交，本网页用于管理题目、查看评分并确认最终成绩。',
-          )}
-        </p>
-      </div>
+      <PageHeader
+        className="mb-6"
+        title={t('AI 作业批改')}
+        description={t(
+          '学生作业通过编程助手（如 Codex）提交，本网页用于管理题目、查看评分并确认最终成绩。',
+        )}
+      />
 
       <Card className="elevated-card overflow-hidden">
         <CardHeader className="pb-4">
@@ -34,9 +31,6 @@ export default function HomePage() {
             </div>
             <div>
               <CardTitle className="text-lg">{t('批改流程')}</CardTitle>
-              <CardDescription>
-                {t('提交作业由编程助手完成，你只需确认成绩')}
-              </CardDescription>
             </div>
           </div>
         </CardHeader>
@@ -88,6 +82,12 @@ export default function HomePage() {
           </ol>
 
           <div className="flex flex-col gap-3 border-t pt-5 sm:flex-row">
+            <Button asChild className="btn-press w-full sm:w-auto">
+              <Link to="/submissions/upload">
+                <FileUp />
+                {t('上传作业')}
+              </Link>
+            </Button>
             <Button asChild className="btn-press w-full sm:w-auto">
               <Link to="/questions/upload">
                 <Upload />
