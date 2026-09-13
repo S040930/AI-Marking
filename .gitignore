@@ -28,6 +28,7 @@ storage-migration*.json
 
 # Local database backups (may contain student data and API credentials)
 .backups/
+backup_*.sql
 
 # AI workspace artifacts
 .trae/
@@ -35,6 +36,14 @@ storage-migration*.json
 .codex/
 .zcode/
 .mimosa/
+.workbuddy/
+
+# Local-only docs and temp dirs
+PROJECT_BRIEF.md
+tmp_ch/
+
+# Skill packaging artifacts
+.agents/skills/*.zip
 
 # Build/generated artifacts
 .codex-build/
