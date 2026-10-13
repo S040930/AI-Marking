@@ -48,3 +48,6 @@ tmp_ch/
 # Build/generated artifacts
 .codex-build/
 output/
+
+# Test temp dirs
+.pytest_tmp/

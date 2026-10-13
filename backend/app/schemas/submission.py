@@ -31,7 +31,8 @@ class McpQualityChecksOut(BaseModel):
 class McpMetadataOut(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    source: Literal["mcp"] = "mcp"
+    # agent:自研内嵌 agent 产生;mcp:兼容读 v12 及更早的历史数据。
+    source: Literal["mcp", "agent"] = "agent"
     client: str | None = None
     rubric_source: Literal["configured", "question_extracted", "built_in_default"]
     rubric_snapshot_id: str

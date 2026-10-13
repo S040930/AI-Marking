@@ -13,7 +13,7 @@ else
 fi
 BACKEND_PID=""
 WORKER_PID=""
-ACP_WORKER_PID=""
+GRADING_WORKER_PID=""
 FRONTEND_PID=""
 STOPPED=0
 
@@ -86,11 +86,11 @@ cleanup() {
   info "正在关闭前后端..."
   [ -n "$FRONTEND_PID" ] && kill "$FRONTEND_PID" 2>/dev/null || true
   [ -n "$WORKER_PID" ] && kill "$WORKER_PID" 2>/dev/null || true
-  [ -n "$ACP_WORKER_PID" ] && kill "$ACP_WORKER_PID" 2>/dev/null || true
+  [ -n "$GRADING_WORKER_PID" ] && kill "$GRADING_WORKER_PID" 2>/dev/null || true
   [ -n "$BACKEND_PID" ] && kill "$BACKEND_PID" 2>/dev/null || true
   [ -n "$FRONTEND_PID" ] && wait "$FRONTEND_PID" 2>/dev/null || true
   [ -n "$WORKER_PID" ] && wait "$WORKER_PID" 2>/dev/null || true
-  [ -n "$ACP_WORKER_PID" ] && wait "$ACP_WORKER_PID" 2>/dev/null || true
+  [ -n "$GRADING_WORKER_PID" ] && wait "$GRADING_WORKER_PID" 2>/dev/null || true
   [ -n "$BACKEND_PID" ] && wait "$BACKEND_PID" 2>/dev/null || true
 }
 
@@ -118,7 +118,7 @@ fi
 
 if ! (
   cd "$BACKEND_DIR"
-  "$PYTHON_BIN" -c 'import app, mcp, acp'
+  "$PYTHON_BIN" -c 'import app'
 ) >/dev/null 2>&1; then
   info "开发依赖未就绪，运行 bootstrap..."
   "$ROOT_DIR/scripts/bootstrap"
@@ -160,12 +160,12 @@ info "正在启动持久化任务 worker"
 ) &
 WORKER_PID=$!
 
-info "正在启动 ACP 批改 worker"
+info "正在启动批改 worker"
 (
   cd "$BACKEND_DIR"
-  exec "$PYTHON_BIN" -m app.acp_worker
+  exec "$PYTHON_BIN" -m app.grading_worker
 ) &
-ACP_WORKER_PID=$!
+GRADING_WORKER_PID=$!
 
 info "正在启动前端：http://localhost:5173"
 (
@@ -178,7 +178,7 @@ printf '\n\033[1;32mAI Marking 已启动，按 Ctrl+C 同时关闭前后端。\0
 
 while kill -0 "$BACKEND_PID" 2>/dev/null \
   && kill -0 "$WORKER_PID" 2>/dev/null \
-  && kill -0 "$ACP_WORKER_PID" 2>/dev/null \
+  && kill -0 "$GRADING_WORKER_PID" 2>/dev/null \
   && kill -0 "$FRONTEND_PID" 2>/dev/null; do
   sleep 1
 done

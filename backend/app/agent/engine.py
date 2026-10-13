@@ -80,6 +80,7 @@ class AgentEngine:
         model: str | None = None,
         reasoning_effort: str | None = None,
         max_output_tokens: int | None = None,
+        config_getter: Callable[[], tuple[str | None, str | None]] | None = None,
         sleep: Callable[[float], Any] = asyncio.sleep,
     ) -> None:
         self._provider = provider
@@ -93,11 +94,14 @@ class AgentEngine:
         self._model = model
         self._reasoning_effort = reasoning_effort
         self._max_output_tokens = max_output_tokens
+        self._config_getter = config_getter
         self._sleep = sleep
 
     async def run(self, items: list[ChatItem], emit: EventSink) -> EngineOutcome:
         """从 ``items`` 出发执行循环;``emit`` 可为同步或异步回调。"""
         self._buffer = TextDeltaBuffer()
+        # 已在流式阶段发过 tool_started 的 call_id;执行阶段据此补发缺省事件
+        self._emitted_starts: set[str] = set()
         total_usage: dict[str, Any] = {}
         history: list[ChatItem] = list(items)
         rounds = 0
@@ -237,6 +241,7 @@ class AgentEngine:
                     elif isinstance(event, ProviderToolCallStarted):
                         started = True
                         await flush_text()
+                        self._emitted_starts.add(event.call_id)
                         await emit(
                             "tool_started",
                             {"call_id": event.call_id, "name": event.name},
@@ -270,12 +275,17 @@ class AgentEngine:
         self, history: list[ChatItem]
     ) -> AsyncIterator[ProviderEvent]:
         """把 provider 的流包装为可控队列,支持取消轮询与回合超时。"""
+        model, effort = self._model, self._reasoning_effort
+        if self._config_getter is not None:
+            resolved = self._config_getter()
+            if resolved is not None:
+                model, effort = resolved
         request = TurnRequest(
             instructions=self._instructions,
             items=list(history),
             tools=self._tools.specs(),
-            model=self._model,
-            reasoning_effort=self._reasoning_effort,
+            model=model,
+            reasoning_effort=effort,
             max_output_tokens=self._max_output_tokens,
         )
         queue: asyncio.Queue[Any] = asyncio.Queue()
@@ -348,6 +358,10 @@ class AgentEngine:
         for call in tool_calls:
             name = str(call.get("name") or "")
             call_id = str(call.get("call_id") or "")
+            if call_id not in self._emitted_starts:
+                # provider 未在流式阶段上报时补发,保证 started/finished 成对
+                self._emitted_starts.add(call_id)
+                await emit("tool_started", {"call_id": call_id, "name": name})
             raw_arguments = call.get("arguments")
             if isinstance(raw_arguments, dict):
                 arguments: dict[str, Any] = raw_arguments

@@ -1,8 +1,8 @@
 """ORM 模型聚合导出。
 
-ACP 批改模型(AcpRun/AcpRunEvent)位于 ``app.acp.models``,
+批改运行模型(GradingRun/GradingRunEvent)位于 ``app.models.grading_run``,
 由 ``app.db.base`` 统一注册元数据;此处不 re-export 以避免
-``app.models → app.acp.models → app.db.base → app.models`` 环。
+``app.models → app.models.grading_run → app.db.base → app.models`` 环。
 """
 
 from app.models.background_job import BackgroundJob

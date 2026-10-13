@@ -15,12 +15,6 @@ _BACKEND_DIR = Path(__file__).resolve().parents[2]
 
 AI_MARKING_SERVICE = "ai-marking"
 BACKEND_API_VERSION = "1"
-# v11: 新增 GET /api/mcp/submissions/{id}/wait-ready 长轮询端点,
-# MCP open 工具由固定 10s 轮询改为 NOTIFY 驱动的状态等待。
-# v12: 评分保存契约瘦身——客户端只提交逐项 rubric_item_id/score/comment/
-# evidence_refs/evidence_status,其余字段由服务端推导;移除强制第二遍自检
-# (review_enabled/self_check),新增 evidence_status=supported|not_found。
-MCP_API_VERSION = "12"
 
 
 class Settings(BaseSettings):
@@ -49,7 +43,7 @@ class Settings(BaseSettings):
     TASK_POLL_INTERVAL_SECONDS: float = 1.0
 
     # 外部编程助手 MCP 评分上下文总长度上限。
-    MCP_MAX_GRADING_CONTEXT_CHARS: int = 200_000
+    GRADING_MAX_CONTEXT_CHARS: int = 200_000
 
     # 全站访问令牌。为空表示鉴权关闭，保持向后兼容；设置后所有 /api 路由
     # （除 /api/health、/api/mcp/health、/api/auth/login、/api/auth/logout 外）

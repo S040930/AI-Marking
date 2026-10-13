@@ -464,7 +464,7 @@ def normalized_name(value: str) -> str:
     return unicodedata.normalize("NFKC", value).strip().casefold()
 
 
-def save_mcp_assessment(
+def save_agent_assessment(
     submission_id: int,
     payload: McpAssessmentRequest,
     db: Session,
@@ -494,34 +494,34 @@ def save_mcp_assessment(
     )
     if (
         len(question_text) + len(submission_text) + len(source_text)
-        > settings.MCP_MAX_GRADING_CONTEXT_CHARS
+        > settings.GRADING_MAX_CONTEXT_CHARS
     ):
         raise ValidationError(
-            "评分上下文超过 MCP_MAX_GRADING_CONTEXT_CHARS，请拆分作业或缩减提交内容后重试"
+            "评分上下文超过 GRADING_MAX_CONTEXT_CHARS，请拆分作业或缩减提交内容后重试"
         )
     if sub.status not in (
         SubmissionStatus.awaiting_mcp,
         SubmissionStatus.ready_for_review,
     ):
-        raise ConflictError("该作业当前不可保存外部评分建议")
+        raise ConflictError("该作业当前不可保存评分建议")
     requires_visual_confirmation = bool(sub.code_files)
-    acp_confirmation = None
+    run_confirmation = None
     if requires_visual_confirmation:
-        from app.acp.models import AcpRun
+        from app.models.grading_run import GradingRun
 
-        acp_confirmation = db.execute(
-            select(AcpRun)
+        run_confirmation = db.execute(
+            select(GradingRun)
             .where(
-                AcpRun.submission_id == submission_id,
-                AcpRun.confirmation_revision == sub.grading_revision,
-                AcpRun.confirmation_context_hash == current_hash,
-                AcpRun.teacher_verdict.in_(["consistent", "mismatch"]),
+                GradingRun.submission_id == submission_id,
+                GradingRun.confirmation_revision == sub.grading_revision,
+                GradingRun.confirmation_context_hash == current_hash,
+                GradingRun.teacher_verdict.in_(["consistent", "mismatch"]),
             )
-            .order_by(AcpRun.teacher_answered_at.desc())
+            .order_by(GradingRun.teacher_answered_at.desc())
             .limit(1)
         ).scalar_one_or_none()
     if requires_visual_confirmation and not (
-        (handle is not None and handle.visual_confirmation) or acp_confirmation
+        (handle is not None and handle.visual_confirmation) or run_confirmation
     ):
         raise ConflictError("含代码的评分必须先完成运行结果与报告一致性确认")
     request_id = str(payload.request_id)
@@ -581,10 +581,10 @@ def save_mcp_assessment(
             for detail in payload.details
         ),
         "visual_confirmation_valid": (not requires_visual_confirmation)
-        or bool((handle and handle.visual_confirmation) or acp_confirmation),
+        or bool((handle and handle.visual_confirmation) or run_confirmation),
     }
     metadata = {
-        "source": "mcp",
+        "source": "agent",
         "client": client,
         "rubric_source": resolved.source,
         "rubric_snapshot_id": resolved.snapshot_id,
@@ -606,15 +606,15 @@ def save_mcp_assessment(
             if handle and handle.visual_confirmation
             else (
                 {
-                    "verdict": acp_confirmation.teacher_verdict,
-                    "note": acp_confirmation.teacher_note,
-                    "confirmed_at": acp_confirmation.teacher_answered_at.isoformat()
-                    if acp_confirmation.teacher_answered_at
+                    "verdict": run_confirmation.teacher_verdict,
+                    "note": run_confirmation.teacher_note,
+                    "confirmed_at": run_confirmation.teacher_answered_at.isoformat()
+                    if run_confirmation.teacher_answered_at
                     else None,
-                    "source": "acp_teacher_checkpoint",
-                    "run_id": acp_confirmation.id,
+                    "source": "teacher_checkpoint",
+                    "run_id": run_confirmation.id,
                 }
-                if acp_confirmation
+                if run_confirmation
                 else None
             )
         ),
@@ -634,7 +634,7 @@ def save_mcp_assessment(
         **draft,
         "confidence": payload.confidence,
         "outcome": "review_required",
-        "review_reason": "外部编程助手评分建议需要教师确认",
+        "review_reason": "AI 批改评分建议需要教师确认",
         "mcp_metadata": metadata,
     }
     sub.graded_at = now
@@ -825,9 +825,9 @@ def open_grading_package(
             )
 
     package, context_hash = _cached_package_text(db, sub, resolved)
-    if len(package) > settings.MCP_MAX_GRADING_CONTEXT_CHARS:
+    if len(package) > settings.GRADING_MAX_CONTEXT_CHARS:
         raise ValidationError(
-            "评分上下文超过 MCP_MAX_GRADING_CONTEXT_CHARS，请拆分作业或缩减提交内容后重试"
+            "评分上下文超过 GRADING_MAX_CONTEXT_CHARS，请拆分作业或缩减提交内容后重试"
         )
     offset = 0
     if continuation_token:
@@ -1096,6 +1096,6 @@ def save_assessment(
     handle = load_workflow_handle(db, payload.grading_handle, kind="grading")
     if handle.submission_id != submission_id or not handle.context_complete:
         raise ConflictError("评分句柄与作业不匹配，请重新打开作业")
-    return save_mcp_assessment(
+    return save_agent_assessment(
         submission_id, payload.assessment, db, handle=handle, client=payload.client
     )

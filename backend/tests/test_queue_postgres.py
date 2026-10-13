@@ -406,15 +406,15 @@ def test_finalize_and_new_suggestion_cannot_overwrite_each_other():
 
 
 def test_recovery_and_old_worker_result_serialize():
-    from app.acp import runs
-    from app.acp.domain import AcpRunStatus
-    from app.acp.models import AcpRun
+    from app.agent import run_store as runs
+    from app.domain.grading_run import GradingRunStatus
+    from app.models.grading_run import GradingRun
 
     question_id, sub_id, _, _ = _grading_fixture()
     with _session() as db:
-        run = runs.create_run(db, submission_id=sub_id, agent_id="fake", agent_snapshot={}, workspace_path="/tmp/workspace")
+        run = runs.create_run(db, submission_id=sub_id, provider="openai_api", workspace_path="/tmp/workspace")
         db.commit()
-        run.status = AcpRunStatus.running
+        run.status = GradingRunStatus.running
         run.worker_id = "race-owner"
         run.claim_token = uuid4().hex
         run.lease_expires_at = utc_now_naive() - timedelta(seconds=1)
@@ -422,38 +422,38 @@ def test_recovery_and_old_worker_result_serialize():
         run_id, token = run.id, run.claim_token
 
     def recover(db, barrier):
-        db.get(AcpRun, run_id)
+        db.get(GradingRun, run_id)
         barrier.wait(timeout=10)
         return runs.requeue_expired_leases(db)
 
     def result(db, barrier):
-        stale = db.get(AcpRun, run_id)
+        stale = db.get(GradingRun, run_id)
         barrier.wait(timeout=10)
-        return runs.transition_run(db, stale, AcpRunStatus.failed, claim_token=token, error="Worker result")
+        return runs.transition_run(db, stale, GradingRunStatus.failed, claim_token=token, error="Worker result")
 
     try:
         results = _race(recover, result)
         assert all(not isinstance(value, Exception) for value in results.values()), results
         with _session() as db:
-            run = db.get(AcpRun, run_id)
-            assert run.status in (AcpRunStatus.queued, AcpRunStatus.failed)
+            run = db.get(GradingRun, run_id)
+            assert run.status in (GradingRunStatus.queued, GradingRunStatus.failed)
             assert run.claim_token is None
-            assert not runs.transition_run(db, run, AcpRunStatus.completed, claim_token=token)
+            assert not runs.transition_run(db, run, GradingRunStatus.completed, claim_token=token)
     finally:
         _cleanup(question_id)
 
 
 def test_checkpoint_reply_and_release_serialize():
-    from app.acp import runs
-    from app.acp.domain import AcpRunStatus
-    from app.acp.models import AcpRun
+    from app.agent import run_store as runs
     from app.application.mcp_workflow import build_context_parts
+    from app.domain.grading_run import GradingRunStatus
+    from app.models.grading_run import GradingRun
 
     question_id, sub_id, _, _ = _grading_fixture()
     with _session() as db:
-        run = runs.create_run(db, submission_id=sub_id, agent_id="fake", agent_snapshot={}, workspace_path="/tmp/workspace")
+        run = runs.create_run(db, submission_id=sub_id, provider="openai_api", workspace_path="/tmp/workspace")
         db.commit()
-        run.status = AcpRunStatus.running
+        run.status = GradingRunStatus.running
         run.worker_id = "race-owner"
         run.claim_token = uuid4().hex
         run.attempts = 1
@@ -464,12 +464,13 @@ def test_checkpoint_reply_and_release_serialize():
             claim_token=token)
 
     def reply(db, barrier):
-        stale = db.get(AcpRun, run_id)
+        stale = db.get(GradingRun, run_id)
         barrier.wait(timeout=10)
-        return runs.answer_checkpoint(db, stale, verdict="consistent", note=None)
+        from app.agent import checkpoints as checkpoint_repo
+        return checkpoint_repo.answer_checkpoint(db, stale, verdict="consistent", note=None)
 
     def release(db, barrier):
-        db.get(AcpRun, run_id)
+        db.get(GradingRun, run_id)
         barrier.wait(timeout=10)
         return runs.release_waiting_run(db, run_id, token)
 
@@ -477,8 +478,8 @@ def test_checkpoint_reply_and_release_serialize():
         results = _race(reply, release)
         assert results == {"first": True, "second": True}, results
         with _session() as db:
-            run = db.get(AcpRun, run_id)
-            assert run.status == AcpRunStatus.queued
+            run = db.get(GradingRun, run_id)
+            assert run.status == GradingRunStatus.queued
             assert run.worker_id is None
             assert run.teacher_verdict == "consistent"
     finally:

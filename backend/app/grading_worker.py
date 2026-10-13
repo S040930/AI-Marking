@@ -1,8 +1,7 @@
-"""持久化 ACP worker:领取 run、维持租约、执行、崩溃重排。
+"""批改 worker:领取 run、维持租约、执行、崩溃重排。
 
-运行方式:``python -m app.acp_worker``。
-与 OCR worker(``python -m app.worker``)独立,不在 FastAPI 进程内
-持有 agent 子进程。
+运行方式:``python -m app.grading_worker``。
+与 OCR worker(``python -m app.worker``)独立。
 """
 
 from __future__ import annotations
@@ -14,36 +13,14 @@ import socket
 import uuid
 from contextlib import suppress
 
-from app.acp import runs as run_repo
-from app.acp.domain import AcpRunStatus
-from app.acp.models import AcpRun
-from app.acp.orchestrator import (
-    LEASE_SECONDS,
-    execute_run,
-)
-from app.acp.registry import (
-    AgentEntry,
-    acp_cache_dir,
-    audit_snapshot,
-    effective_whitelist,
-)
-from app.acp.workspace import cleanup_expired_workspaces, materialize_workspace
+from app.agent import run_store as run_repo
+from app.agent.runner import LEASE_SECONDS, execute_run
+from app.agent.workspace import cleanup_expired_workspaces, materialize_workspace
 from app.db.session import SessionLocal, engine
+from app.domain.grading_run import GradingRunStatus
+from app.models.grading_run import GradingRun
 
 logger = logging.getLogger(__name__)
-
-ACP_CACHE_DIR = acp_cache_dir()
-
-
-def _entry_from_snapshot(snapshot: dict) -> AgentEntry:
-    entry = AgentEntry.from_dict(snapshot)
-    # 用当前生效白名单复审(教师可能已增删名单):包 + 发行 + 版本身份。
-    audit_snapshot(
-        entry.agent_id,
-        entry.to_dict(),
-        whitelist=effective_whitelist(ACP_CACHE_DIR),
-    )
-    return entry
 
 
 async def _heartbeat(run_id: int, claim_token: str, stopped: asyncio.Event) -> None:
@@ -64,10 +41,9 @@ async def _heartbeat(run_id: int, claim_token: str, stopped: asyncio.Event) -> N
 async def _run_one(run_id: int) -> None:
     claim_token = ""
     with SessionLocal() as db:
-        run = db.get(AcpRun, run_id)
+        run = db.get(GradingRun, run_id)
         if run is None:
             return
-        snapshot = dict(run.agent_snapshot)
         submission_id = run.submission_id
         claim_token = run.claim_token or ""
 
@@ -76,44 +52,38 @@ async def _run_one(run_id: int) -> None:
     heartbeat_stop = asyncio.Event()
     heartbeat_task = asyncio.create_task(
         _heartbeat(run_id, claim_token, heartbeat_stop),
-        name=f"acp-heartbeat-{run_id}",
+        name=f"grading-heartbeat-{run_id}",
     )
     try:
-        entry = _entry_from_snapshot(snapshot)
         with SessionLocal() as db:
-            run = db.get(AcpRun, run_id)
+            run = db.get(GradingRun, run_id)
             sub = db.get(Submission, submission_id)
             if run is None or sub is None:
-                raise ValueError("ACP run 或 submission 不存在")
+                raise ValueError("批改 run 或 submission 不存在")
             run = run_repo._worker_run(db, run, claim_token)
             materialize_workspace(run, sub)
-            has_code = bool(sub.has_code)
-            permission_mode = run.permission_mode
             db.commit()
 
         final = await execute_run(
             run_id,
             session_factory=SessionLocal,
-            entry=entry,
             submission_id=submission_id,
-            has_code=has_code,
             question_name=sub.question_name or sub.original_filename,
             claim_token=claim_token,
-            permission_mode=permission_mode,
         )
-        if final == AcpRunStatus.waiting_for_teacher:
+        if final == GradingRunStatus.waiting_for_teacher:
             with SessionLocal() as db:
                 run_repo.release_waiting_run(db, run_id, claim_token)
         logger.info("run 完成 [run=%s, status=%s]", run_id, final.value)
     except Exception as exc:
-        logger.exception("ACP run 未处理异常 [run=%s]", run_id)
+        logger.exception("批改 run 未处理异常 [run=%s]", run_id)
         with SessionLocal() as db:
-            run = db.get(AcpRun, run_id)
+            run = db.get(GradingRun, run_id)
             if run is not None:
                 run_repo.transition_run(
                     db,
                     run,
-                    AcpRunStatus.failed,
+                    GradingRunStatus.failed,
                     claim_token=claim_token,
                     error=f"{type(exc).__name__}: {exc}",
                 )
@@ -123,7 +93,7 @@ async def _run_one(run_id: int) -> None:
 
 
 async def run_worker() -> None:
-    worker_id = f"acp-{socket.gethostname()}-{uuid.uuid4().hex[:12]}"
+    worker_id = f"grading-{socket.gethostname()}-{uuid.uuid4().hex[:12]}"
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
@@ -135,7 +105,7 @@ async def run_worker() -> None:
     active: set[asyncio.Task[None]] = set()
     next_recovery_scan = loop.time()
     next_cleanup = loop.time()
-    logger.info("ACP worker 已启动 [worker=%s, concurrency=1]", worker_id)
+    logger.info("批改 worker 已启动 [worker=%s, concurrency=1]", worker_id)
 
     try:
         while not stop.is_set():
@@ -149,7 +119,7 @@ async def run_worker() -> None:
             if loop.time() >= next_cleanup:
                 deleted = cleanup_expired_workspaces()
                 if deleted:
-                    logger.info("已清理 %s 个过期 ACP 工作区", deleted)
+                    logger.info("已清理 %s 个过期批改工作区", deleted)
                 next_cleanup = loop.time() + 3600.0
 
             if not active:
@@ -162,7 +132,7 @@ async def run_worker() -> None:
                     )
                 if run is not None:
                     task = asyncio.create_task(
-                        _run_one(run.id), name=f"acp-run-{run.id}"
+                        _run_one(run.id), name=f"grading-run-{run.id}"
                     )
                     active.add(task)
 
@@ -171,7 +141,7 @@ async def run_worker() -> None:
                         with suppress(asyncio.CancelledError):
                             error = done.exception()
                             if error:
-                                logger.error("ACP run task 异常", exc_info=error)
+                                logger.error("批改 run task 异常", exc_info=error)
 
                     task.add_done_callback(_done)
                     poll_interval = 1.0
@@ -182,7 +152,7 @@ async def run_worker() -> None:
             except TimeoutError:
                 poll_interval = min(poll_interval * 2, poll_max)
     finally:
-        logger.info("ACP worker 正在关闭 [worker=%s]", worker_id)
+        logger.info("批改 worker 正在关闭 [worker=%s]", worker_id)
         for task in active:
             task.cancel()
         if active:

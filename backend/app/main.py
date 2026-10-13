@@ -10,16 +10,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.acp import router as acp_router
-from app.api.acp_chat import router as acp_chat_router
-from app.api.acp_chat import startup_reconcile_chats
 from app.api.admin import router as admin_router
+from app.api.agent import router as agent_router
 from app.api.auth import AccessTokenMiddleware
 from app.api.auth import router as auth_router
 from app.api.config import router as config_router
 from app.api.events import router as events_router
 from app.api.health import router as health_router
-from app.api.mcp import router as mcp_router
 from app.api.questions import router as questions_router
 from app.api.submissions import router as submissions_router
 from app.core.config import settings
@@ -39,28 +36,14 @@ from app.services.ocr import close_client as close_ocr_client
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """应用生命周期。
 
-    Startup:初始化本机应用资源;清理上次进程遗留的 ACP 对话会话行。
-    Shutdown:回收 ACP 对话 agent 子进程、关闭 OCR 共享客户端并释放
-    DB 连接池资源。持久化任务与 uploads 清理由独立
-    ``python -m app.worker`` 进程负责。
+    Startup:无本机子进程资源需要初始化(批改 agent 进程内运行)。
+    Shutdown:关闭 OCR 共享客户端并释放 DB 连接池资源。持久化任务与
+    uploads 清理由独立 ``python -m app.worker`` / ``app.grading_worker``
+    进程负责。
     """
-    from app.acp.chat import get_chat_registry
-    from app.db.session import get_session_factory
-
     try:
-        # 对话注册表使用与会话一致的工厂;孤儿行清理 best-effort。
-        registry = get_chat_registry()
-        registry.configure(get_session_factory())
-        try:
-            startup_reconcile_chats(get_session_factory())
-        except Exception:  # noqa: BLE001 - 清理失败不阻塞启动
-            pass
         yield
     finally:
-        try:
-            await get_chat_registry().shutdown()
-        except Exception:  # noqa: BLE001 - 收尾失败不掩盖主异常
-            pass
         await close_ocr_client()
         _engine.dispose()
 
@@ -112,9 +95,7 @@ def create_app() -> FastAPI:
     app.include_router(config_router, prefix="/api", tags=["config"])
     app.include_router(events_router, prefix="/api")
     app.include_router(admin_router, prefix="/api", tags=["admin"])
-    app.include_router(acp_router, prefix="/api", tags=["acp"])
-    app.include_router(acp_chat_router, prefix="/api", tags=["acp-chat"])
-    app.include_router(mcp_router, prefix="/api")
+    app.include_router(agent_router, prefix="/api", tags=["agent"])
 
     return app
 
