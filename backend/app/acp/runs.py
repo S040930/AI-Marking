@@ -3,17 +3,20 @@
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from datetime import timedelta
 from typing import Any
 
-from sqlalchemy import select, text, update
+from sqlalchemy import and_, or_, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.acp.domain import TERMINAL_RUN_STATUSES, AcpRunStatus
 from app.acp.models import AcpRun, AcpRunEvent
 from app.core.time import utc_now_naive
+
+logger = logging.getLogger(__name__)
 
 MAX_ATTEMPTS = 3
 MAX_TRANSCRIPT_BYTES = 5 * 1024 * 1024
@@ -120,6 +123,7 @@ def claim_next_run(
     )
     run = db.execute(
         claimable.with_for_update(skip_locked=True).limit(1)
+        .execution_options(populate_existing=True)
     ).scalar_one_or_none()
     if run is None:
         return None
@@ -152,6 +156,28 @@ def renew_lease(db: Session, run_id: int, claim_token: str, lease_seconds: int) 
     return result.rowcount == 1
 
 
+def _locked_run(db: Session, run_id: int) -> AcpRun | None:
+    return db.execute(
+        select(AcpRun).where(AcpRun.id == run_id).with_for_update()
+        .execution_options(populate_existing=True)
+    ).scalar_one_or_none()
+
+
+def _worker_run(db: Session, run: AcpRun, claim_token: str | None) -> AcpRun:
+    current = _locked_run(db, run.id)
+    if (current is None or current.status in TERMINAL_RUN_STATUSES
+            or current.status == AcpRunStatus.cancelling
+            or (claim_token is not None and current.claim_token != claim_token)):
+        raise ValueError("worker 已失去 run 所有权或运行已结束")
+    return current
+
+
+def _clear_owner(run: AcpRun) -> None:
+    run.lease_expires_at = None
+    run.claim_token = None
+    run.worker_id = None
+
+
 def transition_run(
     db: Session,
     run: AcpRun,
@@ -160,10 +186,11 @@ def transition_run(
     claim_token: str | None = None,
     error: str | None = None,
 ) -> bool:
-    """状态迁移;claim_token 不匹配或已终态时返回 False。"""
+    """持锁刷新后迁移，拒绝失效 worker 与终态覆盖。"""
     from app.acp.domain import ensure_run_transition
 
-    if claim_token is not None and run.claim_token != claim_token:
+    run = _locked_run(db, run.id)
+    if run is None or (claim_token is not None and run.claim_token != claim_token):
         return False
     try:
         ensure_run_transition(run.status, target)
@@ -174,15 +201,15 @@ def transition_run(
         run.error_message = error[:1024]
     if target in TERMINAL_RUN_STATUSES:
         run.finished_at = utc_now_naive()
-        run.lease_expires_at = None
-        run.claim_token = None
-        run.worker_id = None
+        run.checkpoint = None
+        run.checkpoint_expires_at = None
+        _clear_owner(run)
     db.commit()
     return True
 
 
 def append_event(
-    db: Session, run_id: int, *, kind: str, payload: dict[str, Any]
+    db: Session, run_id: int, *, kind: str, payload: dict[str, Any], commit: bool = True
 ) -> int:
     """原子追加有界事件；达到 5MB 后仅保留一次截断提示。"""
     from app.services.events import notify_acp_run_event
@@ -201,7 +228,8 @@ def append_event(
     ).scalar_one()
     if run.transcript_bytes + len(encoded) > MAX_TRANSCRIPT_BYTES:
         if run.transcript_truncated:
-            db.rollback()
+            if commit:
+                db.rollback()
             return run.next_event_seq
         kind = "notice"
         payload = {"text": "转录已达到 5MB 上限，后续事件不再持久化"}
@@ -213,7 +241,8 @@ def append_event(
     db.add(AcpRunEvent(run_id=run_id, seq=seq, kind=kind, payload=payload))
     db.flush()
     notify_acp_run_event(db, run_id, seq, kind, payload)
-    db.commit()
+    if commit:
+        db.commit()
     return seq
 
 
@@ -241,72 +270,79 @@ def latest_event_seq(db: Session, run_id: int) -> int:
     )
 
 
-def requeue_expired_leases(db: Session) -> int:
-    """崩溃重排:把租约过期的 starting/running run 重新排队。
+def _recover_run(db: Session, run: AcpRun) -> None:
+    """Recovery policy shared by expiry, shutdown and checkpoint release.
 
-    submission 已到 ready_for_review/reviewed 的 run 直接标记完成;
-    其余在重试上限内重新排队(attempts 由调用方判定)。
-    返回受影响行数。
+    The caller holds the run lock; this function does not commit.
     """
     from app.models.submission import Submission, SubmissionStatus
 
-    now = utc_now_naive()
-    expired = list(
-        db.execute(
-            select(AcpRun)
-            .where(
-                AcpRun.status.in_([AcpRunStatus.starting, AcpRunStatus.running]),
-                AcpRun.lease_expires_at.is_not(None),
-                AcpRun.lease_expires_at <= now,
-            )
-            .with_for_update(skip_locked=True)
-        ).scalars()
-    )
+    before = run.status
+    if before == AcpRunStatus.cancelling:
+        target = AcpRunStatus.cancelled
+    elif before == AcpRunStatus.waiting_for_teacher and run.checkpoint is not None:
+        target = AcpRunStatus.waiting_for_teacher
+    elif before in (AcpRunStatus.starting, AcpRunStatus.running) and db.scalar(
+        select(Submission.status).where(Submission.id == run.submission_id)
+    ) in (SubmissionStatus.ready_for_review, SubmissionStatus.reviewed):
+        target = AcpRunStatus.completed
+    elif run.attempts >= MAX_ATTEMPTS:
+        target = AcpRunStatus.failed
+    else:
+        target = AcpRunStatus.queued
+    run.status = target
+    _clear_owner(run)
+    if target in TERMINAL_RUN_STATUSES:
+        run.finished_at = utc_now_naive()
+        run.checkpoint = None
+        run.checkpoint_expires_at = None
+        run.error_message = (
+            "ACP worker 多次中断，已达到重试上限"
+            if target == AcpRunStatus.failed else None
+        )
+    logger.info("ACP run 恢复 [run=%s, before=%s, after=%s]", run.id, before.value, target.value)
+    append_event(db, run.id, kind="notice", payload={"text": f"运行恢复为 {target.value}", "status": target.value}, commit=False)
+
+
+def _recover_matching_runs(db: Session, condition) -> int:
+    # Bound memory and lock duration, including repair of legacy stuck rows.
     count = 0
-    for run in expired:
-        sub = db.get(Submission, run.submission_id)
-        if sub is not None and sub.status in (
-            SubmissionStatus.ready_for_review,
-            SubmissionStatus.reviewed,
-        ):
-            run.status = AcpRunStatus.completed
-            run.finished_at = now
-            run.error_message = None
-        else:
-            if run.attempts >= MAX_ATTEMPTS:
-                run.status = AcpRunStatus.failed
-                run.finished_at = now
-                run.error_message = "ACP worker 多次中断，已达到重试上限"
-            else:
-                run.status = AcpRunStatus.queued
-        run.lease_expires_at = None
-        run.worker_id = None
-        run.claim_token = None
-        count += 1
-    if count:
+    while True:
+        rows = list(db.execute(
+            select(AcpRun).where(condition).order_by(AcpRun.id).limit(100)
+            .with_for_update(skip_locked=True)
+            .execution_options(populate_existing=True)
+        ).scalars())
+        if not rows:
+            return count
+        for run in rows:
+            _recover_run(db, run)
         db.commit()
-    return count
+        count += len(rows)
+        if len(rows) < 100:
+            return count
+
+
+def requeue_expired_leases(db: Session) -> int:
+    """释放过期所有权，并终结无人处理的取消/重试耗尽记录。"""
+    return _recover_matching_runs(db, or_(
+        and_(
+            AcpRun.status.in_([AcpRunStatus.starting, AcpRunStatus.running,
+                              AcpRunStatus.waiting_for_teacher, AcpRunStatus.cancelling]),
+            AcpRun.lease_expires_at.is_not(None),
+            AcpRun.lease_expires_at <= utc_now_naive(),
+        ),
+        and_(AcpRun.status == AcpRunStatus.cancelling, AcpRun.worker_id.is_(None)),
+        and_(AcpRun.status == AcpRunStatus.queued, AcpRun.attempts >= MAX_ATTEMPTS),
+    ))
 
 
 def requeue_worker_runs(db: Session, worker_id: str) -> int:
-    """优雅关闭:释放本 worker 的全部租约。"""
-    now = utc_now_naive()
-    result = db.execute(
-        update(AcpRun)
-        .where(
-            AcpRun.worker_id == worker_id,
-            AcpRun.status.in_([AcpRunStatus.starting, AcpRunStatus.running]),
-        )
-        .values(
-            status=AcpRunStatus.queued,
-            lease_expires_at=None,
-            worker_id=None,
-            claim_token=None,
-            updated_at=now,
-        )
-    )
-    db.commit()
-    return result.rowcount
+    """进程已关闭后按同一恢复规则释放该 worker 的所有活跃运行。"""
+    return _recover_matching_runs(db, and_(
+        AcpRun.worker_id == worker_id,
+        AcpRun.status.notin_(list(TERMINAL_RUN_STATUSES)),
+    ))
 
 
 def save_checkpoint(
@@ -317,13 +353,18 @@ def save_checkpoint(
     dwell_seconds: int,
     confirmation_revision: int,
     confirmation_context_hash: str,
+    claim_token: str | None = None,
 ) -> None:
     """进入教师检查点驻留;30 分钟无答复由 API 侧超时关闭会话。"""
     from app.acp.domain import ensure_run_transition
 
+    run = _worker_run(db, run, claim_token)
     now = utc_now_naive()
     ensure_run_transition(run.status, AcpRunStatus.waiting_for_teacher)
     run.status = AcpRunStatus.waiting_for_teacher
+    run.teacher_verdict = None
+    run.teacher_note = None
+    run.teacher_answered_at = None
     run.checkpoint = checkpoint
     run.checkpoint_asked_at = now
     run.checkpoint_expires_at = now + timedelta(seconds=dwell_seconds)
@@ -334,6 +375,9 @@ def save_checkpoint(
 
 def request_cancel(db: Session, run: AcpRun) -> bool:
     """幂等请求取消；活跃会话由持有 claim 的 worker 完成回收。"""
+    run = _locked_run(db, run.id)
+    if run is None:
+        return False
     if run.status in TERMINAL_RUN_STATUSES:
         return True
     if run.status == AcpRunStatus.cancelling:
@@ -359,39 +403,35 @@ def claim_control_state(db: Session, run_id: int, claim_token: str) -> str:
 def answer_checkpoint(
     db: Session, run: AcpRun, *, verdict: str, note: str | None
 ) -> bool:
-    """持久教师答复;仅当前驻留检查点有效。"""
-    if run.status != AcpRunStatus.waiting_for_teacher or run.checkpoint is None:
-        return False
+    """锁序 Question -> Submission -> Run，答复只绑定当前检查点。"""
+    from app.application.locking import lock_submission_after_question
     from app.application.mcp_workflow import build_context_parts
-    from app.models.submission import Submission
 
-    sub = db.get(Submission, run.submission_id)
-    if sub is None:
+    sub = lock_submission_after_question(db, run.submission_id)
+    run = _locked_run(db, run.id)
+    if (run is None or sub is None or run.status != AcpRunStatus.waiting_for_teacher
+            or run.checkpoint is None):
         return False
     _, _, _, current_hash, _ = build_context_parts(db, sub)
-    if (
-        run.confirmation_revision != sub.grading_revision
-        or run.confirmation_context_hash != current_hash
-    ):
-        run.checkpoint = None
-        run.checkpoint_expires_at = None
-        db.commit()
+    if (run.confirmation_revision != sub.grading_revision
+            or run.confirmation_context_hash != current_hash):
+        transition_run(db, run, AcpRunStatus.failed, error="评分上下文已变化，请重新发起代码一致性检查")
         raise ValueError("评分上下文已变化，请重新发起代码一致性检查")
-    now = utc_now_naive()
     run.teacher_verdict = verdict
     run.teacher_note = note
-    run.teacher_answered_at = now
+    run.teacher_answered_at = utc_now_naive()
     run.checkpoint = None
     run.checkpoint_expires_at = None
     if run.worker_id is None:
-        run.status = AcpRunStatus.queued
+        _recover_run(db, run)
     db.commit()
     return True
 
 
 def record_session(
-    db: Session, run: AcpRun, *, session_id: str, resumable: bool
+    db: Session, run: AcpRun, *, session_id: str, resumable: bool, claim_token: str | None = None
 ) -> None:
+    run = _worker_run(db, run, claim_token)
     run.acp_session_id = session_id
     run.session_resumable = resumable
     db.commit()
@@ -414,39 +454,31 @@ def queue_codex_configuration(
 
 
 def mark_codex_configuration_applied(
-    db: Session, run: AcpRun, config: dict[str, Any]
+    db: Session, run: AcpRun, config: dict[str, Any], *, claim_token: str | None = None
 ) -> None:
+    run = _worker_run(db, run, claim_token)
     run.applied_codex_config = dict(config)
     run.pending_codex_config = None
     run.codex_config = dict(config)
     db.commit()
 
 
-def mark_codex_configuration_failed(db: Session, run: AcpRun) -> None:
+def mark_codex_configuration_failed(
+    db: Session, run: AcpRun, *, claim_token: str | None = None
+) -> None:
     """Clear a pending update while retaining the last applied snapshot."""
+    run = _worker_run(db, run, claim_token)
     run.pending_codex_config = None
     run.codex_config = dict(run.applied_codex_config or {})
     db.commit()
 
 
 def release_waiting_run(db: Session, run_id: int, claim_token: str) -> bool:
-    """会话已关闭后释放检查点所有权；已答复则重新排队。"""
-    run = db.execute(
-        select(AcpRun).where(AcpRun.id == run_id).with_for_update()
-    ).scalar_one_or_none()
-    if (
-        run is None
-        or run.claim_token != claim_token
-        or run.status != AcpRunStatus.waiting_for_teacher
-    ):
+    """会话已关闭后释放检查点所有权；答复与重试耗尽采用统一规则。"""
+    run = _locked_run(db, run_id)
+    if (run is None or run.claim_token != claim_token
+            or run.status != AcpRunStatus.waiting_for_teacher):
         return False
-    run.status = (
-        AcpRunStatus.queued
-        if run.teacher_answered_at is not None
-        else AcpRunStatus.waiting_for_teacher
-    )
-    run.worker_id = None
-    run.claim_token = None
-    run.lease_expires_at = None
+    _recover_run(db, run)
     db.commit()
     return True

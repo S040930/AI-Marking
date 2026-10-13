@@ -85,6 +85,7 @@ async def _run_one(run_id: int) -> None:
             sub = db.get(Submission, submission_id)
             if run is None or sub is None:
                 raise ValueError("ACP run 或 submission 不存在")
+            run = run_repo._worker_run(db, run, claim_token)
             materialize_workspace(run, sub)
             has_code = bool(sub.has_code)
             permission_mode = run.permission_mode

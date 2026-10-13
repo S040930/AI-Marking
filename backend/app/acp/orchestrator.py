@@ -106,8 +106,10 @@ class RunCallbacks(ClientCallbacks):
         permission_mode: str = "ask",
         agent_id: str = "codex-acp",
         agent_version: str = "unknown",
+        claim_token: str | None = None,
     ) -> None:
         self.run_id = run_id
+        self._claim_token = claim_token
         self._factory = session_factory
         self._buffer = TextDeltaBuffer()
         self._renew_seconds = lease_renew_seconds
@@ -124,10 +126,10 @@ class RunCallbacks(ClientCallbacks):
         return self._factory()
 
     def _renew(self) -> None:
+        if self._claim_token is None:
+            return
         with self._db() as db:
-            run = db.get(AcpRun, self.run_id)
-            if run is not None and run.claim_token:
-                renew_lease(db, run.id, run.claim_token, self._renew_seconds)
+            renew_lease(db, self.run_id, self._claim_token, self._renew_seconds)
 
     async def on_event(self, event: AcpEvent) -> None:
         if event.kind == AcpEventKind.message_delta:
@@ -257,6 +259,7 @@ class RunCallbacks(ClientCallbacks):
                 dwell_seconds=CHECKPOINT_DWELL_SECONDS,
                 confirmation_revision=sub.grading_revision,
                 confirmation_context_hash=context_hash,
+                claim_token=self._claim_token,
             )
         self.checkpoint_created = True
         # 不驻留 agent；持久化后拒绝本次 elicitation，turn 结束即关闭会话。
@@ -335,16 +338,17 @@ def mcp_server_config() -> dict[str, Any]:
 
 
 def build_grading_prompt(submission_id: int, *, question_name: str) -> str:
-    """run 提示词：入口只给题目标识，完整流程由工作区 skill.md 提供。
+    """run 提示词：入口只给身份标识，完整流程由工作区 skill.md 提供。
 
     ai-marking-grader skill 以 ``skill.md`` 物化在工作区根目录
-    （workspace.materialize_*），是批改流程唯一权威源；提示词不再内嵌流程或
-    点名模式（模式判定在 skill 内完成），避免与 SKILL.md 双份漂移。
-    语义与前端 ``buildAcpChatGradingPrompt`` 对齐。
+    （workspace.materialize_*），是批改流程唯一权威源；提示词不再内嵌流程，
+    只显式声明 ``workflow_mode: acp_existing``（skill 据此跳过模式判定），
+    避免与 SKILL.md 双份漂移。语义与前端 ``buildAcpChatGradingPrompt`` 对齐。
     """
     return "\n\n".join(
         [
             f"请批改 AI-Marking 作业《{question_name}》（submission_id={submission_id}）。",
+            "workflow_mode: acp_existing",
             "这是已存在且已完成 OCR 的作业：先读取工作区根目录的 skill.md 获取"
             "完整批改流程（内含模式判定与评分步骤），然后严格按其评分。流程与证据"
             "契约以该文件为唯一权威；请勿调用 prepare_ai_marking_submission 或"
@@ -388,6 +392,7 @@ async def execute_run(
         permission_mode=permission_mode,
         agent_id=entry.agent_id,
         agent_version=entry.version,
+        claim_token=claim_token,
     )
     spec = launch_spec_from_entry(
         entry, cwd=str(workspace), permission_mode=permission_mode
@@ -431,11 +436,11 @@ async def execute_run(
             sid = existing_sid
             if loaded is None:
                 sid = await _open_new_session(
-                    session, session_factory, run_id, workspace, mcp_servers
+                    session, session_factory, run_id, workspace, mcp_servers, claim_token=claim_token
                 )
         else:
             sid = await _open_new_session(
-                session, session_factory, run_id, workspace, mcp_servers
+                session, session_factory, run_id, workspace, mcp_servers, claim_token=claim_token
             )
 
         if entry.agent_id == "codex-acp":
@@ -444,6 +449,7 @@ async def execute_run(
                 sid,
                 run_id,
                 session_factory=session_factory,
+                claim_token=claim_token,
             )
 
         # 教师已答复的续跑:把答复与前次摘要注入提示
@@ -483,7 +489,7 @@ async def execute_run(
                 sub = db.get(Submission, submission_id)
                 if sub is not None and sub.status == SubmissionStatus.awaiting_mcp:
                     if has_code:
-                        _save_deterministic_checkpoint(db, run, submission_id)
+                        _save_deterministic_checkpoint(db, run, submission_id, claim_token=claim_token)
                         return AcpRunStatus.waiting_for_teacher
                     raise AcpError("agent 未保存无代码作业的评分建议")
                 transition_run(db, run, AcpRunStatus.completed, claim_token=claim_token)
@@ -537,6 +543,7 @@ async def _apply_run_configuration(
     run_id: int,
     *,
     session_factory: sessionmaker,
+    claim_token: str | None = None,
 ) -> dict[str, Any] | None:
     """Apply persisted desired config at a safe point before the next turn.
 
@@ -559,7 +566,7 @@ async def _apply_run_configuration(
             if run is not None:
                 from app.acp.runs import mark_codex_configuration_failed
 
-                mark_codex_configuration_failed(db, run)
+                mark_codex_configuration_failed(db, run, claim_token=claim_token)
                 append_event(
                     db,
                     run_id,
@@ -574,7 +581,7 @@ async def _apply_run_configuration(
         if run is not None:
             from app.acp.runs import mark_codex_configuration_applied
 
-            mark_codex_configuration_applied(db, run, result.config)
+            mark_codex_configuration_applied(db, run, result.config, claim_token=claim_token)
             append_event(
                 db,
                 run_id,
@@ -619,7 +626,7 @@ async def _prompt_with_cancel(
 
 
 def _save_deterministic_checkpoint(
-    db: Session, run: AcpRun, submission_id: int
+    db: Session, run: AcpRun, submission_id: int, *, claim_token: str | None = None
 ) -> None:
     from app.application.mcp_workflow import build_context_parts
     from app.models.submission import Submission
@@ -639,6 +646,7 @@ def _save_deterministic_checkpoint(
         dwell_seconds=CHECKPOINT_DWELL_SECONDS,
         confirmation_revision=sub.grading_revision,
         confirmation_context_hash=context_hash,
+        claim_token=claim_token,
     )
 
 
@@ -648,6 +656,7 @@ async def _open_new_session(
     run_id: int,
     workspace: Path,
     mcp_servers: list[dict[str, Any]],
+    *, claim_token: str | None = None,
 ) -> str:
     """新建 ACP 会话并把 session ID 持久化;返回 session ID。"""
     new = await session.new_session(cwd=str(workspace), mcp_servers=mcp_servers)
@@ -659,6 +668,7 @@ async def _open_new_session(
                 run,
                 session_id=new.session_id,
                 resumable=session.supports_load_session,
+                claim_token=claim_token,
             )
     return new.session_id
 

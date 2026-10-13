@@ -309,3 +309,174 @@ def test_terminal_statuses():
     assert TERMINAL_RUN_STATUSES == frozenset(
         {AcpRunStatus.completed, AcpRunStatus.failed, AcpRunStatus.cancelled}
     )
+
+
+@pytest.mark.parametrize("source", ["expiry", "shutdown", "release"])
+@pytest.mark.parametrize("answered,attempts,target", [
+    (False, 1, AcpRunStatus.waiting_for_teacher),
+    (False, 3, AcpRunStatus.waiting_for_teacher),
+    (True, 1, AcpRunStatus.queued),
+    (True, 3, AcpRunStatus.failed),
+])
+def test_waiting_recovery_uses_one_policy(factory, source, answered, attempts, target):
+    from datetime import timedelta
+
+    from app.application.mcp_workflow import build_context_parts
+    from app.core.time import utc_now_naive
+
+    sid = _submission_id(factory)
+    run_id = _make_run(factory, sid)
+    with factory() as db:
+        run = run_repo.claim_next_run(db, worker_id="owner", lease_seconds=90, max_concurrent=1)
+        token = run.claim_token
+        run_repo.transition_run(db, run, AcpRunStatus.running, claim_token=token)
+        sub = db.get(Submission, sid)
+        run_repo.save_checkpoint(db, run, checkpoint={"type": "code_consistency"}, dwell_seconds=1800,
+                                 confirmation_revision=0, confirmation_context_hash=build_context_parts(db, sub)[3],
+                                 claim_token=token)
+        run.attempts = attempts
+        if answered:
+            run.teacher_verdict = "consistent"
+            run.teacher_answered_at = utc_now_naive()
+            run.checkpoint = None
+        run.lease_expires_at = utc_now_naive() - timedelta(seconds=1)
+        db.commit()
+        if source == "expiry":
+            assert run_repo.requeue_expired_leases(db) == 1
+        elif source == "shutdown":
+            assert run_repo.requeue_worker_runs(db, "owner") == 1
+        else:
+            assert run_repo.release_waiting_run(db, run_id, token)
+        assert run.status == target
+        assert run.worker_id is None
+        assert run.claim_token is None
+        assert run.lease_expires_at is None
+        if not answered:
+            assert run.checkpoint is not None
+            assert run_repo.answer_checkpoint(db, run, verdict="consistent", note=None)
+            assert run.status == (AcpRunStatus.failed if attempts == 3 else AcpRunStatus.queued)
+        if run.status == AcpRunStatus.failed:
+            assert run.finished_at is not None
+            assert run_repo.get_active_run_for_submission(db, sid) is None
+
+
+@pytest.mark.parametrize("source", ["expiry", "shutdown"])
+@pytest.mark.parametrize("initial,attempts,scored,target", [
+    (AcpRunStatus.cancelling, 1, False, AcpRunStatus.cancelled),
+    (AcpRunStatus.running, 1, False, AcpRunStatus.queued),
+    (AcpRunStatus.running, 3, False, AcpRunStatus.failed),
+    (AcpRunStatus.starting, 3, True, AcpRunStatus.completed),
+])
+def test_active_recovery_and_old_worker_rejection(factory, source, initial, attempts, scored, target):
+    from datetime import timedelta
+
+    from app.core.time import utc_now_naive
+
+    sid = _submission_id(factory)
+    _make_run(factory, sid)
+    with factory() as db:
+        run = run_repo.claim_next_run(db, worker_id="owner", lease_seconds=90, max_concurrent=1)
+        old_token = run.claim_token
+        run.status = initial
+        run.attempts = attempts
+        run.lease_expires_at = utc_now_naive() - timedelta(seconds=1)
+        if scored:
+            db.get(Submission, sid).status = SubmissionStatus.ready_for_review
+        db.commit()
+        if source == "expiry":
+            assert run_repo.requeue_expired_leases(db) == 1
+        else:
+            assert run_repo.requeue_worker_runs(db, "owner") == 1
+        assert run.status == target
+        assert not run_repo.transition_run(db, run, AcpRunStatus.failed, claim_token=old_token)
+        with pytest.raises(ValueError, match="所有权"):
+            run_repo.record_session(db, run, session_id="obsolete", resumable=True, claim_token=old_token)
+        assert run.status == target
+        assert run.acp_session_id is None
+        if target in TERMINAL_RUN_STATUSES:
+            assert run.finished_at is not None
+        assert run_repo.requeue_expired_leases(db) == 0
+
+
+def test_scan_repairs_exhausted_queue_and_ownerless_cancel(factory):
+    sid = _submission_id(factory)
+    run_id = _make_run(factory, sid)
+    with factory() as db:
+        run = db.get(AcpRun, run_id)
+        run.attempts = run_repo.MAX_ATTEMPTS
+        db.commit()
+        assert run_repo.requeue_expired_leases(db) == 1
+        assert run.status == AcpRunStatus.failed
+        assert run_repo.get_active_run_for_submission(db, sid) is None
+    run_id = _make_run(factory, sid)
+    with factory() as db:
+        run = db.get(AcpRun, run_id)
+        run.status = AcpRunStatus.cancelling
+        db.commit()
+        assert run_repo.requeue_expired_leases(db) == 1
+        assert run.status == AcpRunStatus.cancelled
+
+
+def test_reply_rejects_changed_context_and_frees_run(factory):
+    from app.application.mcp_workflow import build_context_parts
+
+    sid = _submission_id(factory)
+    _make_run(factory, sid)
+    with factory() as db:
+        run = run_repo.claim_next_run(db, worker_id="owner", lease_seconds=90, max_concurrent=1)
+        run_repo.transition_run(db, run, AcpRunStatus.running)
+        sub = db.get(Submission, sid)
+        run_repo.save_checkpoint(db, run, checkpoint={"type": "code_consistency"}, dwell_seconds=1800,
+                                 confirmation_revision=0, confirmation_context_hash=build_context_parts(db, sub)[3])
+        sub.grading_revision = 1
+        db.commit()
+        with pytest.raises(ValueError, match="评分上下文已变化"):
+            run_repo.answer_checkpoint(db, run, verdict="consistent", note=None)
+        assert run.status == AcpRunStatus.failed
+        assert run.checkpoint is None
+        assert run_repo.get_active_run_for_submission(db, sid) is None
+
+
+def test_reply_then_release_and_release_then_reply_both_resume(factory):
+    from app.application.mcp_workflow import build_context_parts
+
+    sid = _submission_id(factory)
+    for reply_first in (True, False):
+        run_id = _make_run(factory, sid)
+        with factory() as db:
+            run = run_repo.claim_next_run(db, worker_id="owner", lease_seconds=90, max_concurrent=1)
+            token = run.claim_token
+            run_repo.transition_run(db, run, AcpRunStatus.running)
+            sub = db.get(Submission, sid)
+            run_repo.save_checkpoint(db, run, checkpoint={"type": "code_consistency"}, dwell_seconds=1800,
+                                     confirmation_revision=0, confirmation_context_hash=build_context_parts(db, sub)[3])
+            if reply_first:
+                assert run_repo.answer_checkpoint(db, run, verdict="consistent", note=None)
+                assert run_repo.release_waiting_run(db, run_id, token)
+            else:
+                assert run_repo.release_waiting_run(db, run_id, token)
+                assert run_repo.answer_checkpoint(db, run, verdict="consistent", note=None)
+            assert run.status == AcpRunStatus.queued
+            assert run_repo.claim_next_run(db, worker_id="new-owner", lease_seconds=90, max_concurrent=1)
+            run_repo.transition_run(db, run, AcpRunStatus.cancelled)
+
+
+def test_old_callback_cannot_renew_new_worker_lease(factory):
+    from datetime import timedelta
+
+    from app.acp.orchestrator import RunCallbacks
+    from app.core.time import utc_now_naive
+
+    sid = _submission_id(factory)
+    run_id = _make_run(factory, sid)
+    with factory() as db:
+        run = run_repo.claim_next_run(db, worker_id="old", lease_seconds=90, max_concurrent=1)
+        old_token = run.claim_token
+        run.lease_expires_at = utc_now_naive() - timedelta(seconds=1)
+        db.commit()
+        assert run_repo.requeue_expired_leases(db) == 1
+        run = run_repo.claim_next_run(db, worker_id="new", lease_seconds=90, max_concurrent=1)
+        new_expiry = run.lease_expires_at
+    RunCallbacks(run_id, session_factory=factory, claim_token=old_token)._renew()
+    with factory() as db:
+        assert db.get(AcpRun, run_id).lease_expires_at == new_expiry

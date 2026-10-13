@@ -191,11 +191,13 @@ def test_prompt_mentions_mcp_tools():
     assert "《测试题目》" in prompt
     assert "submission_id=42" in prompt
     assert "请勿调用 prepare_ai_marking_submission" in prompt
-    # run 提示词只做入口:流程/证据契约/模式判定全部收敛到工作区 skill.md,不点名模式
+    # run 提示词只做入口:显式声明 workflow_mode,skill 不再用文件系统猜;
+    # 流程/证据契约全部收敛到工作区 skill.md
+    assert "workflow_mode: acp_existing" in prompt
     assert ("ai-marking-grader" in prompt) or ("skill.md" in prompt)
     assert "skill.md" in prompt
     assert "最终成绩由教师在网页确认" in prompt
-    for forbidden in ("ACP 模式", "MCP 模式", "open_ai_marking_assignment", "needs_rubric", "source_line"):
+    for forbidden in ("open_ai_marking_assignment", "needs_rubric", "source_line"):
         assert forbidden not in prompt, f"提示词不应内嵌: {forbidden}"
 
 
