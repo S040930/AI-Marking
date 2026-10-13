@@ -25,7 +25,7 @@ describe('HomePage', () => {
 
     expect(screen.getByText('批改流程')).toBeInTheDocument();
     expect(screen.getByText('准备题目')).toBeInTheDocument();
-    expect(screen.getByText('编程助手提交作业')).toBeInTheDocument();
+    expect(screen.getByText('网页上传作业')).toBeInTheDocument();
     expect(screen.getByText('在网页确认成绩')).toBeInTheDocument();
   });
 

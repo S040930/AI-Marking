@@ -478,31 +478,6 @@ export interface paths {
         patch: operations["rename_question_api_questions__question_id__patch"];
         trace?: never;
     };
-    "/api/questions/{question_id}/grading-prompt": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Question Grading Prompt
-         * @description 按题目生成可审计的批改提示词。
-         *
-         *     复用与运行时评分包完全相同的 rubric 解析与评分策略组装
-         *     （``resolve_submission_rubric`` + ``build_grading_policy``），
-         *     保证教师复制的提示词与 ``open_ai_marking_assignment`` 返回的
-         *     grading_policy 同源、一字不差。题目 OCR 未完成时无法生成。
-         */
-        get: operations["get_question_grading_prompt_api_questions__question_id__grading_prompt_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/questions/{question_id}/pdf": {
         parameters: {
             query?: never;
@@ -1182,34 +1157,6 @@ export interface components {
             visual_confirmation?: components["schemas"]["GradingVisualConfirmationOut"] | null;
         } & {
             [key: string]: unknown;
-        };
-        /**
-         * GradingPromptOut
-         * @description 按题目生成的可审计批改提示词：与运行时评分包中的 grading_policy 同源。
-         */
-        GradingPromptOut: {
-            /** Grading Mode */
-            grading_mode: string;
-            /** Grading Policy */
-            grading_policy: {
-                [key: string]: unknown;
-            };
-            /** Name */
-            name: string;
-            /** Needs Rubric */
-            needs_rubric: boolean;
-            /** Ocr Text */
-            ocr_text?: string | null;
-            /** Question Id */
-            question_id: string;
-            /** Snapshot Id */
-            snapshot_id?: string | null;
-            /** Source */
-            source: string;
-            /** Text */
-            text: string;
-            /** Total Max Score */
-            total_max_score: number;
         };
         /** GradingQualityChecksOut */
         GradingQualityChecksOut: {
@@ -2606,37 +2553,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["QuestionOut"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_question_grading_prompt_api_questions__question_id__grading_prompt_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                question_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["GradingPromptOut"];
                 };
             };
             /** @description Validation Error */

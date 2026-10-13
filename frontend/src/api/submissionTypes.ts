@@ -13,7 +13,7 @@ export interface AiSuggestion {
   feedback: string;
   details: AiSuggestionDetail[];
   confidence: number;
-  mcp_metadata?: components['schemas']['McpMetadataOut'];
+  agent_metadata?: components['schemas']['GradingMetadataOut'];
 }
 
 export type AssessmentReview = components['schemas']['AssessmentReviewOut'];
@@ -97,13 +97,18 @@ export function isTerminal(status: SubmissionStatus): boolean {
 }
 
 export function isProcessing(status: SubmissionStatus): boolean {
-  return ['pending', 'ocr_processing', 'ocr_done', 'awaiting_mcp'].includes(status);
+  return ['pending', 'ocr_processing', 'ocr_done', 'awaiting_grading'].includes(status);
 }
 
 /**
- * awaiting_mcp 已经有可展示的作业详情，但仍等待 MCP 客户端写入建议。
+ * awaiting_grading 已经有可展示的作业详情，但仍等待批改 run 写入建议。
  * 其他处理中状态的大字段尚未准备好，避免提前拉取完整详情。
  */
 export function canLoadSubmissionDetail(status: SubmissionStatus): boolean {
-  return ['awaiting_mcp', 'ready_for_review', 'reviewed', 'failed'].includes(status);
+  return [
+    'awaiting_grading',
+    'ready_for_review',
+    'reviewed',
+    'failed',
+  ].includes(status);
 }

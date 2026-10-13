@@ -22,19 +22,19 @@ describe('isTerminal', () => {
     expect(isTerminal('failed')).toBe(true);
   });
 
-  it('awaiting_mcp 仍需等待外部助手，不是终态', () => {
-    expect(isTerminal('awaiting_mcp')).toBe(false);
+  it('awaiting_grading 仍需等待外部助手，不是终态', () => {
+    expect(isTerminal('awaiting_grading')).toBe(false);
   });
 
-  it('awaiting_mcp 可加载恢复页详情', () => {
-    expect(canLoadSubmissionDetail('awaiting_mcp')).toBe(true);
+  it('awaiting_grading 可加载恢复页详情', () => {
+    expect(canLoadSubmissionDetail('awaiting_grading')).toBe(true);
   });
 
   const nonTerminal: SubmissionStatus[] = [
     'pending',
     'ocr_processing',
     'ocr_done',
-    'awaiting_mcp',
+    'awaiting_grading',
   ];
 
   nonTerminal.forEach((status) => {
@@ -75,7 +75,7 @@ describe('isTerminal 与 isProcessing 互斥', () => {
     'pending',
     'ocr_processing',
     'ocr_done',
-    'awaiting_mcp',
+    'awaiting_grading',
     'ready_for_review',
     'reviewed',
     'failed',

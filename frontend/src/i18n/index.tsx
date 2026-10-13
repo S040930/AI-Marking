@@ -24,6 +24,71 @@ const STORAGE_KEY = 'ai-marking-locale';
  * 完整规则（引号、分节、验证路由）见 docs/frontend/i18n.md。
  */
 const englishMessages: Record<string, string> = {
+  '批改 agent 的主通道：使用 API key 直接调用 OpenAI Responses API':
+    'The primary channel for the grading agent: call the OpenAI Responses API directly with your API key.',
+  '网页上传作业': 'Upload in the web app',
+  '上传学生报告 PDF 与代码文件（或包含全部文件的 ZIP），在详情页选择模型通道后开始批改，AI 批改 agent 自动完成评分。':
+    'Upload the student report PDF and code files (or a ZIP containing everything), choose the model channel on the review page and start marking; the built-in AI grading agent scores it automatically.',
+  '评分建议生成后进入批改详情页核对，必要时人工调整，确认后提交最终成绩。':
+    'Once the suggestion is ready, open the review page to check it, adjust manually if needed, and confirm the final score.',
+  '网页端管理题目、上传学生作业，由 AI 批改 agent 评分并确认最终成绩。':
+    'Manage questions, upload student assignments, let the AI grading agent score them, and confirm final grades — all in the web app.',
+  // 批改 agent(内嵌)与模型通道
+  '开始 AI 批改': 'Start AI marking',
+  '批改已启动': 'Marking started',
+  '批改由本机后端直接调用模型完成，不再需要外部编程助手。':
+    'Marking calls the model directly from the local backend — no external coding assistant needed.',
+  '官方 OpenAI API': 'OpenAI API',
+  'ChatGPT 订阅': 'ChatGPT Subscription',
+  'ChatGPT 订阅通道': 'ChatGPT Subscription channel',
+  '使用 ChatGPT 订阅额度调用模型；该通道尚未开放，仅作占位。':
+    'Use ChatGPT subscription quota to call models. This channel is not open yet; placeholder only.',
+  '订阅通道依赖非公开接口，存在账号风控风险；开放前请使用官方 API 通道。':
+    'The subscription channel relies on non-public endpoints and carries account-risk concerns. Use the official API channel until it opens.',
+  '未开放': 'Not open yet',
+  '已配置': 'Configured',
+  '未配置': 'Not configured',
+  '当前已配置': 'Currently configured',
+  '尚未配置': 'Not configured yet',
+  '留空表示不修改': 'leave blank to keep unchanged',
+  '请输入 OpenAI API key': 'Enter your OpenAI API key',
+  'API 地址(可选)': 'API base URL (optional)',
+  '默认思考强度': 'Default thinking effort',
+  '模型默认': 'Model default',
+  '模型 ID': 'Model ID',
+  '模型 ID(留空用默认)': 'Model ID (blank = default)',
+  '应用': 'Apply',
+  '保存通道配置': 'Save channel config',
+  '连接测试': 'Test connection',
+  '连接正常': 'Connection OK',
+  '连接测试未通过': 'Connection test failed',
+  '个可用模型': 'models available',
+  '通道配置已保存': 'Channel config saved',
+  '默认通道已更新': 'Default channel updated',
+  '加载模型通道中...': 'Loading model channels...',
+  '加载通道配置中...': 'Loading channel config...',
+  '配置没有变化': 'No changes to save',
+  '默认批改通道': 'Default marking channel',
+  '发起批改时未指定通道则使用默认通道': 'Used when a marking run does not specify a channel',
+  '请先在设置页配置官方 OpenAI API key。':
+    'Configure your OpenAI API key in Settings first.',
+  '前往设置': 'Go to Settings',
+  'AI 批改运行': 'AI marking run',
+  'AI 批改': 'AI marking',
+  '外部助手(历史)': 'External assistant (legacy)',
+  '评分来源': 'Grading source',
+  '评分通道：': 'Grading channel: ',
+  'Token 用量': 'Token usage',
+  '检查点备注': 'Checkpoint note',
+  '可在本地运行学生代码后核对结果再确认，或直接确认；选择"不一致"时必须填写说明。':
+    'Optionally run the student code locally to verify the result before confirming, or confirm directly. Choosing "mismatch" requires a note.',
+  '配置模型通道、OCR 解析与评分标准': 'Configure model channels, OCR parsing and grading rubric',
+  '上传后自动进入批改流程，由 AI 批改 agent 完成评分。':
+    'After upload the assignment enters the marking flow; the built-in AI grading agent produces the score.',
+  '上传成功后跳转到批改详情页：在详情页选择模型通道与思考强度，点击「开始批改」即可；评分建议生成后由教师确认最终成绩。':
+    'After upload you are taken to the review page: choose the model channel and thinking effort, then click "Start marking". The teacher confirms the final score once the suggestion is ready.',
+  '在网页端上传学生作业：选择题目、报告 PDF 与代码文件，提交后进入批改流程。':
+    'Upload a student assignment: pick a question, the report PDF and code files; the marking flow starts after upload.',
   '评分建议已更新，已保留你的修改。请载入最新建议后重新复核。': 'The suggestion has changed. Your edits have been kept. Load the latest suggestion and review it again.',
   '载入最新建议': 'Load latest suggestion',
   '评分状态已变化，请核对最新结果后重新复核': 'The grading state has changed. Check the latest result before reviewing again.',
@@ -61,7 +126,6 @@ const englishMessages: Record<string, string> = {
   '查看 AI 生成的评分、反馈与 OCR 原文': 'View AI-generated scores, feedback, and OCR text',
   已审阅: 'Reviewed',
   总分: 'Total score',
-  'MCP 评分来源': 'MCP grading source',
   '置信度：': 'Confidence: ',
   '评分客户端：': 'Grading client: ',
   总体反馈: 'Overall feedback',
@@ -76,67 +140,39 @@ const englishMessages: Record<string, string> = {
   查看评分工作台: 'Open marking workspace',
   返回历史: 'Back to history',
   批改流程: 'Marking workflow',
-  '提交作业由编程助手完成，你只需确认成绩': 'Assignments are submitted by the programming assistant; you only confirm the final score',
   准备题目: 'Prepare a question',
   '先在题目库上传并识别题目 PDF，题目只需上传一次，之后可反复使用。':
     'Upload and recognize a question PDF in the question library once, then reuse it for any number of assignments.',
-  编程助手提交作业: 'Programming assistant submits the assignment',
-  '在编程助手（如 Codex）中打开本项目的 AI-Marking 工具，直接提供学生报告 PDF 与代码文件路径，由它调用本地 MCP 完成评分。':
-    'Open the AI-Marking tool for this project in your programming assistant (e.g. Codex) and give it the report PDF and code file paths; it grades through the local MCP interface.',
   在网页确认成绩: 'Confirm the score here',
-  '编程助手只保存评分建议；进入历史记录或评分工作台审阅，确认后提交最终成绩。':
-    'The programming assistant only saves a grading suggestion; open History or the marking workspace to review and submit the final score.',
   前往题目库: 'Open question library',
   查看历史记录: 'View history',
-  '学生作业通过编程助手（如 Codex）提交，本网页用于管理题目、查看评分并确认最终成绩。':
-    'Student assignments are submitted through your programming assistant (e.g. Codex). This site manages questions, shows scores, and confirms final grades.',
   关闭: 'Close',
   '排队等待处理': 'Queued',
   'OCR 识别中': 'OCR in progress',
   'OCR 已完成': 'OCR complete',
-  '等待 MCP 评分': 'Waiting for MCP grading',
   待审阅: 'Ready for review',
   失败: 'Failed',
-  '编程助手指令已复制': 'Assistant instruction copied',
   '复制失败，请手动选择指令': 'Copy failed. Select the instruction manually.',
-  '等待编程助手评分': 'Waiting for assistant grading',
   '已复制': 'Copied',
-  复制编程助手指令: 'Copy assistant instruction',
   复制: 'Copy',
   '复制失败，请手动复制上方文本': 'Copy failed. Please copy the text above manually.',
-  '复制提示词': 'Copy prompt',
   '批改提示词': 'Grading prompt',
-  '复制后在编程助手（如 Codex）中粘贴，并在对话中上传学生作业 zip（一名学生一个 zip：报告 PDF + 代码文件）。':
-    'Copy it, paste into your coding assistant (e.g. Codex), and upload the student zip in the chat (one zip per student: report PDF + code files).',
-  '提示词生成失败': 'Failed to generate prompt',
-  '该题目尚未完成 OCR 识别，无法生成批改提示词。请先在题目库确认识别完成后再试。':
-    'This question has no OCR text yet, so the grading prompt cannot be generated. Confirm OCR is complete in the question library and try again.',
-  '发起 AI 复核': 'Start AI review',
   'AI 复核': 'AI review',
-  '重新发起 AI 复核': 'Start AI review again',
   '切换到英文': 'Switch to English',
   'Switch to Chinese': 'Switch to Chinese',
   页面出现异常: 'Something went wrong',
   '抱歉，应用遇到了未预期的问题。请尝试刷新页面，若问题持续存在请联系管理员。':
     'Sorry, the application encountered an unexpected problem. Refresh the page, and contact an administrator if it persists.',
   刷新页面: 'Refresh page',
-  'AI 复核指令已复制，请粘贴给编程助手': 'AI review instruction copied. Paste it into your programming assistant.',
-  'MCP 客户端': 'MCP client',
   来自: 'From',
   切换: 'Switch',
   '作业': 'Assignment',
-  '这条作业的 OCR 已完成，正等待 MCP 客户端（如 Codex）评分。如果原任务已关闭，可复制下面的恢复指令继续处理，或使用待办列表工具发现作业。':
-    'OCR is complete and the MCP client is expected to grade this assignment. If the original task was closed, copy the recovery instruction below or use the todo-list tool to find it.',
-  '编程助手只会保存评分建议；最终成绩仍需教师回到此网页确认。':
-    'The programming assistant only saves a grading suggestion. A teacher must return here to confirm the final score.',
   '题目提取': 'Question extraction',
   配置项: 'Configured',
   内置默认: 'Built-in default',
   复核同意: 'Review agrees',
   部分分歧: 'Partially disagrees',
   存在分歧: 'Disagrees',
-  '尚无 AI 复核；可将作业交给另一个编程助手任务独立复核。':
-    'No AI review yet. Send this assignment to another programming assistant task for an independent review.',
   '建议已更新（当前 revision': 'Suggestion updated (current revision',
   '复核针对 revision': 'reviewed revision',
   '），此结论已过期': '); this conclusion is stale',
@@ -161,7 +197,6 @@ const englishMessages: Record<string, string> = {
   报告: 'Report',
   代码证据: 'Code evidence',
   调整作业与评分面板宽度: 'Adjust assignment and grading panel width',
-  '调整评分面板与 AI 助手宽度': 'Resize grading panel and AI assistant',
   题目: 'Question',
   'PDF 加载失败': 'Failed to load PDF',
   '文件可能已过期或无法访问。请返回历史记录重新上传。':
@@ -169,7 +204,6 @@ const englishMessages: Record<string, string> = {
   待处理: 'Pending',
   'OCR识别中': 'OCR in progress',
   'OCR完成': 'OCR complete',
-  '等待MCP评分': 'Waiting for MCP grading',
   'OCR 失败：': 'OCR failed: ',
   '。请重新选择 PDF 上传。': '. Choose a PDF to upload again.',
   '新版识别失败：': 'New version recognition failed: ',
@@ -246,7 +280,6 @@ const englishMessages: Record<string, string> = {
   输入完整题目名称: 'Enter the complete question name',
   确认并永久: 'Permanently ',
   替换: 'replace',
-  '配置 OCR 解析与评分标准': 'Configure OCR parsing and grading rubrics',
   '将 PDF 解析为结构化 Markdown，保留表格、公式与阅读顺序': 'Parse PDFs into structured Markdown while preserving tables, formulas, and reading order',
   '请填写完整接口：异步任务入口 .../api/v2/ocr/jobs，或同步入口 .../layout-parsing；不要填写 .../api/v2/ocr/jobs/layout-parsing。': 'Use the complete endpoint: async .../api/v2/ocr/jobs or sync .../layout-parsing. Do not use .../api/v2/ocr/jobs/layout-parsing.',
   '请输入 PaddleOCR Access Token': 'Enter the PaddleOCR access token',
@@ -335,10 +368,6 @@ const englishMessages: Record<string, string> = {
   '加载配置中...': 'Loading configuration...',
   '加载配置失败': 'Failed to load configuration',
   '上传题目使用的配置项目': 'Configuration profile used for question upload',
-  // ACP 批改助手目录(设置页)
-  批改助手目录: 'Marking assistant catalog',
-  '从 ACP Registry 发现的审核白名单助手；安装后可发起自动批改':
-    'Whitelisted assistants discovered from the ACP Registry. Install one to start automatic marking.',
   刷新: 'Refresh',
   'Registry 已刷新': 'Registry refreshed',
   '加载助手目录中...': 'Loading assistant catalog...',
@@ -348,10 +377,6 @@ const englishMessages: Record<string, string> = {
   待登录: 'Login required',
   连接失败: 'Connection failed',
   不支持: 'Unsupported',
-  'Codex ACP 安装与连接测试；连接后可发起自动批改':
-    'Install and test Codex ACP; start automatic marking after the connection is ready.',
-  'Codex 原生工作区沙箱，网络已关闭':
-    'Codex native workspace sandbox; network access is disabled.',
   已装: 'installed',
   未安装: 'Not installed',
   可更新到: 'update available:',
@@ -365,30 +390,14 @@ const englishMessages: Record<string, string> = {
   版本是最新: 'Already up to date:',
   已设为默认批改助手: 'Set as the default marking assistant',
   'Registry 版本': 'Registry version',
-  '登录凭证由各助手自行管理；连接测试不会保存任何密钥。':
-    'Login credentials are managed by each assistant. Connection tests never store any secrets.',
-  // ACP 自动批改(审阅页)
   自动批改: 'Automatic marking',
-  '启动 ACP 自动批改': 'Start ACP automatic marking',
-  '选择一个已安装的批改助手,由它在隔离工作区完成评分并保存建议。':
-    'Pick an installed marking assistant. It grades the work in an isolated workspace and saves a suggestion.',
-  '尚无已安装的助手,请先到「系统设置 → 批改助手目录」安装。':
-    'No installed assistants yet. Install one in Settings → Marking assistant catalog first.',
   开始批改: 'Start marking',
-  '启动 Codex 自动批改': 'Start Codex automatic marking',
-  '点击后会在右侧 AI 助手中填入批改指令;你先调整模型、思考强度与权限档位,再手动发送开始批改。':
-    'The grading instruction will be placed in the AI assistant on the right. Adjust the model, reasoning effort and permission mode first, then send it to start marking.',
-  '批改运行进行中,对话已暂时冻结。':
-    'A marking run is in progress — chat is temporarily frozen.',
-  '窗口宽度不足,请拉宽窗口后再打开 AI 助手':
-    'Window is too narrow — widen it to open the AI assistant',
   运行配置: 'Run configuration',
   配置已更新: 'Configuration updated',
   '配置已排队,将在下一回合生效':
     'Configuration queued — takes effect on the next turn.',
   '新配置将在下一回合生效':
     'The new configuration takes effect on the next turn.',
-  'ACP 批改运行': 'ACP marking run',
   排队中: 'Queued',
   启动助手中: 'Starting assistant',
   批改进行中: 'Marking in progress',
@@ -409,15 +418,11 @@ const englishMessages: Record<string, string> = {
   '批改运行失败,可重新发起。': 'The marking run failed. You can start a new one.',
   '批改运行已取消,可重新发起。':
     'The marking run was cancelled. You can start a new one.',
-  // ACP 对话面板(审阅页右侧)
   'AI 助手': 'AI assistant',
-  'ACP 助手': 'ACP assistant',
   新对话: 'New chat',
   收起对话面板: 'Collapse chat panel',
   对话: 'Chat',
   '想聊点关于这份作业的什么?': 'What would you like to ask about this submission?',
-  '批改助手会读取本作业的报告与代码,逐条回答你的追问。':
-    'The assistant reads this submission report and code, then answers your follow-ups one by one.',
   随心输入: 'Type anything…',
   助手: 'Assistant',
   模型: 'Model',
@@ -433,10 +438,6 @@ const englishMessages: Record<string, string> = {
   停止: 'Stop',
   关闭会话: 'Close session',
   已关闭会话: 'Session closed',
-  '批改流程进行中,暂不可继续对话。':
-    'Marking in progress. Chat is unavailable right now.',
-  '输入消息,Enter 发送,Shift+Enter 换行':
-    'Type a message. Enter to send, Shift+Enter for a new line',
   消息输入框: 'Message input',
   发送: 'Send',
   发送中: 'Sending',
@@ -449,42 +450,24 @@ const englishMessages: Record<string, string> = {
   复制命令: 'Copy command',
   复制输出: 'Copy output',
   复制代码: 'Copy code',
-  // ACP 新对话底部工具栏(Zed 风格)
   权限档位: 'Permission mode',
   请求批准: 'Ask for approval',
   自动批准: 'Approve for me',
   模型与思考强度: 'Model & thinking effort',
   'Ask for approval': 'Ask for approval',
   'Approve for me': 'Approve for me',
-  'Codex 模型': 'Codex model',
-  'Agent 默认模型': 'Agent default model',
   思考强度: 'Thinking effort',
-  'Agent 默认思考': 'Agent default thinking',
-  'Agent 默认': 'Agent default',
   快速: 'Fast',
   标准: 'Standard',
   'Fast mode': 'Fast mode',
   确认快速模式: 'Confirm Fast mode',
-  '快速模式可能提高 ChatGPT 额度或 API 成本。':
-    'Fast mode may increase ChatGPT quota or API cost.',
-  '当前账户、模型或 Agent 版本未声明快速模式，暂仅支持标准模式。':
-    'The current account, model, or agent version does not declare Fast mode; only Standard mode is available.',
-  '读取 Codex 配置能力中…': 'Reading Codex configuration capabilities…',
-  '请先在系统设置安装并连接测试 Codex ACP。':
-    'Install and connect Codex ACP in Settings first.',
-  'Codex ACP': 'Codex ACP',
-  // ACP 对话省略号菜单与永久删除
   更多操作: 'More actions',
   删除对话: 'Delete conversation',
   对话已永久删除: 'Conversation permanently deleted',
   删除对话失败: 'Failed to delete conversation',
   永久删除: 'Delete permanently',
-  '将永久删除该对话的聊天记录、事件转录与专属工作区，此操作不可恢复。':
-    'This permanently deletes the conversation history, event transcript, and its dedicated workspace. This cannot be undone.',
   // 网页端上传作业
   上传作业: 'Upload assignment',
-  '在网页端上传学生作业：选择题目、报告 PDF 与代码文件，提交后选择评分方式，系统会自动进入批改流程。':
-    'Upload a student assignment here: pick a question, the report PDF and code files, choose a grading mode, and the system enters the marking flow automatically.',
   作业信息: 'Assignment info',
   '选择作业对应的题目，并上传学生报告 PDF。':
     'Choose the question this assignment belongs to and upload the student assignment file.',
@@ -516,8 +499,6 @@ const englishMessages: Record<string, string> = {
   '批改时随代码一并物化到隔离工作区,供程序运行读取。':
     'Materialized into the isolated workspace together with the code for programs to read during grading.',
   '学生报告 PDF': 'Student report PDF',
-  '选择报告 PDF': 'Choose the report PDF',
-  '点击选择报告 PDF': 'Choose the report PDF',
   '仅支持 PDF 格式，单个文件不超过 50MB':
     'PDF only, up to 50MB per file',
   '代码文件（可选）': 'Code files (optional)',
@@ -529,24 +510,13 @@ const englishMessages: Record<string, string> = {
   入口文件: 'Entry file',
   清空: 'Clear',
   评分方式: 'Grading mode',
-  '选择本次作业的评分方式，上传后自动进入对应批改流程。':
-    'Choose how this assignment is graded. The system enters the matching flow after upload.',
-  '使用 ACP 自动批改': 'Grade with ACP',
-  '由本机已安装的批改助手在隔离工作区自动评分，上传后自动启动。':
-    'An installed assistant grades it automatically in an isolated workspace right after upload.',
   '默认以 Ask for approval 档位启动，批改会话中可随时调整模型与权限。':
     'Starts in the Ask for approval mode; you can adjust the model and permission mode anytime in the marking session.',
-  '使用 MCP 等待外部编程助手': 'Wait for external assistant (MCP)',
-  '上传后由外部编程助手调用本地 MCP 评分，评分建议进入待审阅列表。':
-    'An external programming assistant grades it via the local MCP after upload; the suggestion lands in the review list.',
   批改助手: 'Assistant',
-  '上传成功后跳转到批改详情页，等待外部编程助手（如 Codex）调用本地 MCP 评分。':
-    'After upload you are taken to the review page to wait for the external assistant (e.g. Codex) to grade via the local MCP.',
   开始上传: 'Upload',
   '作业已上传，正在进入批改流程': 'Assignment uploaded. Entering the marking flow',
   请先选择题目: 'Select a question first',
   '请先选择报告 PDF': 'Choose the report PDF first',
-  请先选择批改助手: 'Choose an assistant first',
   '请选择 PDF 文件': 'Please choose a PDF file',
   '文件超过 50MB，请压缩后重试': 'The file exceeds 50MB. Compress it and retry',
   每道小题需各选一个入口文件: 'Each sub-question needs exactly one entry file',
@@ -557,19 +527,13 @@ const englishMessages: Record<string, string> = {
   '」的小题号必须是正整数': '” must have a positive integer sub-question number',
   '」识别完成，已为你预选，可直接上传作业答案':
     '” finished recognizing and is preselected. You can upload the assignment now.',
-  '沙箱与网络限制由 Codex 原生配置决定，应用不再叠加限制。':
-    'Sandbox and network restrictions follow the Codex native configuration; this app adds no extra limits.',
-  // ACP 助手目录(设置页)
   卸载: 'Uninstall',
   卸载已安装链接: 'Uninstall installed link',
   尚未安装: 'Not installed',
   版本已是最新: 'Version is up to date',
   已卸载安装链接: 'Install link removed',
   '安装（Registry 无版本信息）': 'Install (no version from registry)',
-  '确认卸载该助手？已安装链接将被删除，助手仍保留在目录中。':
-    'Uninstall this assistant? The installed link is removed; the assistant stays in the directory.',
   // 批改运行 / 对话面板 / 记录页错误分支
-  'Codex ACP 批改运行': 'Codex ACP marking run',
   会话加载失败: 'Failed to load the chat session',
   加载记录失败: 'Failed to load the record',
   加载详情失败: 'Failed to load the details',

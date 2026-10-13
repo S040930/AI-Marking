@@ -16,10 +16,7 @@ import {
   AlertTitle,
 } from '@/components/ui/alert';
 import { ConfigSettingsForm } from '@/components/settings/ConfigSettingsForm';
-import {
-  AcpAgentDirectory,
-  AcpAgentDirectoryHint,
-} from '@/components/settings/AcpAgentDirectory';
+import { AgentProviderSettings } from '@/components/settings/AgentProviderSettings';
 import { useLanguage } from '@/i18n';
 import { PageHeader } from '@/components/common/PageHeader';
 import {
@@ -107,12 +104,11 @@ export default function SettingsPage() {
       <PageHeader
         className="mb-6"
         title={t('系统设置')}
-        description={t('配置 OCR 解析与评分标准')}
+        description={t('配置模型通道、OCR 解析与评分标准')}
       />
 
-      {/* 批改助手目录(ACP) */}
-      <AcpAgentDirectory />
-      <AcpAgentDirectoryHint />
+      {/* 模型通道(批改 agent) */}
+      <AgentProviderSettings />
 
       <ConfigSettingsForm
         form={form}

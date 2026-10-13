@@ -13,11 +13,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { QuestionCard } from '@/components/questions/QuestionCard';
-import {
-  QuestionDangerDialog,
-  type QuestionDanger,
-} from '@/components/questions/QuestionDangerDialog';
-import { QuestionPromptDialog } from '@/components/questions/QuestionPromptDialog';
+import { QuestionDangerDialog, type QuestionDanger } from '@/components/questions/QuestionDangerDialog';
 import { ResultExportDialog } from '@/components/questions/ResultExportDialog';
 import { errorMessage } from '@/lib/questionErrors';
 import { useLanguage } from '@/i18n';
@@ -29,7 +25,6 @@ export default function QuestionsPage() {
   const [confirmation, setConfirmation] = useState('');
   const { t } = useLanguage();
   const [acknowledgedDeletion, setAcknowledgedDeletion] = useState(false);
-  const [promptQuestion, setPromptQuestion] = useState<Question | null>(null);
   const [exportQuestion, setExportQuestion] = useState<Question | null>(null);
   const renameMutation = useRenameQuestion();
   const retryMutation = useRetryQuestionOcr();
@@ -143,7 +138,6 @@ export default function QuestionsPage() {
               onRetryUpload={retryUpload}
               onReplace={(q, file) => setDanger({ type: 'replace', question: q, file })}
               onDelete={(q) => setDanger({ type: 'delete', question: q })}
-              onCopyPrompt={setPromptQuestion}
               onExportResults={setExportQuestion}
             />
           ))}
@@ -169,12 +163,6 @@ export default function QuestionsPage() {
         }}
       />
 
-      <QuestionPromptDialog
-        question={promptQuestion}
-        onOpenChange={(open) => {
-          if (!open) setPromptQuestion(null);
-        }}
-      />
       {exportQuestion && (
         <ResultExportDialog
           question={exportQuestion}

@@ -1052,78 +1052,6 @@
         "title": "GradingMetadataOut",
         "type": "object"
       },
-      "GradingPromptOut": {
-        "description": "按题目生成的可审计批改提示词：与运行时评分包中的 grading_policy 同源。",
-        "properties": {
-          "grading_mode": {
-            "title": "Grading Mode",
-            "type": "string"
-          },
-          "grading_policy": {
-            "additionalProperties": true,
-            "title": "Grading Policy",
-            "type": "object"
-          },
-          "name": {
-            "title": "Name",
-            "type": "string"
-          },
-          "needs_rubric": {
-            "title": "Needs Rubric",
-            "type": "boolean"
-          },
-          "ocr_text": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Ocr Text"
-          },
-          "question_id": {
-            "title": "Question Id",
-            "type": "string"
-          },
-          "snapshot_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Snapshot Id"
-          },
-          "source": {
-            "title": "Source",
-            "type": "string"
-          },
-          "text": {
-            "title": "Text",
-            "type": "string"
-          },
-          "total_max_score": {
-            "title": "Total Max Score",
-            "type": "number"
-          }
-        },
-        "required": [
-          "question_id",
-          "name",
-          "grading_mode",
-          "source",
-          "total_max_score",
-          "needs_rubric",
-          "grading_policy",
-          "text"
-        ],
-        "title": "GradingPromptOut",
-        "type": "object"
-      },
       "GradingQualityChecksOut": {
         "properties": {
           "arithmetic_valid": {
@@ -3891,49 +3819,6 @@
           }
         },
         "summary": "Rename Question",
-        "tags": [
-          "questions"
-        ]
-      }
-    },
-    "/api/questions/{question_id}/grading-prompt": {
-      "get": {
-        "description": "按题目生成可审计的批改提示词。\n\n复用与运行时评分包完全相同的 rubric 解析与评分策略组装\n（``resolve_submission_rubric`` + ``build_grading_policy``），\n保证教师复制的提示词与 ``open_ai_marking_assignment`` 返回的\ngrading_policy 同源、一字不差。题目 OCR 未完成时无法生成。",
-        "operationId": "get_question_grading_prompt_api_questions__question_id__grading_prompt_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "question_id",
-            "required": true,
-            "schema": {
-              "title": "Question Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GradingPromptOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Get Question Grading Prompt",
         "tags": [
           "questions"
         ]

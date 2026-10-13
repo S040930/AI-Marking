@@ -7,20 +7,6 @@ import { queryKeys } from '@/api/queryKeys';
 
 export type Question = components['schemas']['QuestionOut'];
 
-export function useGradingPrompt(questionId: string | null) {
-  return useQuery({
-    queryKey: queryKeys.questions.gradingPrompt(questionId),
-    queryFn: () =>
-      apiClient
-        .get<components['schemas']['GradingPromptOut']>(`/questions/${questionId}/grading-prompt`, {
-          skipErrorToast: true,
-        })
-        .then((response) => response.data),
-    enabled: questionId !== null,
-    staleTime: 60_000,
-  });
-}
-
 export function useQuestions(search = '', limit = 50) {
   const queryClient = useQueryClient();
   useEffect(

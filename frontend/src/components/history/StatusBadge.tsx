@@ -23,7 +23,7 @@ export function StatusBadge({ status }: { status: SubmissionStatus }) {
       </Badge>
     );
   }
-  if (status === 'awaiting_mcp') {
+  if (status === 'awaiting_grading') {
     return <Badge variant="outline">{label}</Badge>;
   }
   if (isProcessing(status)) {

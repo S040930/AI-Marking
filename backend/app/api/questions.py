@@ -1,9 +1,7 @@
 """独立题目库：上传、OCR、复用、替换与安全删除。"""
 
-import json
 import logging
 from pathlib import Path
-from types import SimpleNamespace
 
 from fastapi import (
     APIRouter,
@@ -20,10 +18,6 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
-from app.application.grading_workflow import (
-    build_grading_policy,
-    resolve_submission_rubric,
-)
 from app.application.questions import delete_question as delete_question_use_case
 from app.application.questions import rename_question as rename_question_use_case
 from app.application.uploads import (
@@ -41,9 +35,8 @@ from app.models.question import (
     QuestionReplacementStatus,
     QuestionStatus,
 )
-from app.models.submission import Submission, SubmissionGradingMode
+from app.models.submission import Submission
 from app.schemas.question import (
-    GradingPromptOut,
     PaginatedQuestions,
     QuestionConfirmRequest,
     QuestionDetail,
@@ -199,59 +192,6 @@ def get_question(question_id: str, db: Session = Depends(get_db)):
     if row is None:
         raise HTTPException(status_code=404, detail="题目不存在")
     return _serialize(row[0], row[1], detail=True)
-
-
-@router.get("/questions/{question_id}/grading-prompt", response_model=GradingPromptOut)
-def get_question_grading_prompt(question_id: str, db: Session = Depends(get_db)):
-    """按题目生成可审计的批改提示词。
-
-    复用与运行时评分包完全相同的 rubric 解析与评分策略组装
-    （``resolve_submission_rubric`` + ``build_grading_policy``），
-    保证教师复制的提示词与 ``open_ai_marking_assignment`` 返回的
-    grading_policy 同源、一字不差。题目 OCR 未完成时无法生成。
-    """
-    question = db.get(Question, question_id)
-    if question is None:
-        raise HTTPException(status_code=404, detail="题目不存在")
-    ocr_text = question.ocr_text or ""
-    if not ocr_text.strip():
-        raise HTTPException(status_code=409, detail="题目 OCR 尚未完成，无法生成提示词")
-
-    # resolve_submission_rubric 只依赖 sub.question 与配置，这里用轻量持有者
-    # 复用同一条解析路径，确保与评分包一致。
-    resolved = resolve_submission_rubric(
-        db, SimpleNamespace(question=question)
-    )
-    grading_policy = build_grading_policy(resolved)
-
-    text = (
-        "[AI-Marking grading prompt]\n"
-        + json.dumps(
-            {
-                "question_id": question.id,
-                "question_name": question.name,
-                "grading_mode": SubmissionGradingMode.agent.value,
-            },
-            ensure_ascii=False,
-            sort_keys=True,
-        )
-        + f"\n\n--- question ---\n{ocr_text}"
-        + "\n\n--- grading_policy ---\n"
-        + json.dumps(grading_policy, ensure_ascii=False, sort_keys=True)
-    )
-
-    return GradingPromptOut(
-        question_id=question.id,
-        name=question.name,
-        grading_mode=SubmissionGradingMode.agent.value,
-        source=resolved.source,
-        snapshot_id=resolved.snapshot_id,
-        total_max_score=resolved.total_max_score,
-        needs_rubric=resolved.source == "built_in_default",
-        ocr_text=ocr_text,
-        grading_policy=grading_policy,
-        text=text,
-    )
 
 
 @router.get("/questions/{question_id}/pdf")

@@ -1,6 +1,5 @@
 """题目库接口的复用、删除与并发保护测试。"""
 
-import json
 from pathlib import Path
 
 from sqlalchemy import select, text
@@ -377,99 +376,6 @@ async def test_replacement_freezes_question_mutations(client, db_session, tmp_pa
     assert renamed.status_code == 409
     assert deleted.status_code == 409
     assert replaced.status_code == 409
-
-
-async def _grading_prompt_question(db_session, *, name="提示词题"):
-    """创建带 OCR 文本的题目并返回。"""
-    path = Path(f"/tmp/{name}.pdf")
-    question = Question(
-        name=name,
-        original_filename=path.name,
-        file_path=str(path),
-        ocr_text="Task 1: 100 points\nTask 2: 50 points",
-        status=QuestionStatus.ready,
-    )
-    db_session.add(question)
-    db_session.commit()
-    return question
-
-
-async def test_grading_prompt_404_when_question_missing(client):
-    response = await client.get("/api/questions/999/grading-prompt")
-    assert response.status_code == 404
-    assert "不存在" in response.json()["detail"]
-
-
-async def test_grading_prompt_409_when_ocr_missing(client, db_session):
-    question = Question(
-        name="无 OCR 题",
-        original_filename="noocr.pdf",
-        file_path="/tmp/noocr.pdf",
-        ocr_text=None,
-        status=QuestionStatus.pending,
-    )
-    db_session.add(question)
-    db_session.commit()
-
-    response = await client.get(f"/api/questions/{question.id}/grading-prompt")
-    assert response.status_code == 409
-    assert "OCR" in response.json()["detail"]
-
-
-async def test_grading_prompt_needs_rubric_with_default_rubric(client, db_session):
-    question = await _grading_prompt_question(db_session)
-
-    response = await client.get(f"/api/questions/{question.id}/grading-prompt")
-    assert response.status_code == 200, response.text
-    payload = response.json()
-    assert payload["question_id"] == question.id
-    assert payload["name"] == question.name
-    assert payload["grading_mode"] == "agent"
-    # v12:第二遍自检开关已移除,评分建议始终只待教师确认
-    assert "review_enabled" not in payload
-    assert payload["source"] == "built_in_default"
-    assert payload["needs_rubric"] is True
-    assert payload["total_max_score"] == 100
-    assert payload["ocr_text"] == "Task 1: 100 points\nTask 2: 50 points"
-    assert payload["grading_policy"]["resolved_rubric"]["source"] == "built_in_default"
-    # 纯文本须包含题目 OCR 与评分策略 JSON
-    assert "--- question ---" in payload["text"]
-    assert "Task 1: 100 points" in payload["text"]
-    assert "--- grading_policy ---" in payload["text"]
-    assert '"grading_policy"' not in payload["text"]
-
-
-async def test_grading_prompt_uses_configured_rubric(client, db_session):
-    from app.services.config import upsert_config
-
-    question = await _grading_prompt_question(db_session)
-    upsert_config(
-        db_session,
-        {
-            "rubric_definition": json.dumps(
-                {
-                    "items": [
-                        {"criterion": "Task 1", "max_score": 60, "details": "完成度"},
-                        {"criterion": "Task 2", "max_score": 40, "details": "正确性"},
-                    ],
-                    "total_max_score": 100,
-                },
-                ensure_ascii=False,
-            )
-        },
-    )
-    db_session.commit()
-
-    response = await client.get(f"/api/questions/{question.id}/grading-prompt")
-    assert response.status_code == 200, response.text
-    payload = response.json()
-    assert payload["source"] == "configured"
-    assert payload["needs_rubric"] is False
-    assert payload["total_max_score"] == 100
-    items = payload["grading_policy"]["resolved_rubric"]["items"]
-    assert len(items) == 2
-    assert items[0]["criterion"] == "Task 1"
-    assert items[0]["max_score"] == 60
 
 
 async def test_create_question_id_is_filename_slug(client, db_session):

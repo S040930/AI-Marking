@@ -16,7 +16,6 @@ import {
   type SubmissionCodeInput,
 } from '@/api/submissions';
 import { useQuestions } from '@/api/questions';
-import { useAcpAgents } from '@/api/acp';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -56,8 +55,6 @@ interface CodeEntry {  id: string;
   questionNumber: string;
 }
 
-type GradingMode = 'acp' | 'mcp';
-
 export default function UploadSubmissionPage() {
   const { t } = useLanguage();
   const navigate = useNavigate();
@@ -71,7 +68,6 @@ export default function UploadSubmissionPage() {
   const [codeEntries, setCodeEntries] = useState<CodeEntry[]>([]);
   // 每道小题(小题号)各自选择一个入口文件,镜像后端“每题恰有一个 entrypoint”约束
   const [entrypointIds, setEntrypointIds] = useState<Record<number, string>>({});
-  const [mode, setMode] = useState<GradingMode>('acp');
   // ZIP 上传:pdf 状态复用为“作业文件”;zipMode 时它是 .zip,zipPreview 为其只读预览
   const [zipPreview, setZipPreview] = useState<ZipPreview | null>(null);
   const [zipParsing, setZipParsing] = useState(false);
@@ -79,11 +75,6 @@ export default function UploadSubmissionPage() {
   const codeInputRef = useRef<HTMLInputElement>(null);
   // ZIP 解析竞态守卫:每次 addAssignmentFile 自增,旧解析结果据此作废
   const zipTokenRef = useRef(0);
-  const { data: agentsData, isLoading: agentsLoading } = useAcpAgents();
-  // 本机没有可用的 Codex 连接时提前提示,避免上传后才发现问题。
-  const codexReady = (agentsData?.agents ?? []).some(
-    (agent) => agent.agent_id === 'codex-acp' && agent.connection_status === 'ready',
-  );
 
   const zipMode = pdf !== null && pdf.name.toLowerCase().endsWith('.zip');
   const zipHasErrors = zipPreview !== null && zipPreview.errors.length > 0;
@@ -240,9 +231,6 @@ export default function UploadSubmissionPage() {
         { file: pdf, questionId },
         {
           onSuccess: (res) => {
-            if (mode === 'acp') {
-              sessionStorage.setItem(`acp-assistant-prefill:${res.id}`, '1');
-            }
             toast.success(t('作业已上传，正在进入批改流程'));
             navigate(`/review/${res.id}`);
           },
@@ -258,11 +246,6 @@ export default function UploadSubmissionPage() {
       { file: pdf, questionId, codeInputs: codeInputs.length > 0 ? codeInputs : undefined },
       {
         onSuccess: (res) => {
-          if (mode === 'acp') {
-            // 意图标记：进入详情页后自动打开 AI 助手并填入批改指令，
-            // 由教师确认模型、思考强度与权限档位后手动发送。
-            sessionStorage.setItem(`acp-assistant-prefill:${res.id}`, '1');
-          }
           toast.success(t('作业已上传，正在进入批改流程'));
           navigate(`/review/${res.id}`);
         },
@@ -276,7 +259,7 @@ export default function UploadSubmissionPage() {
       <PageHeader
         title={t('上传作业')}
         description={t(
-          '在网页端上传学生作业：选择题目、报告 PDF 与代码文件，提交后选择评分方式，系统会自动进入批改流程。',
+          '在网页端上传学生作业：选择题目、报告 PDF 与代码文件，提交后进入批改流程。',
         )}
       />
 
@@ -650,82 +633,20 @@ export default function UploadSubmissionPage() {
       </Card>
       )}
 
-      {/* 评分方式 */}
+      {/* 批改说明 */}
       <Card className="elevated-card">
         <CardHeader className="pb-2">
-          <CardTitle className="text-base">{t('评分方式')}</CardTitle>
+          <CardTitle className="text-base">{t('批改流程')}</CardTitle>
           <CardDescription>
-            {t('选择本次作业的评分方式，上传后自动进入对应批改流程。')}
+            {t('上传后自动进入批改流程，由 AI 批改 agent 完成评分。')}
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4 pt-4">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label
-              className={`flex cursor-pointer flex-col gap-1.5 rounded-xl border p-4 text-sm transition-colors ${
-                mode === 'acp'
-                  ? 'border-primary bg-primary/5'
-                  : 'border-slate-200 hover:bg-slate-50'
-              }`}
-            >
-              <span className="flex items-center gap-2 font-medium text-foreground">
-                <input
-                  type="radio"
-                  name="grading-mode"
-                  className="accent-primary"
-                  checked={mode === 'acp'}
-                  onChange={() => setMode('acp')}
-                />
-                {t('使用 ACP 自动批改')}
-              </span>
-              <span className="pl-5 text-xs leading-relaxed text-muted-foreground">
-                {t('由本机已安装的批改助手在隔离工作区自动评分，上传后自动启动。')}
-              </span>
-            </label>
-            <label
-              className={`flex cursor-pointer flex-col gap-1.5 rounded-xl border p-4 text-sm transition-colors ${
-                mode === 'mcp'
-                  ? 'border-primary bg-primary/5'
-                  : 'border-slate-200 hover:bg-slate-50'
-              }`}
-            >
-              <span className="flex items-center gap-2 font-medium text-foreground">
-                <input
-                  type="radio"
-                  name="grading-mode"
-                  className="accent-primary"
-                  checked={mode === 'mcp'}
-                  onChange={() => setMode('mcp')}
-                />
-                {t('使用 MCP 等待外部编程助手')}
-              </span>
-              <span className="pl-5 text-xs leading-relaxed text-muted-foreground">
-                {t('上传后由外部编程助手调用本地 MCP 评分，评分建议进入待审阅列表。')}
-              </span>
-            </label>
-          </div>
-
-          {mode === 'acp' ? (
-            agentsLoading ? (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="size-4 animate-spin" />
-                {t('加载助手目录中...')}
-              </div>
-            ) : codexReady ? (
-              <p className="text-xs text-muted-foreground">
-                {t('默认以 Ask for approval 档位启动，批改会话中可随时调整模型与权限。')}
-              </p>
-            ) : (
-              <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-700">
-                {t('请先在系统设置安装并连接测试 Codex ACP。')}
-              </p>
-            )
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              {t(
-                '上传成功后跳转到批改详情页，等待外部编程助手（如 Codex）调用本地 MCP 评分。',
-              )}
-            </p>
-          )}
+        <CardContent className="pt-4">
+          <p className="text-sm leading-relaxed text-muted-foreground">
+            {t(
+              '上传成功后跳转到批改详情页：在详情页选择模型通道与思考强度，点击「开始批改」即可；评分建议生成后由教师确认最终成绩。',
+            )}
+          </p>
         </CardContent>
       </Card>
 
