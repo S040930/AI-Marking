@@ -61,7 +61,8 @@
 - **AI 复核卡片**：`AssessmentReviewCard` 显示独立复核任务的结论（总体 verdict、总结、可折叠逐项意见、复核客户端与时间）；建议更新后按 `reviewed_revision` 与当前 revision 的差异标记过期；未复核时提供「发起 AI 复核」按钮复制编程助手指令。
 - **表单改分**：每个评分项提供分数 Input 与评语 Textarea，教师可直接修改；另有总体反馈 Textarea。
 - **一致性校验**：实时校验各评分项得分之和等于总分、各项满分之和等于总满分（`totalsMatch` / `totalMaxMatch`），不通过时禁用提交并提示。
-- **确认提交**：通过 `onFinalize(FinalizePayload)` 调用 `POST /submissions/{id}/finalize`；提交成功后跳转结果页。
+- **确认提交**：`POST /submissions/{id}/finalize` 必填 `expected_revision`（非负整数），使用表单初始化时的建议版本；后端持锁刷新后拒绝过期提交，409 响应包含 `current_revision`，不写最终成绩。缺少版本返回 422；前后端需同步发布，无数据库迁移。
+- **人工草稿**：保留评分项 ID、原满分和原版本；未编辑时自动载入新建议，已编辑时保留草稿、提示更新并禁用提交。教师点击「载入最新建议」后替换草稿、重新复核。独立复核刷新不重置表单。409 后刷新状态与详情，保留未提交修改；另一窗口已确认成绩时切为只读。
 - **审核教师姓名**：当前固定为 `Teacher` 写入 `reviewer_name`。
 
 ## CSS 工具类
@@ -73,7 +74,7 @@
 
 ## 数据流
 
-- `useSubmissionStatus` 通过 SSE 获取状态并以 30s 低频兜底；`awaiting_mcp` 已启用 `useSubmission` 拉取恢复页详情，其他处理中状态保持轻量。
-- `useSubmission` 拉取完整详情（`assessment_suggestion`、`mcp_metadata`、`code_files` 等）。
+- `useSubmissionStatus` 对处理中和待复核记录保持 SSE 与 30s 状态刷新；同状态事件也刷新详情，只有 `reviewed/failed` 停止观察；`awaiting_mcp` 已启用 `useSubmission` 拉取恢复页详情，其他处理中状态保持轻量。
+- `useSubmission` 拉取完整详情；`ready_for_review` 每 30s 刷新，覆盖没有 SSE 通知或同 revision 的独立复核更新。历史列表仍把待复核显示为可审阅，而非处理中。
 - `useFinalizeSubmission` 提交教师确认的最终评分；`FinalizePayload` 由 `ManualReviewPanel` 构造。
 - 历史对话接口（`/conversations`、`/chat`）与 `ReviewChatPanel` 已随 Agent 链路删除。

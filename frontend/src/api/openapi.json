@@ -1245,7 +1245,7 @@
         "properties": {
           "code_files": {
             "default": [],
-            "description": "可选多语言代码文件",
+            "description": "可选多语言代码文件(仅纯 PDF 上传)",
             "items": {
               "contentMediaType": "application/octet-stream",
               "type": "string"
@@ -1263,12 +1263,12 @@
                 "type": "null"
               }
             ],
-            "description": "代码文件小题映射 JSON",
+            "description": "代码文件小题映射 JSON(仅纯 PDF 上传)",
             "title": "Code Manifest"
           },
           "file": {
             "contentMediaType": "application/octet-stream",
-            "description": "学生作业 PDF",
+            "description": "学生作业 PDF 或 ZIP(PDF+代码+数据集)",
             "title": "File",
             "type": "string"
           },
@@ -1459,11 +1459,6 @@
             "title": "Paddleocr Token",
             "type": "string"
           },
-          "review_enabled": {
-            "default": true,
-            "title": "Review Enabled",
-            "type": "boolean"
-          },
           "rubric_definition": {
             "anyOf": [
               {
@@ -1505,18 +1500,6 @@
             ],
             "description": "PaddleOCR-VL Access Token(AI Studio 令牌)",
             "title": "Paddleocr Token"
-          },
-          "review_enabled": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "是否要求 MCP 客户端在保存建议前完成第二遍反向自检(默认开启)",
-            "title": "Review Enabled"
           },
           "rubric_definition": {
             "anyOf": [
@@ -1650,6 +1633,11 @@
             "title": "Details",
             "type": "array"
           },
+          "expected_revision": {
+            "minimum": 0.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          },
           "feedback": {
             "minLength": 1,
             "title": "Feedback",
@@ -1673,6 +1661,7 @@
           }
         },
         "required": [
+          "expected_revision",
           "reviewer_name",
           "score",
           "max_score",
@@ -1717,10 +1706,6 @@
             "title": "Question Id",
             "type": "string"
           },
-          "review_enabled": {
-            "title": "Review Enabled",
-            "type": "boolean"
-          },
           "snapshot_id": {
             "anyOf": [
               {
@@ -1749,7 +1734,6 @@
           "question_id",
           "name",
           "grading_mode",
-          "review_enabled",
           "source",
           "total_max_score",
           "needs_rubric",
@@ -1788,7 +1772,7 @@
       },
       "McpAssessmentRequest": {
         "additionalProperties": false,
-        "description": "外部编程助手提交的评分建议(对外唯一请求模型)。\n\n``expected_revision``/``context_hash`` 由服务端在保存时从作业当前状态\n补全,不在对外请求中出现;它们是防呆用的版本校验字段。",
+        "description": "外部编程助手提交的评分建议(MCP API v12)。\n\nv12 起客户端只提交自己决定的内容:逐项 ``rubric_item_id``/得分/评语/\n证据,加总分置信度与反馈。单项 ``criterion``/``max_score``、总得分、\n总满分、rubric 来源与快照 ID 全部由服务端从 ``grading_handle`` 对应的\n权威 rubric 推导,客户端提交这些字段会被拒绝(extra=forbid)。\n版本和上下文由服务端从评分句柄读取并在持锁后核对,\n不在对外请求中出现。",
         "properties": {
           "confidence": {
             "default": 0,
@@ -1799,7 +1783,7 @@
           },
           "details": {
             "items": {
-              "$ref": "#/components/schemas/ScoreDetail"
+              "$ref": "#/components/schemas/McpScoreDetail"
             },
             "maxItems": 100,
             "minItems": 1,
@@ -1812,46 +1796,14 @@
             "title": "Feedback",
             "type": "string"
           },
-          "max_score": {
-            "exclusiveMinimum": 0.0,
-            "title": "Max Score",
-            "type": "number"
-          },
           "request_id": {
             "format": "uuid",
             "title": "Request Id",
             "type": "string"
-          },
-          "rubric_snapshot_id": {
-            "maxLength": 128,
-            "minLength": 8,
-            "title": "Rubric Snapshot Id",
-            "type": "string"
-          },
-          "rubric_source": {
-            "enum": [
-              "configured",
-              "question_extracted",
-              "built_in_default"
-            ],
-            "title": "Rubric Source",
-            "type": "string"
-          },
-          "score": {
-            "minimum": 0.0,
-            "title": "Score",
-            "type": "number"
-          },
-          "self_check": {
-            "$ref": "#/components/schemas/McpSelfCheck"
           }
         },
         "required": [
-          "rubric_source",
-          "rubric_snapshot_id",
           "request_id",
-          "score",
-          "max_score",
           "feedback",
           "details"
         ],
@@ -1964,8 +1916,15 @@
             "type": "string"
           },
           "review_required": {
-            "title": "Review Required",
-            "type": "boolean"
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Required"
           },
           "rubric_snapshot": {
             "anyOf": [
@@ -2016,8 +1975,7 @@
           "request_id",
           "payload_hash",
           "quality_checks",
-          "generated_at",
-          "review_required"
+          "generated_at"
         ],
         "title": "McpMetadataOut",
         "type": "object"
@@ -2318,9 +2276,16 @@
             "type": "boolean"
           },
           "client_self_check": {
-            "additionalProperties": true,
-            "title": "Client Self Check",
-            "type": "object"
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Self Check"
           },
           "code_evidence_valid": {
             "title": "Code Evidence Valid",
@@ -2331,8 +2296,15 @@
             "type": "boolean"
           },
           "second_pass_valid": {
-            "title": "Second Pass Valid",
-            "type": "boolean"
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Second Pass Valid"
           },
           "visual_confirmation_valid": {
             "title": "Visual Confirmation Valid",
@@ -2343,8 +2315,6 @@
           "arithmetic_valid",
           "evidence_valid",
           "code_evidence_valid",
-          "client_self_check",
-          "second_pass_valid",
           "visual_confirmation_valid"
         ],
         "title": "McpQualityChecksOut",
@@ -2667,39 +2637,50 @@
         "title": "McpSaveRubricResponse",
         "type": "object"
       },
-      "McpSelfCheck": {
+      "McpScoreDetail": {
+        "additionalProperties": false,
+        "description": "v12 起客户端提交的单项评分。\n\n客户端只决定它真正负责的内容:引用哪个 rubric item、给多少分、\n评语与证据。``criterion``/``max_score`` 由服务端按权威 rubric 回填,\n不接受客户端提交。",
         "properties": {
-          "changes_made": {
+          "comment": {
+            "minLength": 1,
+            "title": "Comment",
+            "type": "string"
+          },
+          "evidence_refs": {
             "items": {
-              "type": "string"
+              "additionalProperties": true,
+              "type": "object"
             },
-            "maxItems": 20,
-            "title": "Changes Made",
+            "title": "Evidence Refs",
             "type": "array"
           },
-          "issues_found": {
-            "items": {
-              "type": "string"
-            },
-            "maxItems": 20,
-            "title": "Issues Found",
-            "type": "array"
+          "evidence_status": {
+            "default": "supported",
+            "enum": [
+              "supported",
+              "not_found"
+            ],
+            "title": "Evidence Status",
+            "type": "string"
           },
-          "rubric_items_reviewed": {
-            "items": {
-              "type": "string"
-            },
-            "maxItems": 100,
-            "title": "Rubric Items Reviewed",
-            "type": "array"
+          "rubric_item_id": {
+            "maxLength": 100,
+            "minLength": 5,
+            "title": "Rubric Item Id",
+            "type": "string"
           },
-          "second_pass_completed": {
-            "default": false,
-            "title": "Second Pass Completed",
-            "type": "boolean"
+          "score": {
+            "minimum": 0.0,
+            "title": "Score",
+            "type": "number"
           }
         },
-        "title": "McpSelfCheck",
+        "required": [
+          "rubric_item_id",
+          "score",
+          "comment"
+        ],
+        "title": "McpScoreDetail",
         "type": "object"
       },
       "McpVisualConfirmationOut": {
@@ -6772,7 +6753,7 @@
         ]
       },
       "post": {
-        "description": "上传学生报告 PDF 及可选的多语言代码文件。\n\n收敛为 MCP-only 后固定使用外部编程助手评分模式：上传后只做 OCR，\n进入 ``awaiting_mcp``，由 MCP 客户端评分。",
+        "description": "上传学生作业:纯报告 PDF(+可选散装代码),或一个 ZIP 包。\n\nZIP 由后端解包自动分类:恰好一份报告 PDF、``q<n>.<ext>`` 命名的代码、\n其余为数据集(写入 ``submission_code_input_files``,批改工作区会物化)。\n收敛为 MCP-only 后固定使用外部编程助手评分模式：上传后只做 OCR，\n进入 ``awaiting_mcp``，由 MCP 客户端评分。",
         "operationId": "create_submission_api_submissions_post",
         "requestBody": {
           "content": {

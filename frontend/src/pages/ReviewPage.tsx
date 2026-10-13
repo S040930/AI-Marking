@@ -9,6 +9,7 @@ import {
 import { useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import dayjs from 'dayjs';
+import { isAxiosError } from 'axios';
 import { Loader2, AlertCircle, MessageSquare } from 'lucide-react';
 import {
   useSubmission,
@@ -101,7 +102,11 @@ function ReviewContent({ data }: { data: SubmissionDetail }) {
           toast.success(t('评分已提交'));
           navigate(`/result/${data.id}`);
         },
-        onError: () => toast.error(t('提交失败，请稍后重试')),
+        onError: (error) => toast.error(t(
+          isAxiosError(error) && error.response?.status === 409
+            ? '评分状态已变化，请核对最新结果后重新复核'
+            : '提交失败，请稍后重试',
+        )),
       },
     );
   };
@@ -321,6 +326,9 @@ function ReviewContent({ data }: { data: SubmissionDetail }) {
               <AssessmentReviewCard data={data} />
               <ManualReviewPanel
                 suggestion={suggestion}
+                gradingRevision={data.grading_revision}
+                hasVersionConflict={isAxiosError(finalizeMutation.error) && finalizeMutation.error.response?.status === 409}
+                onReloadSuggestion={() => finalizeMutation.reset()}
                 isReadOnly={isReadOnly}
                 reviewerName={reviewerName}
                 onFinalize={handleFinalize}

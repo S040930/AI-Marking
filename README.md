@@ -256,12 +256,13 @@ cd backend
 1. 在网页题目库的题目卡片上点击「复制提示词」，得到针对该题目的批改提示词。
 2. 在编程助手新建任务，粘贴提示词，并在同一对话中上传该学生的作业 zip（一名学生一个 zip：一份报告 PDF + 代码文件；报告 PDF ≤ 50 MB，代码 ≤ 20 个文件、总计 100 MB、单文件 20 MB）。
 
-提示词由前端生成，只包含题目标识与对 skill 的引用，不内嵌评分流程（流程唯一权威源是
+提示词由前端生成，只包含题目标识、`workflow_mode` 与对 skill 的引用，不内嵌评分流程（流程唯一权威源是
 `.agents/skills/ai-marking-grader/SKILL.md`）。中文版形如：
 
 ```text
 使用 ai-marking-grader skill 批改学生作业。
 
+workflow_mode: mcp_new
 题目：{题目名}（question_id: {question_id}）
 学生作业：我在本次对话中上传的 zip 压缩包（一份报告 PDF 与若干代码文件）。
 
@@ -269,11 +270,11 @@ cd backend
 然后按流程上传作业 zip 并开始批改。最终成绩由教师在网页确认。
 ```
 
-编程助手加载 skill 后自动执行：解压作业 zip，把每个代码入口复制到独立临时目录试运行（结果只留在当前对话，不上传后端）→ `prepare_ai_marking_submission` 预检题目与代码映射（题目不唯一时只请教师选择；文件名不含 `q<题号>` 的代码文件需显式映射题号，每题一个入口文件及题目要求的同题辅助源码/头文件）→ `submit_prepared_ai_marking_submission` 上传 → `open_ai_marking_assignment` 通过服务端长轮询等待 OCR 完成（PostgreSQL NOTIFY 即时唤醒，最多等待 5 分钟）→ 以不透明续页令牌完整读取评分包 →（含代码时）请教师回答“已检查且一致”，或回答“已检查且存在不一致”并用自由文字说明差异，未检查或含糊时暂停评分 → 双遍精评（逐项证据账本 + 独立反向复核）→ `save_ai_marking_assessment` 保存建议，最后返回 `http://localhost:5173/review/{id}` 复核链接。
+编程助手加载 skill 后自动执行：解压作业 zip，把每个代码入口复制到独立临时目录试运行（上传前诊断，结果只留在当前对话，不上传后端）→ `prepare_ai_marking_submission` 预检题目与代码映射（题目不唯一时只请教师选择；文件名不含 `q<题号>` 的代码文件需显式映射题号，每题一个入口文件及题目要求的同题辅助源码/头文件）→ `submit_prepared_ai_marking_submission` 上传 → `open_ai_marking_assignment` 通过服务端长轮询等待 OCR 完成（PostgreSQL NOTIFY 即时唤醒，最多等待 5 分钟）→ 以不透明续页令牌完整读取评分包 →（含代码时）建立当前会话的运行观察并请教师回答“已检查且一致”，或回答“已检查且存在不一致”并用自由文字说明差异，未检查或含糊时暂停评分 → 单次证据化评分（逐项证据账本，零分无内容可用 `not_found` 免证据）→ `save_ai_marking_assessment` 保存建议，最后返回 `http://localhost:5173/review/{id}` 复核链接。
 
 若题目还没有可信 rubric，评分包会返回 `needs_rubric`，编程助手先从题目 OCR 提取评分标准并调用 `save_ai_marking_question_rubric`，服务端确定性校验（引用为 OCR 原文子串、包含满分、各项满分之和等于总分）通过后写入权威快照并重新打开评分包。代码运行失败或本机缺少语言环境时由编程助手在对话中披露，但不阻止静态评分。OCR 失败时会返回原始错误和网页重试地址。
 
-原会话中断后恢复批改：在 Review 页「等待编程助手」面板复制恢复提示词（作业已上传到 AI-Marking 的场景），或在编程助手中调用 `list_pending_ai_marking_assignments` 发现待办作业后逐个打开。MCP 不能确认最终成绩，教师必须在网页点击确认。
+原会话中断后恢复批改：在 Review 页「等待编程助手」面板复制恢复提示词（显式携带 `workflow_mode: mcp_existing` 与 `submission_id`，助手只处理该作业）；仅当没有 `submission_id` 且教师要求查找全部待办时，才在编程助手中调用 `list_pending_ai_marking_assignments`。MCP 不能确认最终成绩，教师必须在网页点击确认。
 
 完整工具契约和安全边界见
 [docs/architecture/mcp-grading.md](docs/architecture/mcp-grading.md)。
@@ -381,7 +382,6 @@ OCR 与评分标准等**业务配置**通过前端设置页面(`/settings`)管�
 
 - **OCR**:PaddleOCR-VL API URL、Access Token
 - **评分标准**:题目可信提取 rubric 优先，其次使用配置项目中的结构化 rubric（条目、满分、说明），最后回退内置默认
-- **MCP 自检开关**:是否要求编程助手在保存建议前完成第二遍反向自检（默认开启）
 
 ## 批改流程
 
@@ -392,7 +392,7 @@ MCP 打开评分包：
 ```text
 题目库 OCR（仅首次）
         ↓
-学生作业 OCR → awaiting_mcp → MCP 评分（客户端双遍自检）→ ready_for_review
+学生作业 OCR → awaiting_mcp → MCP 评分（单次证据化评分）→ ready_for_review
                                                                    ↓
                                  （可选）另一个编程助手任务独立复核建议
                                                                    ↓
@@ -534,3 +534,14 @@ npm run build
 # 运行测试
 npm run test:run
 ```
+
+## 评分并发与版本更新
+
+人工确认接口 `POST /api/submissions/{id}/finalize` 必填 `expected_revision`，值为教师所见建议的
+`grading_revision`。版本已更新时返回 409，不写最终成绩；缺少版本返回 422。前后端需同步更新并
+重新启动 API 与 ACP worker，无数据库迁移。待复核页面持续接收评分及独立复核更新，人工草稿保留，
+教师载入最新建议后重新复核。
+
+ACP worker 重启后，现有 30 秒扫描会恢复失效所有权、完成取消或终结重试耗尽任务。无需手工修改
+生产记录。真实并发测试使用现有 `RUN_POSTGRES_TESTS=1` 与 `TEST_DATABASE_URL` 机制，仅允许数据库
+名称以 `_test` 结尾；运行后端完整 pytest 时启用该环境，不能使用生产数据库代替。

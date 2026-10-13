@@ -1,5 +1,5 @@
 import type { UseFormReturn } from 'react-hook-form';
-import { ClipboardCheck, Loader2, Save, ScanEye, ShieldCheck, Undo2 } from 'lucide-react';
+import { ClipboardCheck, Loader2, Save, ScanEye, Undo2 } from 'lucide-react';
 import {
   Card,
   CardAction,
@@ -19,7 +19,6 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { useLanguage } from '@/i18n';
@@ -52,46 +51,6 @@ export function ConfigSettingsForm({
         className="flex flex-col gap-5"
       >
         <Card className="elevated-card stagger-1 animate-fade-in-up motion-reduce:animate-none overflow-hidden">
-          <CardHeader className="pb-4">
-            <div className="flex items-center gap-3">
-              <IconBadge>
-                <ShieldCheck className="size-5" />
-              </IconBadge>
-              <div>
-                  <CardTitle className="text-lg">{t('MCP 评分自检')}</CardTitle>
-                <CardDescription>
-                  {t('编程助手(Codex 等)通过本地 MCP 接口完成评分与复核')}
-                </CardDescription>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="pt-5">
-            <FormField
-              control={form.control}
-              name="review_enabled"
-              render={({ field }) => (
-                <FormItem className="flex items-start gap-3 space-y-0">
-                  <FormControl>
-                    <Checkbox
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                      className="mt-0.5"
-                    />
-                  </FormControl>
-                  <div className="space-y-1 leading-none">
-                    <FormLabel>{t('要求客户端在保存建议前完成第二遍反向自检')}</FormLabel>
-                    <FormDescription>
-                      {t('评分流程要求 MCP 客户端对每条评分项做反向校验（依据原文引用与分数上限推导），双重检查通过后才能保存建议，最终成绩仍需教师在此网页确认。')}
-                    </FormDescription>
-                  </div>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </CardContent>
-        </Card>
-
-        <Card className="elevated-card stagger-2 animate-fade-in-up motion-reduce:animate-none overflow-hidden">
           <CardHeader className="pb-4">
             <div className="flex items-center gap-3">
               <IconBadge>
@@ -149,7 +108,7 @@ export function ConfigSettingsForm({
           </CardContent>
         </Card>
 
-        <Card className="elevated-card stagger-4 animate-fade-in-up motion-reduce:animate-none overflow-hidden">
+        <Card className="elevated-card stagger-2 animate-fade-in-up motion-reduce:animate-none overflow-hidden">
           <CardHeader className="pb-4">
             <div className="flex items-start justify-between gap-4">
               <div className="flex items-center gap-3">

@@ -10,8 +10,8 @@ import {
 } from '@/api/submissions';
 
 describe('isTerminal', () => {
-  it('ready_for_review 为终态', () => {
-    expect(isTerminal('ready_for_review')).toBe(true);
+  it('ready_for_review 仍需观察建议更新', () => {
+    expect(isTerminal('ready_for_review')).toBe(false);
   });
 
   it('reviewed 为终态', () => {
@@ -82,8 +82,13 @@ describe('isTerminal 与 isProcessing 互斥', () => {
   ];
 
   allStatuses.forEach((status) => {
-    it(`${status}: isTerminal !== isProcessing`, () => {
-      expect(isTerminal(status)).not.toBe(isProcessing(status));
+    it(`${status}: 待复核可观察但不是处理中`, () => {
+      if (status === 'ready_for_review') {
+        expect(isTerminal(status)).toBe(false);
+        expect(isProcessing(status)).toBe(false);
+      } else {
+        expect(isTerminal(status)).not.toBe(isProcessing(status));
+      }
     });
   });
 });

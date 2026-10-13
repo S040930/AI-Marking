@@ -24,6 +24,10 @@ const STORAGE_KEY = 'ai-marking-locale';
  * 完整规则（引号、分节、验证路由）见 docs/frontend/i18n.md。
  */
 const englishMessages: Record<string, string> = {
+  '评分建议已更新，已保留你的修改。请载入最新建议后重新复核。': 'The suggestion has changed. Your edits have been kept. Load the latest suggestion and review it again.',
+  '载入最新建议': 'Load latest suggestion',
+  '评分状态已变化，请核对最新结果后重新复核': 'The grading state has changed. Check the latest result before reviewing again.',
+
   'AI 作业批改': 'AI Marking',
   题目库: 'Question Library',
   历史记录: 'History',
@@ -242,11 +246,7 @@ const englishMessages: Record<string, string> = {
   输入完整题目名称: 'Enter the complete question name',
   确认并永久: 'Permanently ',
   替换: 'replace',
-  'MCP 评分自检': 'MCP grading self-check',
-  '配置 OCR 解析、评分标准与 MCP 自检开关': 'Configure OCR parsing, grading rubrics, and MCP checks',
-  '编程助手(Codex 等)通过本地 MCP 接口完成评分与复核': 'Programming assistants (such as Codex) grade and review through the local MCP interface',
-  '要求客户端在保存建议前完成第二遍反向自检': 'Require the client to perform a second reverse check before saving a suggestion',
-  '评分流程要求 MCP 客户端对每条评分项做反向校验（依据原文引用与分数上限推导），双重检查通过后才能保存建议，最终成绩仍需教师在此网页确认。': 'The MCP client must reverse-check each rubric item using source evidence and score limits. Suggestions are saved only after both checks pass, and a teacher must confirm the final score here.',
+  '配置 OCR 解析与评分标准': 'Configure OCR parsing and grading rubrics',
   '将 PDF 解析为结构化 Markdown，保留表格、公式与阅读顺序': 'Parse PDFs into structured Markdown while preserving tables, formulas, and reading order',
   '请填写完整接口：异步任务入口 .../api/v2/ocr/jobs，或同步入口 .../layout-parsing；不要填写 .../api/v2/ocr/jobs/layout-parsing。': 'Use the complete endpoint: async .../api/v2/ocr/jobs or sync .../layout-parsing. Do not use .../api/v2/ocr/jobs/layout-parsing.',
   '请输入 PaddleOCR Access Token': 'Enter the PaddleOCR access token',

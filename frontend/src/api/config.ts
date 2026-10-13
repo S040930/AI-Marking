@@ -10,7 +10,6 @@ export interface ConfigOut {
     items: { criterion: string; max_score: number; details: string }[];
     total_max_score: number;
   } | null;
-  review_enabled: boolean;
 }
 
 export type ConfigUpdate = Partial<Omit<ConfigOut, 'rubric_definition'>> & {

@@ -80,7 +80,7 @@ FastAPI /api/acp/* ── PostgreSQL acp_runs / acp_chat_sessions
 - **题目域**：题目 PDF 上传（专门的批量上传页）、题目 OCR、题目复用、替换与删除。
 - **批改域**：编程助手提交学生作业、失败原记录重试、作业 OCR、等待 MCP 评分、人工复核和状态流转；`awaiting_mcp` 作业亦可由首期唯一支持的 `codex-acp` 驱动。
 - **审核域**：教师人工核对评分建议、表单式改分、确认最终结果。
-- **配置域**：OCR、rubric 与 MCP 自检开关配置。
+- **配置域**：OCR 与 rubric 配置。
 - **运维域**：运行摘要（`/api/admin/runtime`）与死信任务管理（`/api/admin/dead-jobs`），均受访问令牌保护。
 - **文件生命周期**：题目和学生 PDF 按内容哈希共享；定期清理仅删除超过宽限期且无数据库引用的孤儿文件。PDF 预览接口同时支持 `GET` 与 `HEAD`。
 
@@ -125,27 +125,29 @@ OCR 在内部对超时 / 限流 / 5xx 进行最多 3 次短暂重试；网络重
 
 1. **统一 PDF 处理链**：原生 PDF 流式接收并直接持久化，通过后端安全文件流与浏览器原生 iframe 预览。
 2. **MCP 评分流程**：OCR → `awaiting_mcp` → 编程助手保存建议 → `ready_for_review` → 教师表单式人工复核 → 最终评分确认。后端不内置 LLM/Agent/Critic。
-3. **状态分离**：列表/处理中轮询使用轻量 `SubmissionStatusOut`，终态后再拉取完整 `SubmissionDetail`，避免传输 `ocr_text`/`assessment_suggestion` 等大字段。
-4. **配置入库**：PaddleOCR URL/token、结构化 rubric 与 MCP 自检开关全部存入数据库，不依赖 `.env`。
+3. **状态分离**：处理中使用轻量状态；`awaiting_mcp` 与 `ready_for_review` 可读取详情并持续观察更新，只有 `reviewed`/`failed` 停止刷新。待复核详情每 30 秒刷新，人工草稿保留并绑定建议版本。
+4. **配置入库**：PaddleOCR URL/token 与结构化 rubric 全部存入数据库，不依赖 `.env`。
 5. **浅色极简设计系统**：以净白为底、Indigo 为主强调色，支持 `prefers-reduced-motion` 与 Skip Link 无障碍访问。
 6. **前端语言偏好**：系统界面支持 `zh-CN` 与 `en-US`；首次访问跟随浏览器语言，用户切换后保存到浏览器 `localStorage`，用户业务内容保持原文。i18n 采用「**中文即 key**」的中文→英文单字典（`frontend/src/i18n/index.tsx`），规则详见 [docs/frontend/i18n.md](docs/frontend/i18n.md)。
 7. **题目与作业解耦**：一个 `Question` 可关联多条 `Submission`，删除单条作业不会删除共享题目。
 8. **数据库优先删除**：数据库事务提交成功后再清理文件，避免记录存在但文件提前丢失。
 9. **题目新版暂存切换**：新版文档统一生成 PDF 后进入持久化 OCR 队列；成功后原子切换，失败时旧题目继续可用。
-10. **最终评分单一入口**：编程助手只保存待确认建议；只有教师显式确认才写入 `reviewed`。`POST /submissions/{id}/finalize` 是写入最终评分的唯一入口。
+10. **最终评分单一入口**：编程助手只保存待确认建议；只有教师显式确认才写入 `reviewed`。`POST /submissions/{id}/finalize` 是写入最终评分的唯一入口，必填 `expected_revision`；锁内校验失败返回 409。
 11. **测试显式建模题目关系**：测试不得自动为 `Submission` 注入默认题目；凡是创建作业记录，都必须显式创建 `Question` 并通过 `question` 或 `question_id` 关联，以避免绕过生产约束。
 12. **编程助手单一新建入口**：编程助手评分作业由本机 MCP 预检并提交，在同一任务内等待 OCR；网页端仅保留题目库上传，学生作业一律由编程助手提交。
 13. **MCP 服务身份与版本校验**：健康响应同时声明 `service` 和 API 版本；启动脚本拒绝复用 8000 端口，诊断工具区分错误服务、旧进程、token 和数据库问题。
 14. **本地 API 代理固定 IPv4**：Vite 将 `/api` 转发到 `127.0.0.1:8000`，避免 `localhost` 被优先解析为 IPv6 `::1` 而后端只监听 IPv4 时产生“网络连接异常”。外部评分记录通过 `mcp_metadata.client` 显示客户端配置中的名称，不保存未经验证的模型申报值。
 15. **报告—代码联动证据**：编程助手可提交一份报告 PDF 和按小题映射的 Python/Notebook、R、Java、C/C++ 代码组；后端只保存源码与 SHA-256。代码由当前编程助手任务在临时目录中尝试运行，结果留在对话中；含代码作业评分前需取得教师人工一致性确认，教师仍是最终确认者。网页上传页也支持一份 ZIP 作业（报告 PDF + 文件名以小题号结尾的代码 + 数据集，如 `task3.py`/`q3.py`），后端解包自动分类，数据集落库 `submission_code_input_files` 并随批改物化到隔离工作区；前端上传前仅读中央目录做只读预览。
 16. **统一 rubric 解析**：题目可信 OCR 提取快照（客户端提交、服务端确定性校验）优先，其次配置项目中的结构化 rubric，最后是内置默认；网页与编程助手 MCP 使用同一 Resolver、snapshot ID 和逐项校验。
-17. **双遍精评**：ai-marking-grader 先按 rubric 建立证据账本并逐项评分，再独立反向复核证据、部分得分、宽严一致性和重复扣分；反馈提供可执行改进动作，保存前仍只生成教师待确认建议。
+17. **证据化评分**：ai-marking-grader 按权威 rubric 对每个评分项一次完成证据化评分（证据可定位、零分且无内容可用 `not_found` 免证据）；交叉复核是独立可选能力，教师审核才是最终安全阀。
 18. **MCP v10 协议收敛**：编程助手正常评分使用预检、提交、打开、待办列表、rubric 提取、人工确认与保存工具；不接受视觉比较输入、自由 rubric 文本、运行日志或代码产物。预检计划仅保留文件元数据并主动清理过期项，服务端评分句柄持久化于 PostgreSQL 并绑定文件/上下文，评分包不包含后端执行信息，评分政策只由评分包提供。题目 rubric 不再由后端 LLM 生成：`open_ai_marking_assignment` 返回 `needs_rubric` 时由客户端从题目 OCR 提取，服务端以「引用必须是 OCR 原文子串且包含满分、各项满分之和等于总分、评分项不重复」确定性校验后写入权威快照。
 19. **本地文件按内容寻址**：PDF 使用 SHA-256 作为共享实体路径，原始文件名只作为记录元数据保留；清理和题目替换删除前会查询题目、作业及替换引用，永不删除仍被引用的文件。开发依赖由 `scripts/clean-local` 和 `scripts/bootstrap` 按需清理、恢复。
 20. **题目 ID 为文件名 slug**：`questions.id` 由上传文件名去扩展名生成稳定 slug 字符串（如 `DTS208TC_CW1_Paper`），不再使用自增整数；id 在创建时确定且不随替换/重试 OCR 变化，同名重复上传返回 409 拒绝，避免 ID 跳号与删除复用歧义。
 21. **成绩导出只读快照**：`GET /api/submissions/export.xlsx` 只读取指定题目的 `reviewed` 最终成绩，以用户输入的及格线和当前界面语言生成三表 Excel；不读取 OCR/PDF/代码、不写数据库、不持久化导出文件，响应结束即删除临时文件。得分率和达标状态保留为工作簿公式，统计文字不调用模型。
 22. **分层依赖单向向内**：`api → application → services → core/domain`，由 `tests/test_architecture_boundaries.py` 强制。错误类型统一在 `app/core/errors.py`（`ApplicationError` 族映射 HTTP 状态码，`BusinessError` 驱动 worker 重试分类）；`services` 只做纯基础设施、不得引用 `application`；跨实体写事务（删除、finalize、死信重试、MCP 评分保存等）必须位于 application 用例函数，API 层只做参数解析与序列化。
 23. **Codex ACP 配置动态化且可审计**：首期只允许 `codex-acp`；模型、思考强度与速度从 ACP `config_option` 动态获取，不硬编码模型列表。配置按期望/已应用/待应用三态入库，忙碌会话在安全点切换，失败恢复上一个已应用值并记录事件；连接测试就绪后直接启动 Codex 原生 `workspace-write`、关闭网络的沙箱，权限档位按运行时选择处理，不维护额外认证状态。
+
+评分句柄按绑定版本校验，评分包缓存包含权威 rubric 快照；ACP 租约过期、优雅关闭与检查点释放共享恢复规则，详细状态与资源边界见下列 MCP、ACP 文档。
 
 ## 子文档索引
 
@@ -157,7 +159,7 @@ OCR 在内部对超时 / 限流 / 5xx 进行最多 3 次短暂重试；网络重
 | 前端 i18n 约定 | [docs/frontend/i18n.md](docs/frontend/i18n.md) | 「中文即 key」的单字典机制、增删改规则、常见误判与最小验证路由 |
 | 编程助手 MCP 评分 | [docs/architecture/mcp-grading.md](docs/architecture/mcp-grading.md) | STDIO 连接、状态机、PDF+代码证据、工具契约、安全边界与排错 |
 | Codex ACP 批改与对话 | [docs/architecture/acp-grading.md](docs/architecture/acp-grading.md) | Codex-only Registry、动态模型/思考/速度配置、持久 worker、会话安全点与 API 一览 |
-| 编程助手评分 skill | [.agents/skills/ai-marking-grader/SKILL.md](.agents/skills/ai-marking-grader/SKILL.md) | 预检、提交、打开评分包、rubric 提取、双遍精评与教师复核；评分政策由服务端评分包提供 |
+| 编程助手评分 skill | [.agents/skills/ai-marking-grader/SKILL.md](.agents/skills/ai-marking-grader/SKILL.md) | 预检、提交、打开评分包、rubric 提取、证据化评分、可选交叉复核与教师复核；评分政策由服务端评分包提供 |
 | 数据模型 | [docs/data/schema.md](docs/data/schema.md) | 数据表职责、关系、状态和文件生命周期 |
 
 ## 快速开始

@@ -86,9 +86,8 @@ export type FinalizePayload = components['schemas']['FinalizeRequest'];
 
 export type BatchDeleteResponse = components['schemas']['BatchDeleteResponse'];
 
-// 终态判断：awaiting_mcp 仍需要等待 MCP 客户端保存建议，不能停止状态刷新。
+// 终态才停止观察；ready_for_review 仍允许更新评分建议和独立复核。
 const TERMINAL_STATUSES: SubmissionStatus[] = [
-  'ready_for_review',
   'reviewed',
   'failed',
 ];
@@ -98,7 +97,7 @@ export function isTerminal(status: SubmissionStatus): boolean {
 }
 
 export function isProcessing(status: SubmissionStatus): boolean {
-  return !isTerminal(status);
+  return ['pending', 'ocr_processing', 'ocr_done', 'awaiting_mcp'].includes(status);
 }
 
 /**
@@ -106,5 +105,5 @@ export function isProcessing(status: SubmissionStatus): boolean {
  * 其他处理中状态的大字段尚未准备好，避免提前拉取完整详情。
  */
 export function canLoadSubmissionDetail(status: SubmissionStatus): boolean {
-  return status === 'awaiting_mcp' || isTerminal(status);
+  return ['awaiting_mcp', 'ready_for_review', 'reviewed', 'failed'].includes(status);
 }

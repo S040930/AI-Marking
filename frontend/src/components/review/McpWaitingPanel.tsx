@@ -10,13 +10,15 @@ import { buildMcpResumePrompt } from '@/lib/gradingPrompt';
  *
  * ``variant="section"``(默认)渲染为嵌入父卡片的小节,不带自己的外壳;
  * ``variant="card"`` 渲染为独立卡片(供单独页面使用)。
- * 提示词以题目名(而非作业编号)定位,与题目库的批改提示词同源。
+ * 提示词显式携带 workflow_mode 与 submission_id,助手只处理该作业。
  */
 export function McpWaitingPanel({
+  submissionId,
   questionName,
   questionId,
   variant = 'section',
 }: {
+  submissionId: number;
   questionName: string | null;
   questionId: string | null;
   variant?: 'section' | 'card';
@@ -25,7 +27,10 @@ export function McpWaitingPanel({
   const [copied, setCopied] = useState(false);
   // 数据层保证 submission 必关联题目(question_id 非空外键);若字段缺失则不渲染
   if (!questionName || !questionId) return null;
-  const prompt = buildMcpResumePrompt({ questionName, questionId }, locale);
+  const prompt = buildMcpResumePrompt(
+    { questionName, questionId, submissionId },
+    locale,
+  );
 
   const copyPrompt = async () => {
     try {

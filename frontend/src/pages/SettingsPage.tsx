@@ -47,7 +47,6 @@ export default function SettingsPage() {
         rubric_definition: data.rubric_definition
           ? JSON.stringify(data.rubric_definition, null, 2)
           : '',
-        review_enabled: data.review_enabled,
       });
     }
   }, [data, form]);
@@ -108,7 +107,7 @@ export default function SettingsPage() {
       <PageHeader
         className="mb-6"
         title={t('系统设置')}
-        description={t('配置 OCR 解析、评分标准与 MCP 自检开关')}
+        description={t('配置 OCR 解析与评分标准')}
       />
 
       {/* 批改助手目录(ACP) */}

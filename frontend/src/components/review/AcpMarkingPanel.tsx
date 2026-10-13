@@ -55,6 +55,7 @@ export function AcpMarkingPanel({
   if (run === undefined) {
     return (
       <AcpStartPanel
+        submissionId={submissionId}
         questionName={questionName}
         questionId={questionId}
         onStartInAssistant={onStartInAssistant}
@@ -73,10 +74,12 @@ export function AcpMarkingPanel({
 }
 
 function AcpStartPanel({
+  submissionId,
   questionName,
   questionId,
   onStartInAssistant,
 }: {
+  submissionId: number;
   questionName?: string | null;
   questionId?: string | null;
   onStartInAssistant?: () => void;
@@ -111,6 +114,7 @@ function AcpStartPanel({
         {/* MCP 恢复兜底 */}
         <div className="rounded-2xl border border-slate-200 bg-muted/40 p-6">
           <McpWaitingPanel
+            submissionId={submissionId}
             questionName={questionName ?? null}
             questionId={questionId ?? null}
           />

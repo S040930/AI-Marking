@@ -13,6 +13,9 @@ import { useLanguage } from '@/i18n';
 
 interface ManualReviewPanelProps {
   suggestion: AiSuggestion | null;
+  gradingRevision: number;
+  hasVersionConflict?: boolean;
+  onReloadSuggestion?: () => void;
   isReadOnly: boolean;
   reviewerName: string;
   onFinalize: (payload: FinalizePayload) => void;
@@ -21,6 +24,7 @@ interface ManualReviewPanelProps {
 }
 
 interface EditableDetail {
+  rubric_item_id?: string | null;
   criterion: string;
   // '' 表示输入框被清空的中间态:不清零、不参与合计,提交前必须补全
   score: number | '';
@@ -41,6 +45,7 @@ function scoreIsValid(item: EditableDetail): item is EditableDetail & { score: n
 function toEditable(suggestion: AiSuggestion | null): EditableDetail[] {
   if (!suggestion) return [];
   return (suggestion.details ?? []).map((d) => ({
+    rubric_item_id: d.rubric_item_id,
     criterion: d.criterion,
     score: d.score,
     max_score: d.max_score ?? d.score,
@@ -63,6 +68,9 @@ function ScoreBar({ score, maxScore }: { score: number; maxScore: number }) {
 
 export default function ManualReviewPanel({
   suggestion,
+  gradingRevision,
+  hasVersionConflict = false,
+  onReloadSuggestion,
   isReadOnly,
   reviewerName,
   onFinalize,
@@ -75,14 +83,43 @@ export default function ManualReviewPanel({
   );
   const [feedback, setFeedback] = useState(suggestion?.feedback ?? '');
 
-  // 建议内容变化时重置工作副本(仅在内容实际变化时),避免用户编辑被覆盖。
   const suggestionKey = JSON.stringify(suggestion);
+  const [baseline, setBaseline] = useState(() => ({
+    revision: gradingRevision,
+    key: suggestionKey,
+    maxScore: suggestion?.max_score ?? 0,
+    details: toEditable(suggestion),
+    feedback: suggestion?.feedback ?? '',
+  }));
+  const dirty = JSON.stringify(details) !== JSON.stringify(baseline.details) ||
+    feedback !== baseline.feedback;
+  const stale = baseline.revision !== gradingRevision || baseline.key !== suggestionKey;
+
+  // An untouched form follows new suggestions; a dirty form retains its own
+  // rubric, scores and revision until the teacher explicitly loads the update.
   useEffect(() => {
+    if (dirty || !stale) return;
     setDetails(toEditable(suggestion));
     setFeedback(suggestion?.feedback ?? '');
-  }, [suggestionKey]); // eslint-disable-line react-hooks/exhaustive-deps
+    setBaseline({
+      revision: gradingRevision, key: suggestionKey,
+      maxScore: suggestion?.max_score ?? 0,
+      details: toEditable(suggestion), feedback: suggestion?.feedback ?? '',
+    });
+  }, [dirty, stale, gradingRevision, suggestionKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const maxScore = suggestion?.max_score ?? 0;
+  const loadLatestSuggestion = () => {
+    setDetails(toEditable(suggestion));
+    setFeedback(suggestion?.feedback ?? '');
+    setBaseline({
+      revision: gradingRevision, key: suggestionKey,
+      maxScore: suggestion?.max_score ?? 0,
+      details: toEditable(suggestion), feedback: suggestion?.feedback ?? '',
+    });
+    onReloadSuggestion?.();
+  };
+
+  const maxScore = baseline.maxScore;
   const totalScore = useMemo(
     () =>
       details.reduce(
@@ -109,6 +146,8 @@ export default function ManualReviewPanel({
     .map((item) => item.criterion);
   const canSubmit =
     !isReadOnly &&
+    !stale &&
+    !hasVersionConflict &&
     suggestion !== null &&
     details.length > 0 &&
     allScoresValid &&
@@ -125,11 +164,13 @@ export default function ManualReviewPanel({
   const handleSubmit = () => {
     if (!canSubmit) return;
     onFinalize({
+      expected_revision: baseline.revision,
       reviewer_name: reviewerName,
       score: totalScore,
       max_score: maxScore,
       feedback: feedback.trim(),
       details: details.map((d) => ({
+        rubric_item_id: d.rubric_item_id,
         criterion: d.criterion,
         // canSubmit 已保证全部为合法数字
         score: d.score as number,
@@ -177,6 +218,15 @@ export default function ManualReviewPanel({
               </p>
             </div>
           </div>
+
+          {!isReadOnly && (stale || hasVersionConflict) && (
+            <div role="alert" className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm">
+              <p>{t('评分建议已更新，已保留你的修改。请载入最新建议后重新复核。')}</p>
+              <Button variant="outline" className="mt-2" onClick={loadLatestSuggestion}>
+                {t('载入最新建议')}
+              </Button>
+            </div>
+          )}
 
           {/* 反馈编辑 */}
           <label className="mb-1 block text-xs font-medium text-foreground">

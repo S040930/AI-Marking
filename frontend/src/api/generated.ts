@@ -994,8 +994,10 @@ export interface paths {
         put?: never;
         /**
          * Create Submission
-         * @description 上传学生报告 PDF 及可选的多语言代码文件。
+         * @description 上传学生作业:纯报告 PDF(+可选散装代码),或一个 ZIP 包。
          *
+         *     ZIP 由后端解包自动分类:恰好一份报告 PDF、``q<n>.<ext>`` 命名的代码、
+         *     其余为数据集(写入 ``submission_code_input_files``,批改工作区会物化)。
          *     收敛为 MCP-only 后固定使用外部编程助手评分模式：上传后只做 OCR，
          *     进入 ``awaiting_mcp``，由 MCP 客户端评分。
          */
@@ -1653,18 +1655,18 @@ export interface components {
         Body_create_submission_api_submissions_post: {
             /**
              * Code Files
-             * @description 可选多语言代码文件
+             * @description 可选多语言代码文件(仅纯 PDF 上传)
              * @default []
              */
             code_files: string[];
             /**
              * Code Manifest
-             * @description 代码文件小题映射 JSON
+             * @description 代码文件小题映射 JSON(仅纯 PDF 上传)
              */
             code_manifest?: string | null;
             /**
              * File
-             * @description 学生作业 PDF
+             * @description 学生作业 PDF 或 ZIP(PDF+代码+数据集)
              */
             file: string;
             /**
@@ -1750,11 +1752,6 @@ export interface components {
              * @default
              */
             paddleocr_token: string;
-            /**
-             * Review Enabled
-             * @default true
-             */
-            review_enabled: boolean;
             rubric_definition?: components["schemas"]["RubricDefinition"] | null;
         };
         /**
@@ -1774,11 +1771,6 @@ export interface components {
              * @description PaddleOCR-VL Access Token(AI Studio 令牌)
              */
             paddleocr_token?: string | null;
-            /**
-             * Review Enabled
-             * @description 是否要求 MCP 客户端在保存建议前完成第二遍反向自检(默认开启)
-             */
-            review_enabled?: boolean | null;
             /** @description 结构化评分标准；每个条目包含 criterion、max_score、details */
             rubric_definition?: components["schemas"]["RubricDefinition"] | null;
         };
@@ -1842,6 +1834,8 @@ export interface components {
         FinalizeRequest: {
             /** Details */
             details: components["schemas"]["ScoreDetail"][];
+            /** Expected Revision */
+            expected_revision: number;
             /** Feedback */
             feedback: string;
             /** Max Score */
@@ -1870,8 +1864,6 @@ export interface components {
             ocr_text?: string | null;
             /** Question Id */
             question_id: string;
-            /** Review Enabled */
-            review_enabled: boolean;
             /** Snapshot Id */
             snapshot_id?: string | null;
             /** Source */
@@ -1896,10 +1888,14 @@ export interface components {
         };
         /**
          * McpAssessmentRequest
-         * @description 外部编程助手提交的评分建议(对外唯一请求模型)。
+         * @description 外部编程助手提交的评分建议(MCP API v12)。
          *
-         *     ``expected_revision``/``context_hash`` 由服务端在保存时从作业当前状态
-         *     补全,不在对外请求中出现;它们是防呆用的版本校验字段。
+         *     v12 起客户端只提交自己决定的内容:逐项 ``rubric_item_id``/得分/评语/
+         *     证据,加总分置信度与反馈。单项 ``criterion``/``max_score``、总得分、
+         *     总满分、rubric 来源与快照 ID 全部由服务端从 ``grading_handle`` 对应的
+         *     权威 rubric 推导,客户端提交这些字段会被拒绝(extra=forbid)。
+         *     版本和上下文由服务端从评分句柄读取并在持锁后核对,
+         *     不在对外请求中出现。
          */
         McpAssessmentRequest: {
             /**
@@ -1908,26 +1904,14 @@ export interface components {
              */
             confidence: number;
             /** Details */
-            details: components["schemas"]["ScoreDetail"][];
+            details: components["schemas"]["McpScoreDetail"][];
             /** Feedback */
             feedback: string;
-            /** Max Score */
-            max_score: number;
             /**
              * Request Id
              * Format: uuid
              */
             request_id: string;
-            /** Rubric Snapshot Id */
-            rubric_snapshot_id: string;
-            /**
-             * Rubric Source
-             * @enum {string}
-             */
-            rubric_source: "configured" | "question_extracted" | "built_in_default";
-            /** Score */
-            score: number;
-            self_check?: components["schemas"]["McpSelfCheck"];
         };
         /** McpAssessmentResponse */
         McpAssessmentResponse: {
@@ -1976,7 +1960,7 @@ export interface components {
             /** Request Id */
             request_id: string;
             /** Review Required */
-            review_required: boolean;
+            review_required?: boolean | null;
             /** Rubric Snapshot */
             rubric_snapshot?: string | null;
             /** Rubric Snapshot Id */
@@ -2095,15 +2079,15 @@ export interface components {
             /** Arithmetic Valid */
             arithmetic_valid: boolean;
             /** Client Self Check */
-            client_self_check: {
+            client_self_check?: {
                 [key: string]: unknown;
-            };
+            } | null;
             /** Code Evidence Valid */
             code_evidence_valid: boolean;
             /** Evidence Valid */
             evidence_valid: boolean;
             /** Second Pass Valid */
-            second_pass_valid: boolean;
+            second_pass_valid?: boolean | null;
             /** Visual Confirmation Valid */
             visual_confirmation_valid: boolean;
         };
@@ -2233,19 +2217,31 @@ export interface components {
              */
             status: "complete" | "absent_or_ambiguous";
         };
-        /** McpSelfCheck */
-        McpSelfCheck: {
-            /** Changes Made */
-            changes_made?: string[];
-            /** Issues Found */
-            issues_found?: string[];
-            /** Rubric Items Reviewed */
-            rubric_items_reviewed?: string[];
+        /**
+         * McpScoreDetail
+         * @description v12 起客户端提交的单项评分。
+         *
+         *     客户端只决定它真正负责的内容:引用哪个 rubric item、给多少分、
+         *     评语与证据。``criterion``/``max_score`` 由服务端按权威 rubric 回填,
+         *     不接受客户端提交。
+         */
+        McpScoreDetail: {
+            /** Comment */
+            comment: string;
+            /** Evidence Refs */
+            evidence_refs?: {
+                [key: string]: unknown;
+            }[];
             /**
-             * Second Pass Completed
-             * @default false
+             * Evidence Status
+             * @default supported
+             * @enum {string}
              */
-            second_pass_completed: boolean;
+            evidence_status: "supported" | "not_found";
+            /** Rubric Item Id */
+            rubric_item_id: string;
+            /** Score */
+            score: number;
         };
         /** McpVisualConfirmationOut */
         McpVisualConfirmationOut: {

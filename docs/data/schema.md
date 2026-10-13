@@ -11,13 +11,13 @@
 | `submission_code_files` | 编程助手提交的多语言小题源码与 SHA-256（不保存运行产物） | 随 submission 级联删除 |
 | `submission_code_input_files` | 历史数据：旧代码运行输入文件，仅只读保留 | 随 submission 级联删除 |
 | `background_jobs` | 待执行、运行中或死信的题目 OCR/题目替换/作业 OCR 任务 | 成功后删除；随业务实体级联删除 |
-| `system_config` | OCR、结构化 `rubric_definition` 与 `review_enabled` 配置 | 独立于业务记录长期保留 |
+| `system_config` | OCR 与结构化 `rubric_definition` 配置 | 独立于业务记录长期保留 |
 | `config_profiles` | 独立配置项目及默认标记 | 被题目引用或为默认时不可删除 |
 | `mcp_workflow_handles` | MCP 评分包句柄（续页、revision/context 绑定）与题目 rubric 提取句柄 | 保存或提取完成后删除，TTL 过期清理 |
 | `mcp_assessment_receipts` | 外部编程助手成功保存的请求哈希与响应 | 用于跨 revision、重启的精确幂等重放 |
 | `alembic_version` | 当前数据库迁移版本 | 由 Alembic 管理 |
 
-`submissions` 的 MCP 审计字段：`grading_mode`（收敛为 MCP-only 后固定为 `external_agent`）、`grading_revision`（乐观锁整数，每次成功保存建议递增）和 `graded_at`（最近一次建议保存时间）。评分来源记录在 `assessment_suggestion.mcp_metadata.client`（由启动器参数可选提供），界面据此显示具体客户端名称，不保存未经验证的模型名称。后端不再调用任何 LLM，也不存在 Agent/Critic 执行字段。
+`submissions` 的 MCP 审计字段：`grading_mode`（收敛为 MCP-only 后固定为 `external_agent`）、`grading_revision`（乐观锁整数，每次成功保存建议递增）和 `graded_at`（最近一次建议保存时间）。评分来源记录在 `assessment_suggestion.mcp_metadata.client`（由启动器参数可选提供），界面据此显示具体客户端名称，不保存未经验证的模型名称。v12 起建议明细由服务端按权威 rubric 补全 `criterion`/`max_score` 并计算总分，旧数据中的 `quality_checks.client_self_check`/`second_pass_valid` 与 `review_required` 字段仅为历史残留，不再产生。后端不再调用任何 LLM，也不存在 Agent/Critic 执行字段。
 
 `submissions.assessment_review` 存储独立复核任务对当前建议的结论（总体 `verdict` agree/partial/disagree、`summary`、逐项 `items` 含服务端补全的 criterion/max_score 与可选 `suggested_score`、`reviewed_revision`、复核客户端与时间）。复核由教师按需触发、经 `save_ai_marking_assessment_review` 写入：不修改建议本身、不改变状态；`reviewed_revision` 与当前 `grading_revision` 不一致时界面标记为过期，重试批改时随建议一起清空。
 

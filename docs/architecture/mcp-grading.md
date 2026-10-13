@@ -6,23 +6,23 @@
 
 ```text
 prepare_ai_marking_submission（只读）
-→ 编程助手在当前任务临时目录尝试运行代码（结果留在对话）
+→ 编程助手在当前任务临时目录诊断运行代码（上传前诊断，结果留在对话）
 → submit_prepared_ai_marking_submission（写）
 → open_ai_marking_assignment（只读，wait-ready 长轮询、最多 5 分钟）
 → [needs_rubric 时 save_ai_marking_question_rubric，再重新打开]
-→ confirm_ai_marking_visual_review（含代码作业必需）
+→ （含代码作业）建立当前评分会话的运行观察 + confirm_ai_marking_visual_review
 → save_ai_marking_assessment（写）
 ```
 
 预检在 MCP 进程内校验本机路径、PDF、多语言代码入口和文件 SHA-256，并向后端请求题目映射；成功后产生 30 分钟有效的进程内 `submission_plan`。计划不写入数据库，也不保存源码正文，只保存路径、哈希和入口元数据；每次创建或读取时清理过期项，单进程最多保留 256 个有效计划。MCP 重启或文件变化时必须重新预检。
 
-打开作业先读取一次评分包状态；仍在 OCR 时改调 `GET /api/mcp/submissions/{id}/wait-ready` 长轮询——PostgreSQL 后端复用 LISTEN/NOTIFY 通道，状态变更即时唤醒，单次最长 60 秒，总预算 5 分钟，不再产生固定间隔的全量评分包查询。就绪时后端提供题目、报告、源码和 `resolved_rubric`，每页最多 40,000 Unicode 字符，总上下文硬上限 200,000 字符；超过上限需拆分作业或缩减提交内容。中间页只有 `continuation_token`，完整读取的最终页才签发 `grading_handle`。句柄持久化于 PostgreSQL，绑定 revision 和 context hash，服务重启或多 worker 不会丢失；评分包文本按 `(submission_id, grading_revision, question.updated_at)` 在进程内缓存，翻页不重复重建。
+打开作业先读取一次评分包状态；仍在 OCR 时改调 `GET /api/mcp/submissions/{id}/wait-ready` 长轮询——PostgreSQL 后端复用 LISTEN/NOTIFY 通道，状态变更即时唤醒，单次最长 60 秒，总预算 5 分钟，不再产生固定间隔的全量评分包查询。就绪时后端提供题目、报告、源码和 `resolved_rubric`，每页最多 40,000 Unicode 字符，总上下文硬上限 200,000 字符；超过上限需拆分作业或缩减提交内容。中间页只有 `continuation_token`，完整读取的最终页才签发 `grading_handle`。句柄持久化于 PostgreSQL，绑定 revision 和 context hash，服务重启或多 worker 不会丢失；评分包文本按 `(submission_id, grading_revision, question.updated_at, rubric.snapshot_id)` 在进程内缓存，翻页不重复重建。
 
-`list_pending_ai_marking_assignments(cursor, limit)` 按上传时间与 ID 升序返回等待评分的作业（最多 100 条，带 `next_cursor` 分页），用于恢复被关闭的原任务、续接或清理待办。
+`list_pending_ai_marking_assignments(cursor, limit)` 按上传时间与 ID 升序返回等待评分的作业（最多 100 条，带 `next_cursor` 分页）。仅在启动提示词未给出 `submission_id` 且教师主动要求查找全部待办（恢复中断任务、清理待办）时使用；恢复提示词显式携带 `workflow_mode: mcp_existing` 与 `submission_id`，助手只处理该作业。
 
 ## 评分与边界
 
-评分包中的 `grading_policy.resolved_rubric` 是唯一运行时政策：题目提取快照优先，其次是题目绑定配置项目的结构化 rubric，最后是内置 rubric。所有评分结果必须逐项覆盖每个权威 item 一次，并匹配 item ID、criterion、max_score 和总分。
+评分包中的 `grading_policy.resolved_rubric` 是唯一运行时政策：题目提取快照优先，其次是题目绑定配置项目的结构化 rubric，最后是内置 rubric。评分是对每个权威 item 的一次性证据化评分：客户端只提交逐项 `rubric_item_id`/`score`/`comment`/`evidence_refs`/`evidence_status`，服务端推导并回填 `criterion`、单项与总 `max_score`、总 `score`（明细之和）、rubric 来源与快照 ID——客户端提交这些字段会被拒绝（`extra=forbid`）。`evidence_status="not_found"` 表示完整上下文中确实不存在对应内容：必须 0 分、不引用证据并在评语中说明；得分大于 0 的明细必须至少一条可定位证据（含代码与纯报告作业同样强制）。
 
 ### 题目 rubric 提取（needs_rubric 分支）
 
@@ -35,13 +35,13 @@ prepare_ai_marking_submission（只读）
 3. 服务端以确定性规则校验（引用子串、满分包含、总分一致性、评分项不重复），通过后写入题目级权威快照并返回 `rubric_snapshot_id`，随后删除该次提取句柄；校验失败返回 422，不写入。客户端不得绕过或降级该项校验。
 4. 保存成功后重新调用 `open_ai_marking_assignment` 以新 rubric 快照评分。
 
-批改流程的唯一权威源是 [.agents/skills/ai-marking-grader/SKILL.md](../../.agents/skills/ai-marking-grader/SKILL.md)：客户端按 skill 名称 `ai-marking-grader` 加载它获取完整流程，MCP 不再提供单独的提示词模板；前端「批改提示词」对话框只输出一句「使用 ai-marking-grader skill」的引用 + 题目标识，不再内嵌流程或评分标准，避免多份流程漂移。MCP 专属内容（新作业上传步骤 1-4、list_pending 恢复）在 [references/mcp-only.md](../../.agents/skills/ai-marking-grader/references/mcp-only.md) 附录；ACP 工作区物化的 `skill.md` 为剔除 MCP 专属块的裁剪版。`GET /api/questions/{id}/grading-prompt` 仍返回与该题同源的 `grading_policy`（复用 `resolve_submission_rubric` + `build_grading_policy`）供审计与预检；题目 OCR 未完成时该接口返回 409，前端提示先完成识别。
+批改流程的唯一权威源是 [.agents/skills/ai-marking-grader/SKILL.md](../../.agents/skills/ai-marking-grader/SKILL.md)：客户端按 skill 名称 `ai-marking-grader` 加载它获取完整流程，MCP 不再提供单独的提示词模板；前端「批改提示词」对话框只输出一句「使用 ai-marking-grader skill」的引用 + `workflow_mode` + 题目标识，不再内嵌流程或评分标准，避免多份流程漂移。MCP 专属内容（新作业上传步骤 1-4、list_pending 恢复）在 [references/mcp-only.md](../../.agents/skills/ai-marking-grader/references/mcp-only.md) 附录；ACP 工作区物化的 `skill.md` 为剔除 MCP 专属块的裁剪版。`GET /api/questions/{id}/grading-prompt` 仍返回与该题同源的 `grading_policy`（复用 `resolve_submission_rubric` + `build_grading_policy`）供审计与预检；题目 OCR 未完成时该接口返回 409，前端提示先完成识别。
 
 代码支持 Python/Notebook、R、Java、C、C++；每题一个入口，可附题目要求的同题辅助源码/头文件。编程助手在提交前把同题源码复制到独立临时目录中尝试运行，不修改原文件、不申请提权、不开放网络。运行失败、超时或本机缺少语言环境都由编程助手明确告知教师，但不阻止上传和静态评分；运行输出不上传后端，不进入评分包，不作为服务端证据。
 
 含代码作业必须在评分前调用 `confirm_ai_marking_visual_review`，确认编程助手运行表现与报告描述一致，或提交带说明的不一致结论；无代码作业调用该工具返回 409。评分证据只允许服务端可验证的 `source_line` 和 `report_quote`，拒绝 `run_log`、代码产物、`visual_comparison` 和其他视觉输入。教师仍须在网页确认最终成绩。
 
-MCP 不访问数据库、不暴露删除、重试、配置或最终确认工具。保存请求必须带 request ID、revision、context hash、rubric snapshot ID 和逐项 rubric item ID；相同 request ID 的精确重放返回原结果，不同内容冲突返回 409。
+MCP 不访问数据库、不暴露删除、重试、配置或最终确认工具。保存请求必须带 request ID 和逐项 rubric item ID（revision、context hash、rubric snapshot ID 由服务端从句柄推导）；相同 request ID 的精确重放返回原结果，不同内容冲突返回 409。评分保存按 `Question → Submission → Handle` 加锁并刷新 ORM 对象，比较句柄绑定的 revision/context hash；锁内再次检查回执，保证并发精确重放仍幂等。修改配置 rubric 后新打开立即使用新标准，旧分页游标和句柄返回 409。
 
 保存请求可携带 `client` 字段标识评分来源，由启动脚本通过 MCP 配置中的可选参数注入，后端记录在 `mcp_metadata.client` 供网页审计展示；未提供时按「外部编程助手」显示。
 
@@ -60,3 +60,5 @@ MCP 不访问数据库、不暴露删除、重试、配置或最终确认工具�
 
 在客户端 MCP 配置中填写 `scripts/run-ai-marking-mcp` 的绝对路径；可选第一个参数作为小写客户端标识。然后运行 `./start.sh`。
 题目 rubric 由编程助手从 OCR 提取、服务端确定性校验后写入权威快照，MCP 保存评分时只能引用当前快照，不能上传自由文本 rubric。FastAPI 与 MCP 服务升级 API 版本后必须同时重启，不提供旧版本兼容 shim。
+
+评分包缓存上限保持 8 个条目；每次打开只解析一次 rubric，文本和句柄 hash 使用同一次解析结果。上下文最多 200,000 字符，文本缓存预计为数 MB，分页命中后只切片及持久化句柄，常规耗时为毫秒至秒，无额外磁盘文件。

@@ -27,6 +27,11 @@ describe('buildGradingPrompt', () => {
     expect(prompt).toContain('最终成绩由教师在网页确认');
   });
 
+  it('declares workflow_mode for the skill to branch on', () => {
+    expect(buildGradingPrompt(input, 'zh-CN')).toContain('workflow_mode: mcp_new');
+    expect(buildGradingPrompt(input, 'en-US')).toContain('workflow_mode: mcp_new');
+  });
+
   it('does not inline the detailed grading workflow or policy', () => {
     const prompt = buildGradingPrompt(input, 'zh-CN');
     // 详细流程与评分标准全部交由 ai-marking-grader skill 提供，提示词本身不内嵌
@@ -63,20 +68,40 @@ describe('buildMcpResumePrompt', () => {
   const input = {
     questionName: 'DTS208TC_CW1_Paper',
     questionId: 'DTS208TC_CW1_Paper',
+    submissionId: 7,
   };
 
-  it('已存在作业:打开评分包继续,不点名模式', () => {
+  it('已存在作业:显式绑定 submission_id,只处理该作业', () => {
     const prompt = buildMcpResumePrompt(input, 'zh-CN');
     expect(prompt).toContain('已上传到 AI-Marking');
     expect(prompt).toContain('ai-marking-grader');
     expect(prompt).toContain('最终成绩由教师在网页确认');
-    // 已存在作业不该提 zip,也不点名模式
+    // 恢复提示词显式携带机器身份,助手无需 list_pending 猜作业
+    expect(prompt).toContain('workflow_mode: mcp_existing');
+    expect(prompt).toContain('submission_id: 7');
+    expect(prompt).toContain('仅处理上述 submission_id 对应的作业');
+    // 已存在作业不该提 zip
     expect(prompt).not.toContain('zip');
-    expect(prompt).not.toContain('MCP 模式');
-    expect(prompt).not.toContain('ACP 模式');
   });
 
-  it('提示词均不点名模式:模式由 SKILL.md 模式判定规则自检', () => {
+  it('embeds submission id in both locales', () => {
+    for (const locale of ['zh-CN', 'en-US'] as const) {
+      const prompt = buildMcpResumePrompt(input, locale);
+      expect(prompt).toContain('workflow_mode: mcp_existing');
+      expect(prompt).toContain('7');
+      expect(prompt).not.toContain('{submissionId}');
+    }
+  });
+});
+
+describe('workflow_mode 与身份字段', () => {
+  const input = {
+    questionName: 'DTS208TC_CW1_Paper',
+    questionId: 'DTS208TC_CW1_Paper',
+    submissionId: 7,
+  };
+
+  it('三种入口提示词都显式声明 workflow_mode,skill 不再用文件系统猜', () => {
     const zhMcp = buildGradingPrompt(input, 'zh-CN');
     const enMcp = buildGradingPrompt(input, 'en-US');
     const zhResume = buildMcpResumePrompt(input, 'zh-CN');
@@ -89,10 +114,14 @@ describe('buildMcpResumePrompt', () => {
       { questionName: input.questionName, submissionId: 42 },
       'en-US',
     );
+    expect(zhMcp).toContain('workflow_mode: mcp_new');
+    expect(enMcp).toContain('workflow_mode: mcp_new');
+    expect(zhResume).toContain('workflow_mode: mcp_existing');
+    expect(enResume).toContain('workflow_mode: mcp_existing');
+    expect(zhAcp).toContain('workflow_mode: acp_existing');
+    expect(enAcp).toContain('workflow_mode: acp_existing');
+    // 每条提示词都必须能引用到 ai-marking-grader skill 或工作区 skill.md
     for (const prompt of [zhMcp, enMcp, zhResume, enResume, zhAcp, enAcp]) {
-      expect(prompt).not.toContain('MCP 模式');
-      expect(prompt).not.toContain('ACP 模式');
-      // 每条提示词都必须能引用到 ai-marking-grader skill 或工作区 skill.md
       expect(
         prompt.toLowerCase().includes('ai-marking-grader') || prompt.includes('skill.md'),
       ).toBe(true);
@@ -115,14 +144,13 @@ describe('buildAcpChatGradingPrompt', () => {
     submissionId: 42,
   };
 
-  it('只做入口:读工作区 skill.md 收敛完整流程,不点名模式', () => {
+  it('只做入口:声明 workflow_mode,读工作区 skill.md 收敛完整流程', () => {
     const prompt = buildAcpChatGradingPrompt(input, 'zh-CN');
     expect(prompt).toContain('DTS208TC_CW1_Paper');
     expect(prompt).toContain('submission_id=42');
+    expect(prompt).toContain('workflow_mode: acp_existing');
     expect(prompt).toContain('skill.md');
-    // 程序流程/证据契约/模式判定全部收敛到 SKILL.md,提示词不点名模式
-    expect(prompt).not.toContain('ACP 模式');
-    expect(prompt).not.toContain('MCP 模式');
+    // 程序流程/证据契约全部收敛到 SKILL.md,提示词不内嵌
     expect(prompt).not.toContain('open_ai_marking_assignment');
     expect(prompt).not.toContain('source_line');
     expect(prompt).not.toContain('report_quote');

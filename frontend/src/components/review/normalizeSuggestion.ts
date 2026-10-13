@@ -9,6 +9,7 @@ export function normalizeSuggestion(data: SubmissionDetail): AiSuggestion | null
     confidence: raw.confidence ?? 0,
     feedback: raw.feedback ?? '',
     details: (raw.details ?? []).map((d) => ({
+      rubric_item_id: d.rubric_item_id,
       criterion: d.criterion,
       score: d.score,
       max_score: d.max_score ?? 0,

@@ -67,7 +67,6 @@ describe('QuestionPromptDialog', () => {
       question_id: 'DTS208TC_CW1_Paper',
       name: '期末作文',
       grading_mode: 'external_agent',
-      review_enabled: true,
       source: 'configured',
       snapshot_id: 'snap-1',
       total_max_score: 100,
