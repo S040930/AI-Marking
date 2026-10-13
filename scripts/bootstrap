@@ -7,7 +7,6 @@ BACKEND_DIR="$ROOT_DIR/backend"
 FRONTEND_DIR="$ROOT_DIR/frontend"
 PYTHON_VERSION="$(tr -d '[:space:]' < "$ROOT_DIR/.python-version")"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
-VENV_DIR="$BACKEND_DIR/.venv"
 MODE="dev"
 
 if [[ "${1:-}" == "--prod" ]]; then
@@ -16,6 +15,11 @@ elif [[ "${1:-}" != "" ]]; then
   printf '用法：%s [--prod]\n' "$0" >&2
   exit 2
 fi
+
+command -v uv >/dev/null 2>&1 || {
+  printf '未找到 uv；请先安装（如 brew install uv，或见 https://docs.astral.sh/uv/）。\n' >&2
+  exit 1
+}
 
 command -v "$PYTHON_BIN" >/dev/null 2>&1 || {
   printf '未找到 Python：%s\n' "$PYTHON_BIN" >&2
@@ -32,12 +36,13 @@ if actual != expected:
     raise SystemExit(f"需要 Python {expected}，当前为 {actual}；请设置 PYTHON_BIN")
 PY
 
-if [[ ! -x "$VENV_DIR/bin/python" ]]; then
-  "$PYTHON_BIN" -m venv "$VENV_DIR"
+# 后端依赖由 uv 按 backend/uv.lock 精确安装到 backend/.venv。
+# --frozen：锁文件为唯一事实源，禁止顺带改写 uv.lock（升级流程显式运行 uv lock）。
+if [[ "$MODE" == "prod" ]]; then
+  ( cd "$BACKEND_DIR" && uv sync --no-dev --frozen )
+else
+  ( cd "$BACKEND_DIR" && uv sync --frozen )
 fi
-
-REQUIREMENTS_FILE="$BACKEND_DIR/requirements-${MODE}.txt"
-"$VENV_DIR/bin/python" -m pip install --require-hashes -r "$REQUIREMENTS_FILE"
 
 command -v npm >/dev/null 2>&1 || {
   printf '未找到 npm；请安装 Node.js 18 或更高版本。\n' >&2
@@ -48,4 +53,4 @@ command -v npm >/dev/null 2>&1 || {
   npm ci
 )
 
-printf '开发环境已就绪：%s\n' "$VENV_DIR"
+printf '开发环境已就绪：%s\n' "$BACKEND_DIR/.venv"

@@ -1,15 +1,16 @@
 # AI 作业批改系统
 
-基于 OCR、MCP 与 Codex ACP 的作业批改辅助系统。系统集成 PaddleOCR-VL 文档解析；
-评分由本机编程助手通过 MCP 或首期唯一支持的 `codex-acp` ACP worker 完成并保存
-可审计建议，教师最终在网页确认。
+基于 OCR 与**后端内嵌批改 agent** 的作业批改辅助系统。系统集成 PaddleOCR-VL
+文档解析；评分由后端进程内的自研 agent（tool-calling 循环，官方 OpenAI API
+通道）完成并保存可审计建议，教师最终在网页确认。评分不再依赖外部编程助手、
+ACP 或 MCP。
 
 ## 主要功能
 
-- **PDF 上传**：题目 PDF 通过专门的题目上传页批量上传（拖拽/选择，单文件 ≤50MB）并直接进入 OCR 链路；学生作业 PDF 由编程助手通过本地 MCP 提交。网页上传页亦支持纯 PDF 或一份 ZIP 作业包（≤150MB，内含恰好一份报告 PDF、文件名以小题号结尾的代码文件（如 `task3.py`）与其余文件作为数据集）；选中 ZIP 后前端只读解析中央目录即时预览分类结果，上传后由后端解包权威校验并自动分类，数据集随批改物化到隔离工作区。
+- **PDF 与 ZIP 上传**：题目 PDF 通过专门的题目上传页批量上传（拖拽/选择，单文件 ≤50MB）并直接进入 OCR 链路；学生作业在作业上传页提交纯 PDF，或一份 ZIP 作业包（≤150MB，内含恰好一份报告 PDF、文件名以小题号结尾的代码文件（如 `task3.py`）与其余文件作为数据集）。选中 ZIP 后前端只读解析中央目录即时预览分类结果，上传后由后端解包权威校验并自动分类，数据集随批改物化到隔离工作区。
 - **独立题目库**：题目只需上传并 OCR 一次，后续可直接复用于多份学生作业。
-- **编程助手 MCP 评分**：从题目库复制批改提示词，粘贴到任意支持本地 STDIO MCP 的编程助手，并在对话中上传学生作业 zip（报告 PDF + 代码文件）；编程助手按 `ai-marking-grader` skill 解压试运行、预检上传、等待 OCR、读取完整评分包并保存可审计建议；最终成绩仍由教师在网页确认。
-- **Codex ACP 批改客户端**：设置页只提供官方 `codex-acp` 的精确版本安装与连接测试；运行时直接使用 Codex 原生 `workspace-write` 沙箱并关闭网络。每次批改或作业对话都可按当前 Agent 能力选择模型、思考强度、标准/快速速度和 `Ask for approval`/`Approve for me` 权限档位。运行进度通过 SSE 实时转录，代码作业经教师检查点确认，最终成绩仍由教师在网页确认。
+- **AI 批改 agent**：进入作业详情页（`awaiting_grading`）后选择模型通道与思考强度并点「开始批改」；后端批改 worker 驱动内嵌 agent 读取评分包、完成证据化评分并保存建议；含代码作业在评分前弹出教师检查点（可在本地运行学生代码后核对，或直接确认）。运行进度经 SSE 实时转录，运行中可热切换模型/思考强度（下一回合生效）。
+- **模型通道配置**：设置页提供官方 OpenAI API 通道（API key 只写不读、连接测试、默认模型与思考强度）与 ChatGPT 订阅通道占位（未开放）；可设置默认批改通道。
 - **人工复核与确认**：教师可查看原文证据、表单式调整单项分数与反馈并确认最终评分。
 - **历史记录管理**：按处理状态查看、选择和安全删除批改记录。
 - **题目安全管理**：支持搜索、预览、重命名、OCR 重试、上传新版及级联删除。
@@ -23,8 +24,8 @@
 | 后端 | Python + FastAPI + SQLAlchemy 2.0 + Alembic |
 | 数据库 | PostgreSQL |
 | OCR | PaddleOCR-VL(文档解析,输出结构化 Markdown) |
-| 评分 | 本机编程助手 MCP（STDIO，评分在客户端完成） |
-| ACP 批改 | agent-client-protocol 0.12.1（Codex-only + 独立 ACP worker） |
+| 评分 | 后端内嵌 agent（进程内 tool-calling；httpx → OpenAI Responses API） |
+| 依赖管理 | uv（`backend/uv.lock` 为锁文件；脚本用 `uv sync`） |
 
 ## 环境要求
 
@@ -42,8 +43,8 @@
 ./start.sh
 ```
 
-脚本会自动安装缺失依赖、执行数据库迁移、确认 8000 端口没有旧服务，并同时
-启动前端、后端和任务 worker。按 `Ctrl+C` 可一起关闭三个进程。
+脚本会自动安装缺失依赖（uv / npm）、执行数据库迁移、确认 8000 端口没有旧服务，并同时
+启动前端、后端、任务 worker 与批改 worker。按 `Ctrl+C` 可一起关闭四个进程。
 
 ### 本机磁盘清理与恢复
 
@@ -72,7 +73,7 @@
 ./start.prod.sh
 ```
 
-脚本固定启动一个 API 进程和一个任务 worker；`WORKERS` 只能为 `1`，更大的值会
+脚本固定启动一个 API 进程、一个任务 worker 与一个批改 worker；`WORKERS` 只能为 `1`，更大的值会
 直接拒绝启动，避免单机数据库连接池和本地配置语义随进程数放大。
 
 ### 1. 配置数据库
@@ -144,21 +145,18 @@ Password: 按本地配置填写；无密码时留空
 ```bash
 cd backend
 
-# 安装精确锁定的依赖(含开发工具)
-pip install --require-hashes -r requirements-dev.txt
-
-# 校验 MCP 运行时与后端契约一致(必须为 2.0.0)
-python -c 'import importlib.metadata; assert importlib.metadata.version("mcp") == "2.0.0"'
+# 安装依赖（uv 按 uv.lock 精确安装到 backend/.venv，含开发工具）
+uv sync
 
 # 配置环境变量
 cp .env.example .env
 # 编辑 .env 填写数据库连接等
 
 # 执行数据库迁移
-alembic upgrade head
+.venv/bin/alembic upgrade head
 
 # 启动开发服务器
-uvicorn app.main:app --reload
+.venv/bin/uvicorn app.main:app --reload
 ```
 
 默认监听 `http://localhost:8000`。出于安全考虑已禁用 Swagger 文档
@@ -186,28 +184,33 @@ curl http://localhost:8000/api/config
 
 `/api/config` 应返回 JSON 配置；如果响应头或 OpenAPI 显示的是其他项目，请回到该项目终端按 `Ctrl+C` 停止它，再从本目录运行 `./start.sh`。
 
-## Codex ACP 批改与对话
+## AI 批改 agent
 
-首期 ACP 公开入口固定为 `codex-acp`。完成安装和连接测试后，
-教师可以在上传页、Review 批改面板和作业对话面板使用同一组动态配置控件：
+批改由后端内嵌 agent（`backend/app/agent/**`）在独立 worker 进程内完成：
 
-- 模型、思考档位和快速模式来自当前 Codex ACP `session/new` 的 `configOptions`，不使用硬编码清单；
-- 模型切换会重新探测该模型支持的思考与速度；快速模式必须确认可能增加额度或 API 成本；
-- 运行中的批改或对话不会被配置更新打断，更新会在下一个安全 ACP 回合应用；
-- 两种权限档位都保持 Codex 原生 `workspace-write` 和禁网，不提供 `Full access`；应用不再叠加外层 VM、文件白名单或认证探针。
+- 教师在评审页（`/review/{id}`，作业状态 `awaiting_grading`）选择模型通道与
+  思考强度后点「开始批改」；
+- 后端创建 `GradingRun` 并由批改 worker 领取租约，物化作业工作区、组装评分包，
+  引擎在 tool-calling 循环内完成证据化评分并调用 `save_assessment` 保存建议；
+- 含代码作业在评分前触发教师检查点（run 驻留 `waiting_for_teacher`，可跨夜，
+  答复后续跑）；运行中可热切换模型/思考强度（下一回合生效）；
+- 运行进度经 SSE（`GET /api/agent/runs/{id}/stream`）实时转录；取消使用
+  `POST /api/agent/runs/{id}/cancel`。
 
-ACP worker 独立运行：
+批改 worker 独立运行：
 
 ```bash
 cd backend
-.venv/bin/python -m app.acp_worker
+.venv/bin/python -m app.grading_worker
 ```
 
-配置目录接口为 `GET /api/acp/codex/configuration`；运行和对话配置更新分别使用
-`PATCH /api/acp/runs/{id}/codex-configuration` 与
-`PATCH /api/acp/chat/sessions/{id}/codex-configuration`。API 响应会区分期望、
-已生效和待下一回合配置。完整安全边界、恢复语义和测试命令见
-[docs/architecture/acp-grading.md](docs/architecture/acp-grading.md)。
+模型通道在「系统设置」配置：官方 OpenAI API 通道（API key 只写不读，响应仅
+回显后四位；可做连接测试与设置默认模型/思考强度）；ChatGPT 订阅通道为未开放
+占位。查询接口为 `GET /api/agent/providers`；运行中配置切换使用
+`PATCH /api/agent/runs/{id}/configuration`。
+
+完整状态机、工具契约、检查点与恢复语义见
+[docs/architecture/agent-grading.md](docs/architecture/agent-grading.md)。
 
 ## 环境变量
 
@@ -224,60 +227,38 @@ cd backend
 | `TASK_LEASE_SECONDS` | 任务租约秒数 | `90` |
 | `TASK_MAX_ATTEMPTS` | 非预期异常最大执行次数 | `3` |
 | `TASK_POLL_INTERVAL_SECONDS` | 空队列轮询起始间隔（指数退避至 5 秒） | `1` |
-| `MCP_MAX_GRADING_CONTEXT_CHARS` | MCP 评分上下文总字符硬上限；超过后需拆分作业或缩减提交内容 | `200000` |
-| `ACCESS_TOKEN` | 全站访问令牌；留空关闭鉴权，设置后网页、管理 API 与 MCP 均需认证 | 空 |
+| `GRADING_MAX_CONTEXT_CHARS` | 批改 agent 评分上下文总字符硬上限；超过后需拆分作业或缩减提交内容 | `200000` |
+| `ACCESS_TOKEN` | 全站访问令牌；留空关闭鉴权，设置后网页与管理 API 均需认证 | 空 |
 | `MAX_SSE_CLIENTS` | PostgreSQL SSE LISTEN 连接上限 | `16` |
 ## 代码执行
 
 后端不编译、执行或上传学生代码产物，也不承担学生代码的 CPU、内存、进程或磁盘资源。
-编程助手在当前教师任务中把同题源码复制到独立临时目录后尝试运行，不修改原文件、不申请提权、
-不开放网络。运行失败、超时或本机缺少语言环境时由编程助手在对话中明确披露，但不阻止静态评分；
-运行输出只存在于当前对话，不作为服务端证据。后端仅持久化源码、SHA-256、评分建议和人工确认。
+含代码作业在批改 run 内触发**教师检查点**：教师把同题源码复制到独立临时目录自行尝试
+运行（不修改原文件、不申请提权、不开放网络），核对运行表现与报告描述后确认「一致」，
+或选「不一致」并填写说明；运行输出只存在于教师本地，不作为服务端证据。后端仅持久化
+源码、SHA-256、评分建议和人工确认。
 
-## 连接编程助手 MCP
+## 一次完整批改
 
-在所用编程助手的 MCP 配置中新增一个本地 STDIO 服务，填写项目启动器的绝对路径：
+1. 在网页题目库上传题目 PDF，等待 OCR 变为「可使用」（题目只需识别一次）。
+2. 在作业上传页选择题目并提交学生作业：纯报告 PDF，或一份 ZIP 作业包
+   （报告 PDF + 文件名以小题号结尾的代码 + 数据集；报告 PDF ≤ 50 MB，
+   代码 ≤ 20 个文件、总计 100 MB、单文件 20 MB）。提交后自动跳转评审页。
+3. 作业 OCR 完成后状态变为 `awaiting_grading`，评审页显示开始面板：选择
+   模型通道（官方 OpenAI API）与思考强度，点「开始批改」。
+4. 后端批改 worker 驱动内嵌 agent 完成评分：以不透明续页令牌分页读取评分包
+   →（题目无可信 rubric 时）先从题目 OCR 提取评分标准并经服务端确定性校验
+   保存 →（含代码作业）弹出教师检查点，教师在本地运行学生代码核对后确认
+   「一致」，或选「不一致」并填写说明 → 逐项证据化评分（零分且无内容可用
+   `not_found` 免证据）→ `save_assessment` 保存建议（服务端生成 request_id，
+   同 payload 幂等）。
+5. 建议保存后作业进入 `ready_for_review`，教师在评审页核对证据、表单式调整
+   分数并确认最终成绩；页面同时提供「使用原文件重试」等失败恢复入口。
 
-```json
-{
-  "mcpServers": {
-    "ai-marking": {
-      "command": "/绝对路径/AI-Marking/scripts/run-ai-marking-mcp",
-      "args": ["可选的客户端名称"]
-    }
-  }
-}
-```
+批改全程不需要任何外部编程助手；如批改失败，可在评审页重新配置并发起。
 
-上面是常见客户端的配置形状；若客户端字段名不同，只需填写同一条 `command` 和可选 `args`。`args` 可省略；如填写请使用小写客户端名称，省略时评分来源记录为“外部编程助手”。MCP 和 FastAPI 只绑定本机 loopback；若 `ACCESS_TOKEN` 非空，STDIO MCP 会从 `backend/.env` 读取同一令牌并以 Bearer 认证，网页则通过登录页建立 httpOnly Cookie 会话。
-
-完成配置并运行 `./start.sh` 后，按以下步骤批改一份新作业：
-
-1. 在网页题目库的题目卡片上点击「复制提示词」，得到针对该题目的批改提示词。
-2. 在编程助手新建任务，粘贴提示词，并在同一对话中上传该学生的作业 zip（一名学生一个 zip：一份报告 PDF + 代码文件；报告 PDF ≤ 50 MB，代码 ≤ 20 个文件、总计 100 MB、单文件 20 MB）。
-
-提示词由前端生成，只包含题目标识、`workflow_mode` 与对 skill 的引用，不内嵌评分流程（流程唯一权威源是
-`.agents/skills/ai-marking-grader/SKILL.md`）。中文版形如：
-
-```text
-使用 ai-marking-grader skill 批改学生作业。
-
-workflow_mode: mcp_new
-题目：{题目名}（question_id: {question_id}）
-学生作业：我在本次对话中上传的 zip 压缩包（一份报告 PDF 与若干代码文件）。
-
-请先加载 ai-marking-grader skill 获取完整批改流程，
-然后按流程上传作业 zip 并开始批改。最终成绩由教师在网页确认。
-```
-
-编程助手加载 skill 后自动执行：解压作业 zip，把每个代码入口复制到独立临时目录试运行（上传前诊断，结果只留在当前对话，不上传后端）→ `prepare_ai_marking_submission` 预检题目与代码映射（题目不唯一时只请教师选择；文件名不含 `q<题号>` 的代码文件需显式映射题号，每题一个入口文件及题目要求的同题辅助源码/头文件）→ `submit_prepared_ai_marking_submission` 上传 → `open_ai_marking_assignment` 通过服务端长轮询等待 OCR 完成（PostgreSQL NOTIFY 即时唤醒，最多等待 5 分钟）→ 以不透明续页令牌完整读取评分包 →（含代码时）建立当前会话的运行观察并请教师回答“已检查且一致”，或回答“已检查且存在不一致”并用自由文字说明差异，未检查或含糊时暂停评分 → 单次证据化评分（逐项证据账本，零分无内容可用 `not_found` 免证据）→ `save_ai_marking_assessment` 保存建议，最后返回 `http://localhost:5173/review/{id}` 复核链接。
-
-若题目还没有可信 rubric，评分包会返回 `needs_rubric`，编程助手先从题目 OCR 提取评分标准并调用 `save_ai_marking_question_rubric`，服务端确定性校验（引用为 OCR 原文子串、包含满分、各项满分之和等于总分）通过后写入权威快照并重新打开评分包。代码运行失败或本机缺少语言环境时由编程助手在对话中披露，但不阻止静态评分。OCR 失败时会返回原始错误和网页重试地址。
-
-原会话中断后恢复批改：在 Review 页「等待编程助手」面板复制恢复提示词（显式携带 `workflow_mode: mcp_existing` 与 `submission_id`，助手只处理该作业）；仅当没有 `submission_id` 且教师要求查找全部待办时，才在编程助手中调用 `list_pending_ai_marking_assignments`。MCP 不能确认最终成绩，教师必须在网页点击确认。
-
-完整工具契约和安全边界见
-[docs/architecture/mcp-grading.md](docs/architecture/mcp-grading.md)。
+完整状态机、工具契约、检查点跨夜与恢复语义见
+[docs/architecture/agent-grading.md](docs/architecture/agent-grading.md)。
 
 ## 持久化任务 worker
 
@@ -287,49 +268,44 @@ workflow_mode: mcp_new
 
 ```bash
 cd backend
-.venv/bin/python -m app.worker
+.venv/bin/python -m app.worker          # OCR / 清理 worker
+.venv/bin/python -m app.grading_worker  # 批改 worker（并发 1）
 ```
 
-`start.sh` 与 `start.prod.sh` 已自动启动该 worker。生产脚本固定一个 API 进程和
-一个任务 worker，通过 `TASK_CONCURRENCY` 控制 OCR 并发（默认 2）。
+`start.sh` 与 `start.prod.sh` 已自动启动两个 worker。生产脚本固定一个 API 进程、
+一个任务 worker 与一个批改 worker，通过 `TASK_CONCURRENCY` 控制 OCR 并发（默认 2）。
 进程异常退出后，运行中任务会在租约到期后被重新领取；执行容量满时新任务
 保持 `pending` 排队，不再返回队列繁忙 503。
 
-上传支持单个最大 50 MB 的 PDF；编程助手代码联动最多 20 个代码文件、总计 100 MB，单文件 20 MB。代码只在当前编程助手任务的临时目录中尝试运行，不安装学生依赖、不联网。OCR 会在单次任务内对超时、限流和服务端错误进行最多 3 次短暂重试。仍失败
+上传支持单个最大 50 MB 的 PDF；ZIP 作业包最多 20 个代码文件、总计 100 MB，单文件 20 MB。后端不执行学生代码，学生代码由教师在批改检查点环节自行在本地运行核对。OCR 会在单次任务内对超时、限流和服务端错误进行最多 3 次短暂重试。仍失败
 时页面会保留错误原因；题目可重新上传 PDF，学生作业可在原记录上使用已保存的 PDF
-重试，或由编程助手重新提交。编程助手只保存待确认评分，教师点击确认后才写入最终结果。
+重试。批改 agent 只保存待确认评分，教师点击确认后才写入最终结果。
 
 ## 使用流程
 
-### 使用编程助手批改（推荐的助手入口）
-
-1. 先在网页题目库准备一个 OCR 已完成的题目，并在题目卡片上点「复制提示词」。
-2. 在编程助手新建任务粘贴提示词，并在同一对话中上传该学生的作业 zip（一份报告 PDF + 代码文件）。
-3. 编程助手加载 `ai-marking-grader` skill 后自动完成解压、本地试运行、预检上传、等待 OCR、读取评分包、评分与保存；题目不唯一或代码文件映射不清时会先询问。含代码作业评分前，编程助手会要求使用者回答“已检查且一致”，或回答“已检查且存在不一致”并用自由文字说明差异；尚未检查、含糊回答或未回答时会暂停评分。运行输出和说明仅用于当前对话，不写入作业审计记录。
-4. 打开编程助手返回的复核链接，在网页确认最终成绩。
-
-学生作业统一由编程助手提交，评分来源按客户端配置中的名称显示。网页上传页也提供作业上传入口：支持纯报告 PDF（可选散装代码文件）或一份 ZIP 作业包（报告 PDF + 文件名以小题号结尾的代码 + 数据集），上传后进入同一批改流程。
-
 ### 首次批改某个题目
 
-1. 进入“题目库”上传 PDF 题目。
-2. 等待题目 OCR 状态变为“可使用”。
-3. 在该题目卡片上点「复制提示词」，把提示词粘贴到编程助手新任务，并在同一对话中上传该学生的作业 zip（含代码作业的代码文件一并放入 zip）。
-4. 评分建议保存后，在 Review Page 查看评分详情并确认最终评分。
+1. 进入「题目库」上传 PDF 题目，等待 OCR 状态变为「可使用」。
+2. 先在「系统设置」配置模型通道（官方 OpenAI API key），并确认 PaddleOCR 配置可用。
+3. 在作业上传页选择该题目并提交学生作业（报告 PDF 或 ZIP 作业包）。
+4. 作业 OCR 完成后进入评审页：选择模型与思考强度，点「开始批改」；含代码
+   作业按提示完成教师检查点。
+5. 评分建议保存后，在评审页查看评分详情并确认最终评分。
 
 ### 继续批改同一题目
 
-在编程助手中继续提交同一题目的新学生作业即可，无需重复上传或识别题目。
+重复第 3 步提交同一题目的新学生作业即可，无需重复上传或识别题目。
 
 ### 失败后重新批改
 
-失败记录可在 Review Page 使用已保存的 PDF 重新入队。重试
-沿用原 submission ID，并清空旧 OCR 与评分建议。若原 PDF 已
-被定期清理，需要由编程助手重新提交。
+失败记录可在评审页使用已保存的 PDF 重新入队（「使用原文件重试」）。
+重试沿用原 submission ID，并清空旧 OCR 与评分建议。若原 PDF 已
+被定期清理，需要重新提交。批改 run 失败后可回到开始面板重新配置发起。
 
 ### 批改其他题目
 
-在题目上传页（题目库 →「上传题目」）批量上传 PDF 题目；OCR 完成后即可在编程助手中提交该题目的学生作业。
+在题目上传页（题目库 →「上传题目」）批量上传 PDF 题目；OCR 完成后即可为
+该题目提交学生作业。
 
 > 上传新版会先进入后台 OCR 队列，处理期间题目暂时冻结。新版成功后才清理
 > 关联的终态批改记录并原子切换；新版失败时旧题目继续可用。若仍有批改任务
@@ -342,10 +318,11 @@ cd backend
 - **Connection refused**：通常是 PostgreSQL 未启动或端口写错，例如误将
   `5555` 写成 `555`。
 - **Port in use**：使用 `lsof -nP -iTCP:<端口> -sTCP:LISTEN` 查看占用端口
-  的进程；`start.sh` 会拒绝复用已占用的 8000 端口，避免 MCP 误连其他服务或
-  旧 AI-Marking 进程。已有 PostgreSQL 正常运行时可直接使用该数据库实例。
-- **MCP 显示已连接但工具 404**：通常是 8000 端口指向其他应用或旧后端。停止占用
-  8000 端口的错误进程后重新运行 `./start.sh`，再重启编程助手。
+  的进程；`start.sh` 会拒绝复用已占用的 8000 端口，避免前端或其他客户端
+  误连其他服务或旧 AI-Marking 进程。已有 PostgreSQL 正常运行时可直接使用
+  该数据库实例。
+- **批改一直排队**：确认批改 worker 已启动（`python -m app.grading_worker`），
+  且作业状态为 `awaiting_grading`、系统设置中官方通道已配置 API key。
 - **database "ai_marking" does not exist**：先执行 `createdb` 命令创建项目
   数据库。
 - **`DuplicateObjectError: question_status already exists`**：更新到最新代码后
@@ -362,8 +339,8 @@ cd backend
 .venv/bin/alembic current
 ```
 
-当前最新迁移包含独立题目库。旧迁移文件必须保留，用于新环境建库、升级和
-回滚。
+当前迁移链已包含内嵌批改 agent 改造（`grading_runs` 重构与契约改名）。旧迁移
+文件必须保留，用于新环境建库、升级和回滚。
 
 如需清空题目与作业数据，同时保留系统配置、表结构及迁移版本：
 
@@ -376,30 +353,32 @@ RESTART IDENTITY CASCADE;
 
 ## API 配置说明
 
-OCR 与评分标准等**业务配置**通过前端设置页面(`/settings`)管理,存储在数据库中,无需修改 `.env` 或重启服务。
+OCR、评分标准与模型通道等**业务配置**通过前端设置页面(`/settings`)管理,存储在数据库中,无需修改 `.env` 或重启服务。
 
 配置项包括:
 
+- **模型通道**:官方 OpenAI API 的 API key（只写不读，仅回显后四位）、API 地址、默认模型与思考强度；默认批改通道
 - **OCR**:PaddleOCR-VL API URL、Access Token
-- **评分标准**:题目可信提取 rubric 优先，其次使用配置项目中的结构化 rubric（条目、满分、说明），最后回退内置默认
+- **评分标准**:题目可信提取 rubric 优先，其次使用配置的结构化 rubric（条目、满分、说明），最后回退内置默认
 
 ## 批改流程
 
 题目入库时先独立完成一次 OCR。每份学生作业使用缓存的题目文本，避免
-重复调用题目 OCR。作业 OCR 完成后进入 `awaiting_mcp`，由本机编程助手通过
-MCP 打开评分包：
+重复调用题目 OCR。作业 OCR 完成后进入 `awaiting_grading`，由教师发起
+批改 run，后端 agent 在独立 worker 内完成评分：
 
 ```text
 题目库 OCR（仅首次）
         ↓
-学生作业 OCR → awaiting_mcp → MCP 评分（单次证据化评分）→ ready_for_review
-                                                                   ↓
-                                 （可选）另一个编程助手任务独立复核建议
-                                                                   ↓
-                                            教师在网页人工复核并确认最终成绩
+学生作业 OCR → awaiting_grading → 教师发起批改 run（内嵌 agent 证据化评分）→ ready_for_review
+                                                                                  ↓
+                                                   （可选）独立复核结论展示（v1 只读）
+                                                                                  ↓
+                                                            教师在网页人工复核并确认最终成绩
 ```
 
-后端不调用任何 LLM。编程助手保存的是待确认建议；教师确认后写入最终结果，
+批改运行由独立 `grading_worker` 进程内的 agent 引擎完成，API 进程只承载
+HTTP/SSE。agent 保存的是待确认建议；教师确认后写入最终结果，
 系统保留建议与最终成绩用于审计。
 
 ## 导出 Excel 成绩分析
@@ -473,24 +452,13 @@ pytest -q
 
 ### 更新后端依赖
 
-直接依赖在 `backend/pyproject.toml` 中固定版本，完整间接依赖与文件哈希分别
-保存在生产和开发锁文件中：
+直接依赖在 `backend/pyproject.toml` 中固定版本，完整依赖图与哈希由
+`backend/uv.lock` 锁定（uv 管理，脚本与 CI 使用 `uv sync --frozen`）：
 
 ```bash
 cd backend
-.venv/bin/pip-compile pyproject.toml \
-  --output-file requirements-prod.txt \
-  --generate-hashes --allow-unsafe --strip-extras
-.venv/bin/pip-compile pyproject.toml \
-  --extra dev \
-  --output-file requirements-dev.txt \
-  --generate-hashes --allow-unsafe --strip-extras
-```
-
-安装时使用：
-
-```bash
-.venv/bin/pip install --require-hashes -r requirements-dev.txt
+uv lock            # 修改 pyproject.toml 后刷新锁文件
+uv sync            # 按锁文件同步 .venv
 ```
 
 前端依赖由 `package-lock.json` 精确锁定，使用 `npm ci` 安装。
@@ -539,9 +507,10 @@ npm run test:run
 
 人工确认接口 `POST /api/submissions/{id}/finalize` 必填 `expected_revision`，值为教师所见建议的
 `grading_revision`。版本已更新时返回 409，不写最终成绩；缺少版本返回 422。前后端需同步更新并
-重新启动 API 与 ACP worker，无数据库迁移。待复核页面持续接收评分及独立复核更新，人工草稿保留，
+重新启动 API 与批改 worker（`grading_worker`）。待复核页面持续接收评分及独立复核更新，人工草稿保留，
 教师载入最新建议后重新复核。
 
-ACP worker 重启后，现有 30 秒扫描会恢复失效所有权、完成取消或终结重试耗尽任务。无需手工修改
-生产记录。真实并发测试使用现有 `RUN_POSTGRES_TESTS=1` 与 `TEST_DATABASE_URL` 机制，仅允许数据库
-名称以 `_test` 结尾；运行后端完整 pytest 时启用该环境，不能使用生产数据库代替。
+批改 worker 重启后，恢复扫描会按统一策略处理失效所有权：取消中 → 已取消、检查点驻留保持、
+已评分 → 完成、重试耗尽 → 失败、其余重新排队。无需手工修改生产记录。真实并发测试使用现有
+`RUN_POSTGRES_TESTS=1` 与 `TEST_DATABASE_URL` 机制，仅允许数据库名称以 `_test` 结尾；
+运行后端完整 pytest 时启用该环境，不能使用生产数据库代替。

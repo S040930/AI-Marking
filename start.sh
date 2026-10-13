@@ -55,7 +55,7 @@ ensure_backend_port_available() {
     return
   fi
   if [ "$(backend_service_identity)" = "ai-marking" ]; then
-    error "8000 端口已有 AI-Marking 进程。请先停止旧进程，避免 MCP 连接到过期后端。"
+    error "8000 端口已有 AI-Marking 进程。请先停止旧进程，避免前端或其他客户端连接到过期后端。"
   else
     error "8000 端口已被其他服务占用。请停止该进程后再启动 AI-Marking。"
   fi

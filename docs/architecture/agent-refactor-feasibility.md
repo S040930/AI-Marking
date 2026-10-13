@@ -1,6 +1,10 @@
 # 改造为内嵌批改智能体（去 ACP / 去 MCP + ChatGPT 订阅接入）可行性评估
 
 > 评估日期：2026-10-11 ｜ 结论：**有条件可行**（详见 §7）
+>
+> **后续：本评估已落地**——阶段 0-4 于 2026-10-13 完成（实施计划与记录见
+> [agent-refactor.md](agent-refactor.md)、现架构见
+> [agent-grading.md](agent-grading.md)）。本文保留为决策时的原始评估。
 
 ---
 
