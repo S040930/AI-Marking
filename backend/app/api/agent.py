@@ -64,7 +64,7 @@ def create_run(body: AgentRunCreateRequest, db: Session = Depends(get_db)) -> Ag
     sub = db.get(Submission, body.submission_id)
     if sub is None:
         raise HTTPException(status_code=404, detail="提交记录不存在")
-    if sub.status != SubmissionStatus.awaiting_mcp:
+    if sub.status != SubmissionStatus.awaiting_grading:
         raise HTTPException(status_code=409, detail="该作业当前不可发起批改")
     active = run_repo.get_active_run_for_submission(db, body.submission_id)
     if active is not None:

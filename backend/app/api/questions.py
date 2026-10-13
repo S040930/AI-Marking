@@ -20,7 +20,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
-from app.application.mcp_workflow import (
+from app.application.grading_workflow import (
     build_grading_policy,
     resolve_submission_rubric,
 )
@@ -230,7 +230,7 @@ def get_question_grading_prompt(question_id: str, db: Session = Depends(get_db))
             {
                 "question_id": question.id,
                 "question_name": question.name,
-                "grading_mode": SubmissionGradingMode.external_agent.value,
+                "grading_mode": SubmissionGradingMode.agent.value,
             },
             ensure_ascii=False,
             sort_keys=True,
@@ -243,7 +243,7 @@ def get_question_grading_prompt(question_id: str, db: Session = Depends(get_db))
     return GradingPromptOut(
         question_id=question.id,
         name=question.name,
-        grading_mode=SubmissionGradingMode.external_agent.value,
+        grading_mode=SubmissionGradingMode.agent.value,
         source=resolved.source,
         snapshot_id=resolved.snapshot_id,
         total_max_score=resolved.total_max_score,

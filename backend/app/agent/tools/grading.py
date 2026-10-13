@@ -1,4 +1,4 @@
-"""批改工具:把 mcp_workflow 的业务函数暴露为进程内工具(4+1 个)。
+"""批改工具:把 grading_workflow 的业务函数暴露为进程内工具(4+1 个)。
 
 服务端注入职责:
 - ``GradingToolContext`` 持有 run/submission 身份与运行时句柄
@@ -8,7 +8,7 @@
   与旧回执表语义等价;
 - 工具失败(业务 4xx 语义)由 ToolRegistry 转成可修正线索回给模型。
 
-工具与旧 MCP 工具的映射见 docs/architecture/agent-refactor.md。
+工具与旧协议工具的映射见 docs/architecture/agent-refactor.md。
 """
 
 from __future__ import annotations
@@ -22,12 +22,12 @@ from sqlalchemy.orm import sessionmaker
 
 from app.agent.models import ToolResult, ToolSpec
 from app.agent.tools import CheckpointRequested, ToolRegistry
-from app.application import mcp_workflow as workflow
+from app.application import grading_workflow as workflow
 from app.models.submission import Submission
-from app.schemas.mcp import (
-    McpAssessmentRequest,
-    McpSaveAssessmentRequest,
-    McpVisualConfirmationRequest,
+from app.schemas.grading import (
+    GradingAssessmentRequest,
+    GradingSaveAssessmentRequest,
+    GradingVisualConfirmationRequest,
 )
 from app.services.question_rubric import RubricExtraction
 
@@ -145,7 +145,7 @@ def _confirm_visual(ctx: GradingToolContext, args: dict[str, Any]) -> ToolResult
         return ToolResult(
             ok=False, error="尚未获得评分句柄:请先调用 open_grading_package 读完评分包"
         )
-    payload = McpVisualConfirmationRequest(
+    payload = GradingVisualConfirmationRequest(
         grading_handle=ctx.grading_handle,
         verdict=args.get("verdict"),
         note=args.get("note"),
@@ -184,7 +184,7 @@ def _save_assessment(ctx: GradingToolContext, args: dict[str, Any]) -> ToolResul
         return ToolResult(
             ok=False, error="request_id 由服务端生成,请不要提交"
         )
-    payload = McpAssessmentRequest.model_validate(
+    payload = GradingAssessmentRequest.model_validate(
         {**raw, "request_id": str(uuid.UUID(int=0))}
     )
     payload_hash = workflow.assessment_payload_hash(payload)
@@ -196,7 +196,7 @@ def _save_assessment(ctx: GradingToolContext, args: dict[str, Any]) -> ToolResul
         response = workflow.save_assessment(
             db,
             ctx.submission_id,
-            McpSaveAssessmentRequest(
+            GradingSaveAssessmentRequest(
                 grading_handle=ctx.grading_handle,
                 assessment=payload,
                 client=ctx.client,

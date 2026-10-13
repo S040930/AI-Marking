@@ -14,8 +14,8 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import sessionmaker
 
+from app.application.grading_workflow import get_locked_submission_in_order
 from app.application.locking import lock_submission_after_question
-from app.application.mcp_workflow import get_locked_submission_in_order
 from app.application.uploads import (
     commit_question_replace,
     commit_submission_retry,
@@ -291,19 +291,22 @@ def test_expired_running_lease_is_reclaimed():
 
 
 def _grading_fixture():
-    from app.application.mcp_workflow import build_context_parts, create_workflow_handle
-    from app.schemas.mcp import McpSaveAssessmentRequest
+    from app.application.grading_workflow import (
+        build_context_parts,
+        create_workflow_handle,
+    )
+    from app.schemas.grading import GradingSaveAssessmentRequest
 
     with _session() as db:
         question = _new_question(db, "grading-version")
         sub = Submission(question_id=question.id, original_filename="answer.pdf", file_path="/tmp/answer.pdf",
-                         ocr_text="Report", status=SubmissionStatus.awaiting_mcp)
+                         ocr_text="Report", status=SubmissionStatus.awaiting_grading)
         db.add(sub)
         db.flush()
         context_hash, resolved = build_context_parts(db, sub)[3:]
         handles = [create_workflow_handle(db, {"kind": "grading", "submission_id": sub.id,
                    "context_hash": context_hash, "grading_revision": 0, "context_complete": True}) for _ in range(2)]
-        requests = [McpSaveAssessmentRequest(grading_handle=handle, assessment={
+        requests = [GradingSaveAssessmentRequest(grading_handle=handle, assessment={
             "request_id": str(uuid4()), "feedback": "Missing content", "confidence": 0.8,
             "details": [{"rubric_item_id": item["rubric_item_id"], "score": 0,
                          "comment": "Not found", "evidence_status": "not_found"} for item in resolved.items],
@@ -336,7 +339,7 @@ def _race(first, second):
 
 @pytest.mark.parametrize("identical", [False, True])
 def test_concurrent_handle_versions_and_request_replay(identical):
-    from app.application.mcp_workflow import save_assessment
+    from app.application.grading_workflow import save_assessment
 
     question_id, sub_id, requests, _ = _grading_fixture()
     if identical:
@@ -364,7 +367,7 @@ def test_concurrent_handle_versions_and_request_replay(identical):
 
 
 def test_finalize_and_new_suggestion_cannot_overwrite_each_other():
-    from app.application.mcp_workflow import (
+    from app.application.grading_workflow import (
         build_context_parts,
         create_workflow_handle,
         save_assessment,
@@ -445,7 +448,7 @@ def test_recovery_and_old_worker_result_serialize():
 
 def test_checkpoint_reply_and_release_serialize():
     from app.agent import run_store as runs
-    from app.application.mcp_workflow import build_context_parts
+    from app.application.grading_workflow import build_context_parts
     from app.domain.grading_run import GradingRunStatus
     from app.models.grading_run import GradingRun
 

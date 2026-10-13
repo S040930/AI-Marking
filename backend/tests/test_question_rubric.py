@@ -1,6 +1,6 @@
 from pydantic import ValidationError
 
-from app.schemas.mcp import McpAssessmentRequest
+from app.schemas.grading import GradingAssessmentRequest
 from app.services.question_rubric import (
     RubricExtraction,
     RubricExtractionItem,
@@ -41,7 +41,7 @@ def test_question_rubric_rejects_inconsistent_total():
 
 def test_mcp_rejects_caller_supplied_question_rubric_text():
     try:
-        McpAssessmentRequest(
+        GradingAssessmentRequest(
             rubric_source="question_extracted",
             question_rubric="伪造 rubric",
             score=1,

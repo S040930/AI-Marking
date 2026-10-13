@@ -3,7 +3,7 @@
 - ``ToolRegistry.specs()`` 产出发给模型的工具定义;
 - ``execute()`` 直调 handler,把业务错误(ConflictError/ValidationError/
   NotFoundError/ValueError)转成可修正的 ``ToolResult(ok=False)`` 回给模型
-  (对应原 MCP 422 证据回环);
+  (沿用原协议 422 证据回环语义);
 - ``CheckpointRequested`` 由 handler 主动抛出,逐层穿透由 engine 捕获。
 """
 

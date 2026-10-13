@@ -1,7 +1,7 @@
 """事件侧工具:文本增量合并与敏感信息脱敏。
 
-自 ``app/acp/events.py`` 裁剪而来:保留 250ms/4KB 合并窗口与脱敏规则,
-删除 ACP 协议归一化(session/update 解析)与 chat 专用事件。
+由旧事件模块裁剪而来:保留 250ms/4KB 合并窗口与脱敏规则,
+删除旧协议归一化与对话专用事件。
 """
 
 from __future__ import annotations

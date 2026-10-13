@@ -91,7 +91,7 @@ def _make_env(db_session, *, with_code: bool = False) -> SimpleNamespace:
         original_filename="a.pdf",
         file_path="/tmp/a.pdf",
         ocr_text="Report evidence",
-        status=SubmissionStatus.awaiting_mcp,
+        status=SubmissionStatus.awaiting_grading,
     )
     if with_code:
         sub.code_files.append(
@@ -135,7 +135,7 @@ def _claim_run(factory, submission_id: int, worker: str = "test-worker") -> tupl
 
 def _prepare_save_arguments(db_session, submission) -> dict:
     """通过真实 workflow 打开评分包,构造合法 save_assessment 参数。"""
-    from app.application import mcp_workflow as workflow
+    from app.application import grading_workflow as workflow
 
     package = workflow.open_grading_package(db_session, submission, None)
     header = json.loads(package.content.split("\n", 1)[1].split("\n\n", 1)[0])

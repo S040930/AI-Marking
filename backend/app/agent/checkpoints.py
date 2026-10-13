@@ -19,8 +19,8 @@ def answer_checkpoint(
     db: Session, run: GradingRun, *, verdict: str, note: str | None
 ) -> bool:
     """锁序 Question -> Submission -> Run，答复只绑定当前检查点。"""
+    from app.application.grading_workflow import build_context_parts
     from app.application.locking import lock_submission_after_question
-    from app.application.mcp_workflow import build_context_parts
 
     sub = lock_submission_after_question(db, run.submission_id)
     run = _locked_run(db, run.id)

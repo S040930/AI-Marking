@@ -51,7 +51,7 @@ async def run_question_ocr(question_id: str) -> None:
         logger.warning("题目 OCR 短暂失败，交由队列重试 [%s]: %s", question_id, exc)
         raise
 
-    # rubric 提取由 MCP 客户端在首次评分时完成（save_ai_marking_question_rubric），
+    # rubric 提取由 agent 在首次评分时完成（save_question_rubric），
     # 服务端不再在 OCR 阶段调用 LLM 提取；此处只保存题目 OCR 文本。
     with SessionLocal() as db:
         question = db.get(Question, question_id, with_for_update=True)

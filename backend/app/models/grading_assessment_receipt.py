@@ -1,4 +1,4 @@
-"""Durable MCP assessment idempotency receipts."""
+"""Durable agent assessment idempotency receipts."""
 
 from datetime import datetime
 
@@ -16,10 +16,12 @@ from app.core.time import utc_now_naive
 from app.db.base import Base
 
 
-class McpAssessmentReceipt(Base):
-    __tablename__ = "mcp_assessment_receipts"
+class GradingAssessmentReceipt(Base):
+    __tablename__ = "grading_assessment_receipts"
     __table_args__ = (
-        UniqueConstraint("submission_id", "request_id", name="uq_mcp_receipt_submission_request"),
+        UniqueConstraint(
+            "submission_id", "request_id", name="uq_grading_receipt_submission_request"
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)

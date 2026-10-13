@@ -234,7 +234,7 @@ async def test_get_submission_list_excludes_large_assessment_payload(
         "confidence": 0.9,
         "feedback": "整体良好",
         "details": [],
-        "mcp_metadata": {"client": "codex"},
+        "agent_metadata": {"client": "codex"},
     }
     sub = Submission(
         original_filename="suggestion.pdf",
@@ -260,7 +260,7 @@ async def test_get_submission_list_excludes_large_assessment_payload(
 @pytest.mark.parametrize(
     "deletable_status",
     [
-        SubmissionStatus.awaiting_mcp,
+        SubmissionStatus.awaiting_grading,
         SubmissionStatus.ready_for_review,
         SubmissionStatus.reviewed,
         SubmissionStatus.failed,

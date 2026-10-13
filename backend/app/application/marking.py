@@ -1,10 +1,10 @@
 """批改任务编排服务。
 
-将 OCR 与 MCP 客户端评分串联为完整流程,通过 SubmissionStatus 状态机
+将 OCR 与 AI 批改串联为完整流程,通过 SubmissionStatus 状态机
 记录每一步进度,任一阶段失败立即转 ``failed`` 并写入 ``error_message``。
 
-收敛为 MCP-only 后,流水线只做作业 OCR:OCR 完成后置 ``awaiting_mcp``,
-由外部 MCP 客户端读取评分包并写入经服务端校验的建议;服务端不再调用
+流水线只做作业 OCR:OCR 完成后置 ``awaiting_grading``,
+由批改 agent 读取评分包并写入经服务端校验的建议;服务端不再调用
 任何 LLM。
 
 性能/稳定性行为:
@@ -41,7 +41,7 @@ _PIPELINE_OWNED_STATES = frozenset(
         SubmissionStatus.pending,
         SubmissionStatus.ocr_processing,
         SubmissionStatus.ocr_done,
-        SubmissionStatus.awaiting_mcp,
+        SubmissionStatus.awaiting_grading,
     }
 )
 
@@ -119,9 +119,9 @@ def _update_status_standalone(
 
 
 async def run_marking_pipeline(submission_id: int) -> None:
-    """批改流水线:作业 OCR → awaiting_mcp,带状态机。
+    """批改流水线:作业 OCR → awaiting_grading,带状态机。
 
-    状态流转:pending → ocr_processing → ocr_done → awaiting_mcp
+    状态流转:pending → ocr_processing → ocr_done → awaiting_grading
     确定性业务失败立即转 failed；系统失败由 worker 重试。
 
     连接策略:每个阶段使用短生命周期 Session,读快照/写状态后立即释放;
@@ -185,15 +185,15 @@ async def run_marking_pipeline(submission_id: int) -> None:
     except Exception:  # 系统失败保留队列重试与死信语义
         raise
 
-    # 第三阶段:写 ocr_done → awaiting_mcp。MCP-only 收敛后所有作业都在此
-    # 停止,等待外部 MCP 客户端读取评分包并写入经过服务端校验的建议。
+    # 第三阶段:写 ocr_done → awaiting_grading。所有作业都在此
+    # 停止,等待批改 agent 读取评分包并写入经过服务端校验的建议。
     _update_status_standalone(
         submission_id,
         SubmissionStatus.ocr_done,
         ocr_text=ocr_text,
     )
-    _update_status_standalone(submission_id, SubmissionStatus.awaiting_mcp)
+    _update_status_standalone(submission_id, SubmissionStatus.awaiting_grading)
     logger.info(
-        "作业 OCR 完成,等待 MCP 评分 [submission=%s, status=awaiting_mcp]",
+        "作业 OCR 完成,等待 AI 批改 [submission=%s, status=awaiting_grading]",
         submission_id,
     )

@@ -11,7 +11,7 @@
 
 - ``ACCESS_TOKEN`` 为空 → 全部放行（向后兼容，未配置时行为不变）。
 - 令牌来源三种，任一匹配即通过：
-  ``Authorization: Bearer <t>``（MCP/CLI 客户端）/
+  ``Authorization: Bearer <t>``（脚本/CLI 客户端）/
   ``X-Access-Token: <t>``（脚本/测试）/
   ``ai_marking_access`` Cookie（浏览器会话，见下方 login/logout）。
   浏览器侧一律走 Cookie：令牌不进入 URL，避免泄露到浏览器历史、

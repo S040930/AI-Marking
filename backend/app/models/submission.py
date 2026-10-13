@@ -1,7 +1,7 @@
 """Submission ORM 模型与状态枚举。
 
-单表存储完整批改流程数据:上传 PDF → OCR → MCP 客户端评分 → 教师确认。
-评分建议由 MCP 客户端写入,教师最终确认写入最终成绩。
+单表存储完整批改流程数据:上传 PDF → OCR → AI 批改 → 教师确认。
+评分建议由内嵌 agent 写入,教师最终确认写入最终成绩。
 """
 
 from datetime import datetime
@@ -25,7 +25,7 @@ from app.domain.lifecycle import SubmissionGradingMode, SubmissionStatus
 
 
 class Submission(Base):
-    """作业提交记录及 MCP 审计、人工审核数据。"""
+    """作业提交记录及批改审计、人工审核数据。"""
 
     __tablename__ = "submissions"
     __table_args__ = (
@@ -48,8 +48,8 @@ class Submission(Base):
     )
     grading_mode: Mapped[SubmissionGradingMode] = mapped_column(
         Enum(SubmissionGradingMode, name="submission_grading_mode"),
-        default=SubmissionGradingMode.external_agent,
-        server_default="external_agent",
+        default=SubmissionGradingMode.agent,
+        server_default="agent",
         nullable=False,
     )
     grading_revision: Mapped[int] = mapped_column(
@@ -64,8 +64,8 @@ class Submission(Base):
     confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
     feedback: Mapped[str | None] = mapped_column(Text, nullable=True)
     details: Mapped[list | None] = mapped_column(JSON, nullable=True)
-    # MCP 客户端写入的完整建议分快照(含 score/max_score/feedback/details/confidence
-    # 与 mcp_metadata),面向教师展示的建议
+    # 内嵌 agent 写入的完整建议分快照(含 score/max_score/feedback/details/confidence
+    # 与 agent_metadata),面向教师展示的建议
     assessment_suggestion: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     # 独立复核任务对当前建议的复核结论(逐项 agree/disagree + 总结),
     # 绑定 reviewed_revision;建议更新后字段保留但视为过期

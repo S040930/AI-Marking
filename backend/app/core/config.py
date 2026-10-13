@@ -42,13 +42,13 @@ class Settings(BaseSettings):
     TASK_MAX_ATTEMPTS: int = 3
     TASK_POLL_INTERVAL_SECONDS: float = 1.0
 
-    # 外部编程助手 MCP 评分上下文总长度上限。
+    # 批改 agent 评分上下文总长度上限。
     GRADING_MAX_CONTEXT_CHARS: int = 200_000
 
     # 全站访问令牌。为空表示鉴权关闭，保持向后兼容；设置后所有 /api 路由
-    # （除 /api/health、/api/mcp/health、/api/auth/login、/api/auth/logout 外）
+    # （除 /api/health、/api/auth/login、/api/auth/logout 外）
     # 必须携带令牌。来源：浏览器会话 Cookie（登录页提交一次后自动携带）、
-    # Authorization: Bearer / X-Access-Token（MCP/CLI/脚本）。可用
+    # Authorization: Bearer / X-Access-Token（脚本/CLI）。可用
     # ``python -c "import secrets; print(secrets.token_urlsafe(32))"`` 生成。
     ACCESS_TOKEN: str = ""
 

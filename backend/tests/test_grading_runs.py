@@ -50,7 +50,7 @@ def factory():
                 original_filename="s1.pdf",
                 file_path="uploads/s1.pdf",
                 question_id="q1",
-                status=SubmissionStatus.awaiting_mcp,
+                status=SubmissionStatus.awaiting_grading,
             )
         )
         db.commit()
@@ -273,7 +273,7 @@ def test_checkpoint_roundtrip(factory):
         run_repo.transition_run(db, run, GradingRunStatus.running)
         run = db.get(GradingRun, run_id)
         sub = db.get(Submission, sid)
-        from app.application.mcp_workflow import build_context_parts
+        from app.application.grading_workflow import build_context_parts
 
         run_repo.save_checkpoint(
             db,
@@ -338,7 +338,7 @@ def test_terminal_statuses():
 def test_waiting_recovery_uses_one_policy(factory, source, answered, attempts, target):
     from datetime import timedelta
 
-    from app.application.mcp_workflow import build_context_parts
+    from app.application.grading_workflow import build_context_parts
     from app.core.time import utc_now_naive
 
     sid = _submission_id(factory)
@@ -464,7 +464,7 @@ def test_scan_repairs_exhausted_queue_and_ownerless_cancel(factory):
 
 
 def test_reply_rejects_changed_context_and_frees_run(factory):
-    from app.application.mcp_workflow import build_context_parts
+    from app.application.grading_workflow import build_context_parts
 
     sid = _submission_id(factory)
     _make_run(factory, sid)
@@ -494,7 +494,7 @@ def test_reply_rejects_changed_context_and_frees_run(factory):
 
 
 def test_reply_then_release_and_release_then_reply_both_resume(factory):
-    from app.application.mcp_workflow import build_context_parts
+    from app.application.grading_workflow import build_context_parts
 
     sid = _submission_id(factory)
     for reply_first in (True, False):

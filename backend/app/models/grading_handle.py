@@ -1,4 +1,4 @@
-"""Durable, short-lived MCP workflow handles shared by all API workers."""
+"""Durable grading workflow handles shared by all API workers."""
 
 from datetime import datetime
 
@@ -9,12 +9,12 @@ from app.core.time import utc_now_naive
 from app.db.base import Base
 
 
-class McpWorkflowHandle(Base):
-    __tablename__ = "mcp_workflow_handles"
+class GradingHandle(Base):
+    __tablename__ = "grading_handles"
     __table_args__ = (
-        Index("ix_mcp_workflow_handles_expires_at", "expires_at"),
-        Index("ix_mcp_workflow_handles_submission", "submission_id"),
-        Index("ix_mcp_workflow_handles_question", "question_id"),
+        Index("ix_grading_handles_expires_at", "expires_at"),
+        Index("ix_grading_handles_submission", "submission_id"),
+        Index("ix_grading_handles_question", "question_id"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)

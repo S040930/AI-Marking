@@ -138,7 +138,7 @@ def finalize_submission(
     """教师确认最终评分（``reviewed`` 的唯一写入入口）。
 
     - 校验状态为 ready_for_review（已 reviewed 返回 409）
-    - 校验总分与教师明细绑定当前 rubric（与 MCP 侧同源校验；教师明细可
+    - 校验总分与教师明细绑定当前 rubric（与 agent 侧同源校验；教师明细可
       省略 rubric_item_id，携带 id 的项核对一致，不强制完整覆盖）
     - 写入 score/max_score/feedback/details/reviewed_by/reviewed_at
     - 状态置为 reviewed 并 NOTIFY
@@ -156,7 +156,7 @@ def finalize_submission(
     if sub.status != SubmissionStatus.ready_for_review:
         raise ConflictError("作业尚未准备好进行审阅")
 
-    # 与 MCP 侧 save_assessment 同源:确认时也要绑定当前 rubric,防止
+    # 与 agent 侧 save_assessment 同源:确认时也要绑定当前 rubric,防止
     # rubric 在建议生成与教师确认之间被改后,最终成绩与评分项脱节。
     resolved = resolve_rubric(sub.question, get_config_dict(db))
     if abs(max_score - resolved.total_max_score) > 0.01:

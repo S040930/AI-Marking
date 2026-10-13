@@ -6,8 +6,8 @@
 """
 
 from app.models.background_job import BackgroundJob
-from app.models.mcp_assessment_receipt import McpAssessmentReceipt
-from app.models.mcp_workflow_handle import McpWorkflowHandle
+from app.models.grading_assessment_receipt import GradingAssessmentReceipt
+from app.models.grading_handle import GradingHandle
 from app.models.question import Question
 from app.models.submission import Submission
 from app.models.submission_code_file import SubmissionCodeFile
@@ -16,8 +16,8 @@ from app.models.system_config import SystemConfig
 
 __all__ = [
     "BackgroundJob",
-    "McpWorkflowHandle",
-    "McpAssessmentReceipt",
+    "GradingAssessmentReceipt",
+    "GradingHandle",
     "Question",
     "Submission",
     "SubmissionCodeFile",

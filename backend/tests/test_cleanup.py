@@ -37,10 +37,10 @@ def test_cleanup_preserves_reference_beyond_first_batch(
     assert all(not path.exists() for path in files[:-1])
 
 
-def test_cleanup_ignores_acp_chat_workspace_pdfs(db_session, tmp_path, monkeypatch):
-    """acp-chat-workspaces 里的物化报告 PDF 不是清理候选(零 DB 引用但归 ACP 管)。"""
+def test_cleanup_ignores_grading_workspace_pdfs(db_session, tmp_path, monkeypatch):
+    """grading-workspaces 里的物化报告 PDF 不是清理候选(零 DB 引用但归批改工作区管)。"""
     cutoff_age = time.time() - 3 * 86400
-    workspace_pdf = tmp_path / "acp-chat-workspaces" / "chat-1" / "report.pdf"
+    workspace_pdf = tmp_path / "grading-workspaces" / "run-1" / "report.pdf"
     workspace_pdf.parent.mkdir(parents=True)
     workspace_pdf.write_bytes(b"%PDF-1")
     os.utime(workspace_pdf, (cutoff_age, cutoff_age))

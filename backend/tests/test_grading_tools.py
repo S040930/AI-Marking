@@ -46,7 +46,7 @@ def grading_env(db_session):
         original_filename="answer.pdf",
         file_path="/tmp/answer.pdf",
         ocr_text="Report evidence content",
-        status=SubmissionStatus.awaiting_mcp,
+        status=SubmissionStatus.awaiting_grading,
     )
     db_session.add(sub)
     db_session.commit()
@@ -60,7 +60,7 @@ def grading_env(db_session):
 
 
 def _rubric_item_id(db, sub) -> str:
-    from app.application.mcp_workflow import resolve_submission_rubric
+    from app.application.grading_workflow import resolve_submission_rubric
 
     return resolve_submission_rubric(db, sub).definition.items[0].rubric_item_id
 
@@ -322,7 +322,7 @@ def test_needs_rubric_flow_with_absent_status(db_session):
         original_filename="answer.pdf",
         file_path="/tmp/answer.pdf",
         ocr_text="Report body",
-        status=SubmissionStatus.awaiting_mcp,
+        status=SubmissionStatus.awaiting_grading,
     )
     db_session.add(sub)
     db_session.commit()

@@ -334,7 +334,7 @@ def _save_checkpoint_outcome(
     claim_token: str | None,
     ctx: GradingToolContext,
 ) -> GradingRunStatus:
-    from app.application.mcp_workflow import build_context_parts
+    from app.application.grading_workflow import build_context_parts
 
     with session_factory() as db:
         sub = db.get(Submission, submission_id)

@@ -7,8 +7,6 @@
 - 旧 MCP 工具名不得残留;
 - 评分包 requirements 的核心术语必须在 grading.md 中有对应锚点,
   防止两边漂移而各自"自洽"。
-
-注:`.agents/skills` 的删除断言在阶段 3(契约改名)后加入。
 """
 
 from __future__ import annotations
@@ -20,7 +18,7 @@ from app.agent.prompts.loader import (
     review_instructions,
 )
 from app.agent.tools.grading import GradingToolContext, build_grading_tools
-from app.application.mcp_workflow import build_grading_policy
+from app.application.grading_workflow import build_grading_policy
 from app.services.rubric import resolve_rubric
 
 LEGACY_TOOL_NAMES = (
@@ -101,3 +99,9 @@ def test_grading_prompt_marks_pause_as_expected():
     text = grading_instructions()
     assert "预期行为" in text
     assert "不得" in text
+
+
+def test_agents_skills_directory_is_removed():
+    """.agents/skills 已删除;流程指令唯一来源收敛到 prompts/。"""
+    repo_root = PROMPTS_DIR.parents[3]
+    assert not (repo_root / ".agents" / "skills").exists()

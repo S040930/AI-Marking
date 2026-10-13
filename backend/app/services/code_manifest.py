@@ -1,11 +1,11 @@
 """代码文件 → 小题编号映射的共享校验。
 
-网页端上传（``submissions.py``）、MCP 预检（``api/mcp.py``）与本地 MCP
-客户端（``app/mcp/server.py``）共用同一套规则：Q<n> 文件名自动推导题号、
+网页端上传（``submissions.py``）与批改 agent 共用同一套规则：
+Q<n> 文件名自动推导题号、
 每道题必须且只能有一个入口、非 Q<n> 文件名必须出现在题目 OCR 中。
 
 所有校验抛 ``ValueError``（携带面向用户的中文消息），由调用方包装成
-``HTTPException`` 或 ``McpApiError``。
+``HTTPException`` 或工具错误回执。
 """
 
 from __future__ import annotations
@@ -42,7 +42,7 @@ def parse_explicit_code_mappings(
     """类型校验 + 覆盖校验(映射不得引用未提交文件)。
 
     返回 filename → {question_number, entrypoint};``resolve_code_manifest``
-    负责自动推导与 OCR 校验。供网页端 JSON 解析与本地 MCP 客户端共用。
+    负责自动推导与 OCR 校验。供网页端 JSON 解析与批改 agent 共用。
     """
     normalized = validate_code_filenames(filenames)
     mapping: dict[str, dict[str, object]] = {}
@@ -94,7 +94,7 @@ def resolve_code_manifest(
     字典。
 
     - ``explicit=None``(网页端无 manifest):全部文件必须按 Q<n> 自动推导。
-    - ``explicit`` 提供(网页端有 manifest / MCP 预检):必须覆盖全部文件,
+    - ``explicit`` 提供(网页端有 manifest):必须覆盖全部文件,
       qN 文件仍可经调用方补全进 explicit。
     """
     normalized = validate_code_filenames(filenames)

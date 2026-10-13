@@ -4,463 +4,6 @@
  */
 
 export interface paths {
-    "/api/acp/agents": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List Agents
-         * @description 白名单 agent 目录;Registry 不可达时返回缓存或空目录(可离线浏览)。
-         */
-        get: operations["list_agents_api_acp_agents_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/acp/agents/refresh": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Refresh Registry */
-        post: operations["refresh_registry_api_acp_agents_refresh_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/acp/agents/{agent_id}/install": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Install Agent
-         * @description 安装白名单 agent 的精确版本;已缓存同版本时不重复下载。
-         *
-         *     npm/uvx 发行:安装即解析并审核精确版本快照(npx/uvx 在 spawn 时按
-         *     精确版本拉取);binary 发行:下载归档 → SHA-256 校验 → 安全解压到
-         *     受控缓存,并把 command 指向解压出的可执行文件。
-         */
-        post: operations["install_agent_api_acp_agents__agent_id__install_post"];
-        /**
-         * Uninstall Agent
-         * @description 卸载已安装链接:删除安装标记与该版本下载缓存。
-         *
-         *     与"移出白名单"不同:卸载后 agent 仍留在目录中(状态回到未安装),
-         *     可随时重新安装;npx/uvx 发行不触碰本机全局包缓存。
-         */
-        delete: operations["uninstall_agent_api_acp_agents__agent_id__install_delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/acp/agents/{agent_id}/set-default": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Set Default Agent
-         * @description 教师显式选择机器级默认 agent;要求该 agent 已安装。
-         */
-        post: operations["set_default_agent_api_acp_agents__agent_id__set_default_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/acp/agents/{agent_id}/test": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Test Agent Connection
-         * @description 连接诊断:initialize → 能力协商 → 安全关闭;不保存认证秘密。
-         */
-        post: operations["test_agent_connection_api_acp_agents__agent_id__test_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/acp/chat/sessions": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List Chat Sessions */
-        get: operations["list_chat_sessions_api_acp_chat_sessions_get"];
-        put?: never;
-        /** Create Chat Session */
-        post: operations["create_chat_session_api_acp_chat_sessions_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/acp/chat/sessions/{chat_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Chat Session Detail */
-        get: operations["get_chat_session_detail_api_acp_chat_sessions__chat_id__get"];
-        put?: never;
-        post?: never;
-        /** Close Chat Session */
-        delete: operations["close_chat_session_api_acp_chat_sessions__chat_id__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/acp/chat/sessions/{chat_id}/cancel": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Cancel Chat Turn */
-        post: operations["cancel_chat_turn_api_acp_chat_sessions__chat_id__cancel_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/acp/chat/sessions/{chat_id}/codex-configuration": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /** Update Chat Codex Configuration */
-        patch: operations["update_chat_codex_configuration_api_acp_chat_sessions__chat_id__codex_configuration_patch"];
-        trace?: never;
-    };
-    "/api/acp/chat/sessions/{chat_id}/events": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List Chat Events */
-        get: operations["list_chat_events_api_acp_chat_sessions__chat_id__events_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/acp/chat/sessions/{chat_id}/messages": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Send Chat Message */
-        post: operations["send_chat_message_api_acp_chat_sessions__chat_id__messages_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/acp/chat/sessions/{chat_id}/permanent": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /**
-         * Delete Chat Session Permanently
-         * @description 永久删除对话:停止运行中的会话,删除会话行、事件转录与专属工作区。
-         *
-         *     与上面的"关闭会话"不同,此操作不可恢复。
-         */
-        delete: operations["delete_chat_session_permanently_api_acp_chat_sessions__chat_id__permanent_delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/acp/chat/sessions/{chat_id}/permission": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Answer Chat Permission */
-        post: operations["answer_chat_permission_api_acp_chat_sessions__chat_id__permission_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/acp/chat/sessions/{chat_id}/stream": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Stream Chat Events
-         * @description SSE:先回放数据库事件,再通过 PG NOTIFY 推送增量。
-         *
-         *     SSE ``id`` 等于事件 seq;会话进入终态且读尽后发送 ``: done``。
-         */
-        get: operations["stream_chat_events_api_acp_chat_sessions__chat_id__stream_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/acp/codex/configuration": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Codex Configuration Catalog
-         * @description Return the live Codex model/thought/speed catalog for the UI.
-         */
-        get: operations["get_codex_configuration_catalog_api_acp_codex_configuration_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/acp/default-agent": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Default Agent */
-        get: operations["get_default_agent_api_acp_default_agent_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/acp/runs": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Create Run */
-        post: operations["create_run_api_acp_runs_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/acp/runs/by-submission/{submission_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Get Active Run By Submission
-         * @description 查询作业当前的活跃 run;不存在返回 404(前端视为无运行)。
-         */
-        get: operations["get_active_run_by_submission_api_acp_runs_by_submission__submission_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/acp/runs/{run_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Run */
-        get: operations["get_run_api_acp_runs__run_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/acp/runs/{run_id}/cancel": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Cancel Run */
-        post: operations["cancel_run_api_acp_runs__run_id__cancel_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/acp/runs/{run_id}/codex-configuration": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /** Update Run Codex Configuration */
-        patch: operations["update_run_codex_configuration_api_acp_runs__run_id__codex_configuration_patch"];
-        trace?: never;
-    };
-    "/api/acp/runs/{run_id}/events": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List Run Events */
-        get: operations["list_run_events_api_acp_runs__run_id__events_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/acp/runs/{run_id}/reply": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Reply Checkpoint
-         * @description 教师答复检查点;答复持久化后由 worker 恢复会话续跑。
-         */
-        post: operations["reply_checkpoint_api_acp_runs__run_id__reply_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/acp/runs/{run_id}/stream": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Stream Run Events
-         * @description SSE:先回放数据库事件,再通过 PG NOTIFY 推送增量。
-         *
-         *     SSE ``id`` 等于事件 seq,断线重连带 ``Last-Event-ID`` 从该 seq 续读。
-         */
-        get: operations["stream_run_events_api_acp_runs__run_id__stream_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/admin/dead-jobs": {
         parameters: {
             query?: never;
@@ -533,6 +76,227 @@ export interface paths {
          * @description Return bounded operational counts without filenames or student content.
          */
         get: operations["runtime_summary_api_admin_runtime_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Providers */
+        get: operations["list_providers_api_agent_providers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent/providers/default": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set Default Provider */
+        put: operations["set_default_provider_api_agent_providers_default_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent/providers/{name}/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Update Provider Config
+         * @description 更新通道配置;null 不改动、空串清除;密钥只写不读。
+         */
+        put: operations["update_provider_config_api_agent_providers__name__config_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent/providers/{name}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test Provider */
+        post: operations["test_provider_api_agent_providers__name__test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Run */
+        post: operations["create_run_api_agent_runs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent/runs/by-submission/{submission_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Active Run By Submission
+         * @description 查询作业当前的活跃 run;不存在返回 404(前端视为无运行)。
+         */
+        get: operations["get_active_run_by_submission_api_agent_runs_by_submission__submission_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent/runs/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Run */
+        get: operations["get_run_api_agent_runs__run_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent/runs/{run_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Run */
+        post: operations["cancel_run_api_agent_runs__run_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent/runs/{run_id}/configuration": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Run Configuration
+         * @description 切换 model/effort;queued 立即生效,运行中排队到下一回合。
+         */
+        patch: operations["update_run_configuration_api_agent_runs__run_id__configuration_patch"];
+        trace?: never;
+    };
+    "/api/agent/runs/{run_id}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Run Events */
+        get: operations["list_run_events_api_agent_runs__run_id__events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent/runs/{run_id}/reply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reply Checkpoint
+         * @description 教师答复检查点;答复持久化后由 worker 恢复续跑。
+         */
+        post: operations["reply_checkpoint_api_agent_runs__run_id__reply_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent/runs/{run_id}/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream Run Events
+         * @description SSE:先回放数据库事件,再通过 PG NOTIFY 推送增量。
+         *
+         *     SSE ``id`` 等于事件 seq,断线重连带 ``Last-Event-ID`` 从该 seq 续读。
+         */
+        get: operations["stream_run_events_api_agent_runs__run_id__stream_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -669,188 +433,6 @@ export interface paths {
          * @description 返回服务健康状态与当前 UTC 时间戳。
          */
         get: operations["health_check_api_health_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/mcp/health": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Mcp Health */
-        get: operations["mcp_health_api_mcp_health_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/mcp/pending-assignments": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Mcp Pending Assignments
-         * @description 列出等待 MCP 客户端评分的作业(按上传时间与 ID 升序)。
-         *
-         *     仅列出 ``awaiting_mcp`` 的作业。使用 keyset 游标分页:
-         *     ``(uploaded_at, id) >`` 上一个游标,保证排序稳定且不随翻页偏移。
-         *     ``limit`` 范围 1–100。
-         */
-        get: operations["mcp_pending_assignments_api_mcp_pending_assignments_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/mcp/questions/{question_id}/rubric": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * Save Mcp Question Rubric
-         * @description 保存客户端从题目 OCR 提取的 rubric(服务端确定性校验)。
-         */
-        put: operations["save_mcp_question_rubric_api_mcp_questions__question_id__rubric_put"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/mcp/submission-preflight": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Mcp Submission Preflight
-         * @description Resolve a teacher-provided question name and validate only file metadata.
-         */
-        post: operations["mcp_submission_preflight_api_mcp_submission_preflight_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/mcp/submissions/{submission_id}/assessment-review": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * Save Mcp Assessment Review
-         * @description 保存独立复核任务对当前评分建议的复核结论。
-         */
-        put: operations["save_mcp_assessment_review_api_mcp_submissions__submission_id__assessment_review_put"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/mcp/submissions/{submission_id}/assessment-v2": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * Save Mcp Assessment
-         * @description Save a model-facing compact assessment using a server-issued grading handle.
-         */
-        put: operations["save_mcp_assessment_api_mcp_submissions__submission_id__assessment_v2_put"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/mcp/submissions/{submission_id}/package": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Mcp Submission Package
-         * @description Expose the grading context in bounded pages with opaque continuation.
-         */
-        get: operations["mcp_submission_package_api_mcp_submissions__submission_id__package_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/mcp/submissions/{submission_id}/visual-confirmation": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Confirm Mcp Visual Review */
-        post: operations["confirm_mcp_visual_review_api_mcp_submissions__submission_id__visual_confirmation_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/mcp/submissions/{submission_id}/wait-ready": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Mcp Wait Ready
-         * @description 长轮询等待作业进入可打开状态（OCR 完成/失败或已有建议）。
-         *
-         *     替代客户端固定间隔轮询 /package:PG 后端复用 LISTEN/NOTIFY 通道,
-         *     状态变更即时返回;非 PG 后端内部退化为低频轮询。超时返回当前状态,
-         *     客户端据 ``ready`` 决定是打开评分包还是继续等待。
-         */
-        get: operations["mcp_wait_ready_api_mcp_submissions__submission_id__wait_ready_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -998,8 +580,8 @@ export interface paths {
          *
          *     ZIP 由后端解包自动分类:恰好一份报告 PDF、``q<n>.<ext>`` 命名的代码、
          *     其余为数据集(写入 ``submission_code_input_files``,批改工作区会物化)。
-         *     收敛为 MCP-only 后固定使用外部编程助手评分模式：上传后只做 OCR，
-         *     进入 ``awaiting_mcp``，由 MCP 客户端评分。
+         *     固定使用 agent 评分模式：上传后只做 OCR，
+         *     进入 ``awaiting_grading``，由内嵌批改 agent 评分。
          */
         post: operations["create_submission_api_submissions_post"];
         /**
@@ -1200,156 +782,8 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        /** AcpAgentListResponse */
-        AcpAgentListResponse: {
-            /** Agents */
-            agents: components["schemas"]["AcpAgentOut"][];
-            /** Fetched At */
-            fetched_at?: string | null;
-            /** Registry Version */
-            registry_version?: string | null;
-        };
-        /** AcpAgentOut */
-        AcpAgentOut: {
-            /** Agent Id */
-            agent_id: string;
-            /** Available Version */
-            available_version?: string | null;
-            /**
-             * Connection Status
-             * @enum {string}
-             */
-            connection_status: "ready" | "needs_auth" | "unsupported" | "failed" | "unknown";
-            /** Display Name */
-            display_name: string;
-            /** Distributions */
-            distributions: string[];
-            /** Installed Version */
-            installed_version?: string | null;
-            /** Whitelist Package */
-            whitelist_package: string;
-        };
-        /**
-         * AcpChatConfigurationUpdateRequest
-         * @description 已有会话的配置热更新;permission_mode 缺省表示保持不变。
-         */
-        AcpChatConfigurationUpdateRequest: {
-            /**
-             * Fast Confirmed
-             * @default false
-             */
-            fast_confirmed: boolean;
-            /** Model Id */
-            model_id?: string | null;
-            /** Permission Mode */
-            permission_mode?: ("ask" | "auto_review") | null;
-            /** Reasoning Effort */
-            reasoning_effort?: string | null;
-            /**
-             * Speed Mode
-             * @default standard
-             * @enum {string}
-             */
-            speed_mode: "standard" | "fast";
-        };
-        /** AcpChatCreateRequest */
-        AcpChatCreateRequest: {
-            codex_config?: components["schemas"]["CodexConfigRequest"];
-            /**
-             * Permission Mode
-             * @default ask
-             * @enum {string}
-             */
-            permission_mode: "ask" | "auto_review";
-            /** Submission Id */
-            submission_id: number;
-        };
-        /** AcpChatEventOut */
-        AcpChatEventOut: {
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-            /** Kind */
-            kind: string;
-            /** Payload */
-            payload: {
-                [key: string]: unknown;
-            };
-            /** Seq */
-            seq: number;
-        };
-        /** AcpChatMessageRequest */
-        AcpChatMessageRequest: {
-            /** Text */
-            text: string;
-        };
-        /** AcpChatPermissionRequest */
-        AcpChatPermissionRequest: {
-            /** Allow */
-            allow: boolean;
-            /** Option Id */
-            option_id?: string | null;
-            /** Permission Id */
-            permission_id: string;
-        };
-        /** AcpChatSessionListResponse */
-        AcpChatSessionListResponse: {
-            /** Sessions */
-            sessions: components["schemas"]["AcpChatSessionOut"][];
-        };
-        /** AcpChatSessionOut */
-        AcpChatSessionOut: {
-            /** Agent Id */
-            agent_id: string;
-            applied_codex_config?: components["schemas"]["CodexConfigSnapshot"] | null;
-            applied_config?: components["schemas"]["CodexConfigSnapshot"] | null;
-            codex_config: components["schemas"]["CodexConfigSnapshot"];
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-            desired_config?: components["schemas"]["CodexConfigSnapshot"] | null;
-            /**
-             * Effective At
-             * @default current
-             * @enum {string}
-             */
-            effective_at: "current" | "next_turn";
-            /** Id */
-            id: number;
-            /** Last Error */
-            last_error?: string | null;
-            /**
-             * Latest Seq
-             * @default 0
-             */
-            latest_seq: number;
-            pending_codex_config?: components["schemas"]["CodexConfigSnapshot"] | null;
-            pending_config?: components["schemas"]["CodexConfigSnapshot"] | null;
-            /**
-             * Permission Mode
-             * @default ask
-             * @enum {string}
-             */
-            permission_mode: "ask" | "auto_review";
-            /**
-             * Status
-             * @enum {string}
-             */
-            status: "idle" | "running" | "waiting_permission" | "closed" | "error";
-            /** Submission Id */
-            submission_id: number;
-            /**
-             * Updated At
-             * Format: date-time
-             */
-            updated_at: string;
-        };
-        /** AcpCheckpointOut */
-        AcpCheckpointOut: {
+        /** AgentCheckpointOut */
+        AgentCheckpointOut: {
             /** Asked At */
             asked_at?: string | null;
             /** Expires At */
@@ -1359,96 +793,49 @@ export interface components {
             /** Type */
             type: string;
         };
-        /** AcpCodexConfigurationResponse */
-        AcpCodexConfigurationResponse: {
-            /**
-             * Agent Id
-             * @constant
-             */
-            agent_id: "codex-acp";
-            /** Agent Version */
-            agent_version: string;
-            /** Capability Error */
-            capability_error?: string | null;
-            /** Models */
-            models?: {
-                [key: string]: unknown;
-            }[];
-            /** Reasoning Efforts */
-            reasoning_efforts?: {
-                [key: string]: unknown;
-            }[];
-            /** Selected Model Id */
-            selected_model_id?: string | null;
-            /** Speed Modes */
-            speed_modes?: {
-                [key: string]: unknown;
-            }[];
-        };
-        /** AcpConfigurationUpdateRequest */
-        AcpConfigurationUpdateRequest: {
-            /**
-             * Fast Confirmed
-             * @default false
-             */
-            fast_confirmed: boolean;
-            /** Model Id */
-            model_id?: string | null;
+        /**
+         * AgentConfigurationUpdateRequest
+         * @description 运行中切换 model/effort;null 不改动。
+         */
+        AgentConfigurationUpdateRequest: {
+            /** Model */
+            model?: string | null;
             /** Reasoning Effort */
             reasoning_effort?: string | null;
-            /**
-             * Speed Mode
-             * @default standard
-             * @enum {string}
-             */
-            speed_mode: "standard" | "fast";
         };
-        /** AcpInstallResponse */
-        AcpInstallResponse: {
-            /** Agent Id */
-            agent_id: string;
-            /** Distribution */
-            distribution: string;
-            /**
-             * Reinstalled
-             * @default true
-             */
-            reinstalled: boolean;
-            /** Version */
-            version: string;
-        };
-        /** AcpRunCreateRequest */
-        AcpRunCreateRequest: {
-            codex_config?: components["schemas"]["CodexConfigRequest"];
-            /**
-             * Permission Mode
-             * @default ask
-             * @enum {string}
-             */
-            permission_mode: "ask" | "auto_review";
+        /**
+         * AgentRunCreateRequest
+         * @description 发起批改;provider/model/effort 缺省时取系统默认配置。
+         */
+        AgentRunCreateRequest: {
+            /** Model */
+            model?: string | null;
+            /** Provider */
+            provider?: string | null;
+            /** Reasoning Effort */
+            reasoning_effort?: string | null;
             /** Submission Id */
             submission_id: number;
         };
-        /** AcpRunDetailResponse */
-        AcpRunDetailResponse: {
-            applied_config?: components["schemas"]["CodexConfigSnapshot"] | null;
-            desired_config: components["schemas"]["CodexConfigSnapshot"];
-            /**
-             * Effective At
-             * @default current
-             * @enum {string}
-             */
-            effective_at: "current" | "next_turn";
+        /** AgentRunDetailResponse */
+        AgentRunDetailResponse: {
+            /** Applied Config */
+            applied_config?: {
+                [key: string]: unknown;
+            } | null;
             /**
              * Latest Seq
              * @default 0
              */
             latest_seq: number;
-            pending_config?: components["schemas"]["CodexConfigSnapshot"] | null;
-            run: components["schemas"]["AcpRunOut"];
+            /** Pending Config */
+            pending_config?: {
+                [key: string]: unknown;
+            } | null;
+            run: components["schemas"]["AgentRunOut"];
         };
-        /** AcpRunEventOut */
-        AcpRunEventOut: {
+        /** AgentRunEventOut */
+        AgentRunEventOut: {
             /**
              * Created At
              * Format: date-time
@@ -1463,20 +850,14 @@ export interface components {
             /** Seq */
             seq: number;
         };
-        /** AcpRunOut */
-        AcpRunOut: {
-            /** Acp Session Id */
-            acp_session_id?: string | null;
-            /** Agent Id */
-            agent_id: string;
-            applied_codex_config?: components["schemas"]["CodexConfigSnapshot"] | null;
+        /** AgentRunOut */
+        AgentRunOut: {
             /**
              * Attempts
              * @default 0
              */
             attempts: number;
-            checkpoint?: components["schemas"]["AcpCheckpointOut"] | null;
-            codex_config: components["schemas"]["CodexConfigSnapshot"];
+            checkpoint?: components["schemas"]["AgentCheckpointOut"] | null;
             /**
              * Created At
              * Format: date-time
@@ -1499,13 +880,12 @@ export interface components {
              * @default 3
              */
             max_attempts: number;
-            pending_codex_config?: components["schemas"]["CodexConfigSnapshot"] | null;
-            /**
-             * Permission Mode
-             * @default ask
-             * @enum {string}
-             */
-            permission_mode: "ask" | "auto_review";
+            /** Model */
+            model?: string | null;
+            /** Provider */
+            provider: string;
+            /** Reasoning Effort */
+            reasoning_effort?: string | null;
             /**
              * Status
              * @enum {string}
@@ -1517,9 +897,13 @@ export interface components {
             teacher_note?: string | null;
             /** Teacher Verdict */
             teacher_verdict?: ("consistent" | "mismatch") | null;
+            /** Usage */
+            usage?: {
+                [key: string]: unknown;
+            } | null;
         };
-        /** AcpRunReplyRequest */
-        AcpRunReplyRequest: {
+        /** AgentRunReplyRequest */
+        AgentRunReplyRequest: {
             /** Note */
             note?: string | null;
             /**
@@ -1527,48 +911,6 @@ export interface components {
              * @enum {string}
              */
             verdict: "consistent" | "mismatch";
-        };
-        /** AcpTestConnectionResponse */
-        AcpTestConnectionResponse: {
-            /** Agent Id */
-            agent_id: string;
-            /** Agent Info */
-            agent_info?: string | null;
-            /** Detail */
-            detail?: string | null;
-            /**
-             * Mcp Visible
-             * @default false
-             */
-            mcp_visible: boolean;
-            /** Protocol Version */
-            protocol_version?: number | null;
-            /**
-             * Status
-             * @enum {string}
-             */
-            status: "ready" | "needs_auth" | "unsupported" | "failed";
-            /** Steps */
-            steps?: {
-                [key: string]: string;
-            };
-        };
-        /** AcpUninstallResponse */
-        AcpUninstallResponse: {
-            /** Agent Id */
-            agent_id: string;
-            /**
-             * Removed Cache
-             * @default false
-             */
-            removed_cache: boolean;
-            /**
-             * Uninstalled
-             * @default true
-             */
-            uninstalled: boolean;
-            /** Version */
-            version?: string | null;
         };
         /** AssessmentReviewItemOut */
         AssessmentReviewItemOut: {
@@ -1610,6 +952,7 @@ export interface components {
         };
         /** AssessmentSuggestionOut */
         AssessmentSuggestionOut: {
+            agent_metadata?: components["schemas"]["GradingMetadataOut"] | null;
             /** Confidence */
             confidence: number;
             /** Details */
@@ -1618,7 +961,6 @@ export interface components {
             feedback: string;
             /** Max Score */
             max_score: number;
-            mcp_metadata?: components["schemas"]["McpMetadataOut"] | null;
             /** Outcome */
             outcome?: string | null;
             /** Review Reason */
@@ -1696,46 +1038,6 @@ export interface components {
         Body_retry_submission_api_submissions__submission_id__retry_post: {
             /** File */
             file?: string | null;
-        };
-        /**
-         * CodexConfigRequest
-         * @description Only product-level Codex fields are accepted from the browser.
-         */
-        CodexConfigRequest: {
-            /**
-             * Fast Confirmed
-             * @default false
-             */
-            fast_confirmed: boolean;
-            /** Model Id */
-            model_id?: string | null;
-            /** Reasoning Effort */
-            reasoning_effort?: string | null;
-            /**
-             * Speed Mode
-             * @default standard
-             * @enum {string}
-             */
-            speed_mode: "standard" | "fast";
-        };
-        /** CodexConfigSnapshot */
-        CodexConfigSnapshot: {
-            /** Catalog Version */
-            catalog_version?: string | null;
-            /** Model Id */
-            model_id?: string | null;
-            /** Option Ids */
-            option_ids?: {
-                [key: string]: string;
-            };
-            /** Reasoning Effort */
-            reasoning_effort?: string | null;
-            /**
-             * Speed Mode
-             * @default standard
-             * @enum {string}
-             */
-            speed_mode: "standard" | "fast";
         };
         /**
          * ConfigOut
@@ -1845,6 +1147,42 @@ export interface components {
             /** Score */
             score: number;
         };
+        /** GradingMetadataOut */
+        GradingMetadataOut: {
+            /** Client */
+            client?: string | null;
+            /** Context Hash */
+            context_hash: string;
+            /** Generated At */
+            generated_at: string;
+            /** Grading Revision */
+            grading_revision: number;
+            /** Payload Hash */
+            payload_hash: string;
+            quality_checks: components["schemas"]["GradingQualityChecksOut"];
+            /** Request Id */
+            request_id: string;
+            /** Review Required */
+            review_required?: boolean | null;
+            /** Rubric Snapshot */
+            rubric_snapshot?: string | null;
+            /** Rubric Snapshot Id */
+            rubric_snapshot_id: string;
+            /**
+             * Rubric Source
+             * @enum {string}
+             */
+            rubric_source: "configured" | "question_extracted" | "built_in_default";
+            /**
+             * Source
+             * @default agent
+             * @enum {string}
+             */
+            source: "mcp" | "agent";
+            visual_confirmation?: components["schemas"]["GradingVisualConfirmationOut"] | null;
+        } & {
+            [key: string]: unknown;
+        };
         /**
          * GradingPromptOut
          * @description 按题目生成的可审计批改提示词：与运行时评分包中的 grading_policy 同源。
@@ -1873,209 +1211,8 @@ export interface components {
             /** Total Max Score */
             total_max_score: number;
         };
-        /** HTTPValidationError */
-        HTTPValidationError: {
-            /** Detail */
-            detail?: components["schemas"]["ValidationError"][];
-        };
-        /**
-         * LoginRequest
-         * @description 登录请求体：待校验的访问令牌。
-         */
-        LoginRequest: {
-            /** Token */
-            token: string;
-        };
-        /**
-         * McpAssessmentRequest
-         * @description 外部编程助手提交的评分建议(MCP API v12)。
-         *
-         *     v12 起客户端只提交自己决定的内容:逐项 ``rubric_item_id``/得分/评语/
-         *     证据,加总分置信度与反馈。单项 ``criterion``/``max_score``、总得分、
-         *     总满分、rubric 来源与快照 ID 全部由服务端从 ``grading_handle`` 对应的
-         *     权威 rubric 推导,客户端提交这些字段会被拒绝(extra=forbid)。
-         *     版本和上下文由服务端从评分句柄读取并在持锁后核对,
-         *     不在对外请求中出现。
-         */
-        McpAssessmentRequest: {
-            /**
-             * Confidence
-             * @default 0
-             */
-            confidence: number;
-            /** Details */
-            details: components["schemas"]["McpScoreDetail"][];
-            /** Feedback */
-            feedback: string;
-            /**
-             * Request Id
-             * Format: uuid
-             */
-            request_id: string;
-        };
-        /** McpAssessmentResponse */
-        McpAssessmentResponse: {
-            grading_mode: components["schemas"]["SubmissionGradingMode"];
-            /** Grading Revision */
-            grading_revision: number;
-            /**
-             * Idempotent
-             * @default false
-             */
-            idempotent: boolean;
-            quality_checks: components["schemas"]["McpQualityChecksOut"];
-            status: components["schemas"]["SubmissionStatus"];
-            /** Submission Id */
-            submission_id: number;
-        };
-        /** McpHealthResponse */
-        McpHealthResponse: {
-            /** Database */
-            database: string;
-            /** Mcp Api Version */
-            mcp_api_version: string;
-            /** Service */
-            service: string;
-            /** Status */
-            status: string;
-            /**
-             * Worker Required
-             * @default true
-             */
-            worker_required: boolean;
-        };
-        /** McpMetadataOut */
-        McpMetadataOut: {
-            /** Client */
-            client?: string | null;
-            /** Context Hash */
-            context_hash: string;
-            /** Generated At */
-            generated_at: string;
-            /** Grading Revision */
-            grading_revision: number;
-            /** Payload Hash */
-            payload_hash: string;
-            quality_checks: components["schemas"]["McpQualityChecksOut"];
-            /** Request Id */
-            request_id: string;
-            /** Review Required */
-            review_required?: boolean | null;
-            /** Rubric Snapshot */
-            rubric_snapshot?: string | null;
-            /** Rubric Snapshot Id */
-            rubric_snapshot_id: string;
-            /**
-             * Rubric Source
-             * @enum {string}
-             */
-            rubric_source: "configured" | "question_extracted" | "built_in_default";
-            /**
-             * Source
-             * @default mcp
-             * @constant
-             */
-            source: "mcp";
-            visual_confirmation?: components["schemas"]["McpVisualConfirmationOut"] | null;
-        } & {
-            [key: string]: unknown;
-        };
-        /** McpPackageResponse */
-        McpPackageResponse: {
-            assessment?: components["schemas"]["AssessmentSuggestionOut"] | null;
-            /** Content */
-            content?: string | null;
-            /**
-             * Context Complete
-             * @default false
-             */
-            context_complete: boolean;
-            /** Continuation Token */
-            continuation_token?: string | null;
-            /** Error Message */
-            error_message?: string | null;
-            /** Grading Handle */
-            grading_handle?: string | null;
-            /**
-             * Needs Rubric
-             * @default false
-             */
-            needs_rubric: boolean;
-            /** Question Id */
-            question_id?: string | null;
-            /** Question Ocr Text */
-            question_ocr_text?: string | null;
-            /** Review Url */
-            review_url?: string | null;
-            /** Rubric Handle */
-            rubric_handle?: string | null;
-            status: components["schemas"]["SubmissionStatus"];
-            /** Submission Id */
-            submission_id: number;
-        };
-        /**
-         * McpPendingAssignment
-         * @description 待评分作业列表项。
-         */
-        McpPendingAssignment: {
-            /** Original Filename */
-            original_filename: string;
-            /** Question Name */
-            question_name: string;
-            /** Submission Id */
-            submission_id: number;
-            /**
-             * Uploaded At
-             * Format: date-time
-             */
-            uploaded_at: string;
-        };
-        /** McpPendingAssignmentsResponse */
-        McpPendingAssignmentsResponse: {
-            /** Items */
-            items?: components["schemas"]["McpPendingAssignment"][];
-            /** Next Cursor */
-            next_cursor?: string | null;
-        };
-        /** McpPreflightFile */
-        McpPreflightFile: {
-            /**
-             * Entrypoint
-             * @default true
-             */
-            entrypoint: boolean;
-            /** Filename */
-            filename: string;
-            /** Question Number */
-            question_number?: number | null;
-        };
-        /** McpPreflightRequest */
-        McpPreflightRequest: {
-            /** Code Files */
-            code_files?: components["schemas"]["McpPreflightFile"][];
-            /** Question Name */
-            question_name: string;
-        };
-        /** McpPreflightResponse */
-        McpPreflightResponse: {
-            /** Candidates */
-            candidates?: components["schemas"]["McpQuestionCandidate"][];
-            /** Code Manifest */
-            code_manifest?: {
-                [key: string]: unknown;
-            }[];
-            /** Question Id */
-            question_id?: string | null;
-            /** Question Name */
-            question_name?: string | null;
-            /**
-             * Status
-             * @enum {string}
-             */
-            status: "ready_to_submit" | "needs_question_choice";
-        };
-        /** McpQualityChecksOut */
-        McpQualityChecksOut: {
+        /** GradingQualityChecksOut */
+        GradingQualityChecksOut: {
             /** Arithmetic Valid */
             arithmetic_valid: boolean;
             /** Client Self Check */
@@ -2091,160 +1228,8 @@ export interface components {
             /** Visual Confirmation Valid */
             visual_confirmation_valid: boolean;
         };
-        /** McpQuestionCandidate */
-        McpQuestionCandidate: {
-            /** Id */
-            id: string;
-            /** Name */
-            name: string;
-            /** Original Filename */
-            original_filename: string;
-        };
-        /**
-         * McpReviewItem
-         * @description 复核者对单个评分项的结论。
-         */
-        McpReviewItem: {
-            /** Comment */
-            comment: string;
-            /** Rubric Item Id */
-            rubric_item_id: string;
-            /** Suggested Score */
-            suggested_score?: number | null;
-            /**
-             * Verdict
-             * @enum {string}
-             */
-            verdict: "agree" | "disagree";
-        };
-        /**
-         * McpRubricExtractionItem
-         * @description 客户端从题目 OCR 中提取的单个评分项。
-         */
-        McpRubricExtractionItem: {
-            /** Criterion */
-            criterion: string;
-            /** Details */
-            details: string;
-            /** Max Score */
-            max_score: number;
-            /** Source Quote */
-            source_quote: string;
-        };
-        /** McpSaveAssessmentRequest */
-        McpSaveAssessmentRequest: {
-            assessment: components["schemas"]["McpAssessmentRequest"];
-            /** Client */
-            client?: string | null;
-            /** Grading Handle */
-            grading_handle: string;
-        };
-        /**
-         * McpSaveReviewRequest
-         * @description 独立复核任务提交的对当前评分建议的复核结论。
-         *
-         *     ``grading_handle`` 来自对 ``ready_for_review`` 作业调用
-         *     ``open_ai_marking_assignment`` 后的评分包;服务端校验建议版本
-         *     (grading_revision)未变化后写入 ``submissions.assessment_review``。
-         *     ``items`` 必须逐项引用当前 rubric 的全部 item,与评分建议相同。
-         */
-        McpSaveReviewRequest: {
-            /** Client */
-            client?: string | null;
-            /**
-             * Confidence
-             * @default 0
-             */
-            confidence: number;
-            /** Grading Handle */
-            grading_handle: string;
-            /** Items */
-            items: components["schemas"]["McpReviewItem"][];
-            /** Summary */
-            summary: string;
-            /**
-             * Verdict
-             * @enum {string}
-             */
-            verdict: "agree" | "partial" | "disagree";
-        };
-        /** McpSaveReviewResponse */
-        McpSaveReviewResponse: {
-            /** Reviewed Revision */
-            reviewed_revision: number;
-            status: components["schemas"]["SubmissionStatus"];
-            /** Submission Id */
-            submission_id: number;
-            /**
-             * Verdict
-             * @enum {string}
-             */
-            verdict: "agree" | "partial" | "disagree";
-        };
-        /**
-         * McpSaveRubricRequest
-         * @description 保存客户端提取的题目 rubric。
-         *
-         *     ``handle`` 为 ``open_ai_marking_assignment`` 返回的 rubric 提取句柄;
-         *     ``status`` 为 ``complete``（有明确 rubric）或 ``absent_or_ambiguous``
-         *     （无明确 rubric）。``complete`` 时逐项 ``source_quote`` 必须是题目 OCR
-         *     原文子串且包含该项满分,服务端确定性校验后写入题目级权威快照。
-         */
-        McpSaveRubricRequest: {
-            /** Handle */
-            handle: string;
-            /** Items */
-            items?: components["schemas"]["McpRubricExtractionItem"][];
-            /**
-             * Status
-             * @enum {string}
-             */
-            status: "complete" | "absent_or_ambiguous";
-            /** Total Max Score */
-            total_max_score?: number | null;
-        };
-        /** McpSaveRubricResponse */
-        McpSaveRubricResponse: {
-            /** Question Id */
-            question_id: string;
-            /** Question Name */
-            question_name: string;
-            /** Rubric Snapshot Id */
-            rubric_snapshot_id?: string | null;
-            /**
-             * Status
-             * @enum {string}
-             */
-            status: "complete" | "absent_or_ambiguous";
-        };
-        /**
-         * McpScoreDetail
-         * @description v12 起客户端提交的单项评分。
-         *
-         *     客户端只决定它真正负责的内容:引用哪个 rubric item、给多少分、
-         *     评语与证据。``criterion``/``max_score`` 由服务端按权威 rubric 回填,
-         *     不接受客户端提交。
-         */
-        McpScoreDetail: {
-            /** Comment */
-            comment: string;
-            /** Evidence Refs */
-            evidence_refs?: {
-                [key: string]: unknown;
-            }[];
-            /**
-             * Evidence Status
-             * @default supported
-             * @enum {string}
-             */
-            evidence_status: "supported" | "not_found";
-            /** Rubric Item Id */
-            rubric_item_id: string;
-            /** Score */
-            score: number;
-        };
-        /** McpVisualConfirmationOut */
-        McpVisualConfirmationOut: {
+        /** GradingVisualConfirmationOut */
+        GradingVisualConfirmationOut: {
             /** Confirmed At */
             confirmed_at?: string | null;
             /** Note */
@@ -2255,49 +1240,18 @@ export interface components {
              */
             verdict: "consistent" | "mismatch";
         };
-        /** McpVisualConfirmationRequest */
-        McpVisualConfirmationRequest: {
-            /** Grading Handle */
-            grading_handle: string;
-            /** Note */
-            note?: string | null;
-            /**
-             * Verdict
-             * @enum {string}
-             */
-            verdict: "consistent" | "mismatch";
-        };
-        /** McpVisualConfirmationResponse */
-        McpVisualConfirmationResponse: {
-            /** Confirmed At */
-            confirmed_at: string;
-            /** Grading Handle */
-            grading_handle: string;
-            /** Note */
-            note?: string | null;
-            /** Submission Id */
-            submission_id: number;
-            /**
-             * Verdict
-             * @enum {string}
-             */
-            verdict: "consistent" | "mismatch";
+        /** HTTPValidationError */
+        HTTPValidationError: {
+            /** Detail */
+            detail?: components["schemas"]["ValidationError"][];
         };
         /**
-         * McpWaitReadyResponse
-         * @description wait-ready 长轮询响应:当前状态与是否已进入可打开状态。
-         *
-         *     ``ready`` 为 true 时 status 必然属于 awaiting_mcp/ready_for_review/
-         *     reviewed/failed,客户端可立即调用 open_ai_marking_assignment;
-         *     false 表示超时仍未就绪,客户端可继续等待。
+         * LoginRequest
+         * @description 登录请求体：待校验的访问令牌。
          */
-        McpWaitReadyResponse: {
-            /** Ready */
-            ready: boolean;
-            /** Status */
-            status: string;
-            /** Submission Id */
-            submission_id: number;
+        LoginRequest: {
+            /** Token */
+            token: string;
         };
         /** PaginatedQuestions */
         PaginatedQuestions: {
@@ -2323,6 +1277,83 @@ export interface components {
             skip: number;
             /** Total */
             total: number;
+        };
+        /**
+         * ProviderConfigUpdateRequest
+         * @description 更新通道配置;null 不改动、空串清除。
+         *
+         *     ``api_key`` 只写不读(响应永不回显密钥本体)。
+         */
+        ProviderConfigUpdateRequest: {
+            /** Api Key */
+            api_key?: string | null;
+            /** Base Url */
+            base_url?: string | null;
+            /** Default Model */
+            default_model?: string | null;
+            /** Reasoning Effort */
+            reasoning_effort?: string | null;
+        };
+        /** ProviderDefaultUpdateRequest */
+        ProviderDefaultUpdateRequest: {
+            /**
+             * Provider
+             * @enum {string}
+             */
+            provider: "openai_api" | "chatgpt_sub";
+        };
+        /** ProviderListResponse */
+        ProviderListResponse: {
+            /** Provider Default */
+            provider_default: string;
+            /** Providers */
+            providers: {
+                [key: string]: components["schemas"]["ProviderStatusOut"];
+            };
+        };
+        /** ProviderStatusOut */
+        ProviderStatusOut: {
+            /**
+             * Available
+             * @default true
+             */
+            available: boolean;
+            /**
+             * Base Url
+             * @default
+             */
+            base_url: string;
+            /**
+             * Configured
+             * @default false
+             */
+            configured: boolean;
+            /**
+             * Default Model
+             * @default
+             */
+            default_model: string;
+            /** Key Last4 */
+            key_last4?: string | null;
+            /**
+             * Reasoning Effort
+             * @default
+             */
+            reasoning_effort: string;
+        };
+        /** ProviderTestResponse */
+        ProviderTestResponse: {
+            /** Detail */
+            detail?: string | null;
+            /** Models */
+            models?: string[];
+            /** Name */
+            name: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ready" | "needs_auth" | "unsupported" | "failed";
         };
         /** QuestionConfirmRequest */
         QuestionConfirmRequest: {
@@ -2483,7 +1514,7 @@ export interface components {
         };
         /**
          * ScoreDetail
-         * @description 单项评分:MCP 与教师最终确认共用。
+         * @description 单项评分:agent 与教师最终确认共用。
          */
         ScoreDetail: {
             /** Comment */
@@ -2604,7 +1635,7 @@ export interface components {
             feedback?: string | null;
             /** Graded At */
             graded_at?: string | null;
-            /** @default external_agent */
+            /** @default agent */
             grading_mode: components["schemas"]["SubmissionGradingMode"];
             /**
              * Grading Revision
@@ -2649,7 +1680,7 @@ export interface components {
          * SubmissionGradingMode
          * @enum {string}
          */
-        SubmissionGradingMode: "external_agent";
+        SubmissionGradingMode: "agent";
         /**
          * SubmissionOut
          * @description 列表精简版:列表与摘要展示用。
@@ -2661,7 +1692,7 @@ export interface components {
             confidence?: number | null;
             /** Graded At */
             graded_at?: string | null;
-            /** @default external_agent */
+            /** @default agent */
             grading_mode: components["schemas"]["SubmissionGradingMode"];
             /**
              * Grading Revision
@@ -2696,7 +1727,7 @@ export interface components {
          * SubmissionStatus
          * @enum {string}
          */
-        SubmissionStatus: "pending" | "ocr_processing" | "ocr_done" | "awaiting_mcp" | "ready_for_review" | "reviewed" | "failed";
+        SubmissionStatus: "pending" | "ocr_processing" | "ocr_done" | "awaiting_grading" | "ready_for_review" | "reviewed" | "failed";
         /**
          * SubmissionStatusOut
          * @description 轻量状态:前端轮询用,不包含 ``ocr_text``/``assessment_suggestion`` 等大字段。
@@ -2712,7 +1743,7 @@ export interface components {
             confidence?: number | null;
             /** Error Message */
             error_message?: string | null;
-            /** @default external_agent */
+            /** @default agent */
             grading_mode: components["schemas"]["SubmissionGradingMode"];
             /**
              * Grading Revision
@@ -2756,866 +1787,6 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-    list_agents_api_acp_agents_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AcpAgentListResponse"];
-                };
-            };
-        };
-    };
-    refresh_registry_api_acp_agents_refresh_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-        };
-    };
-    install_agent_api_acp_agents__agent_id__install_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                agent_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AcpInstallResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    uninstall_agent_api_acp_agents__agent_id__install_delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                agent_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AcpUninstallResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    set_default_agent_api_acp_agents__agent_id__set_default_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                agent_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    test_agent_connection_api_acp_agents__agent_id__test_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                agent_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AcpTestConnectionResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_chat_sessions_api_acp_chat_sessions_get: {
-        parameters: {
-            query: {
-                submission_id: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AcpChatSessionListResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    create_chat_session_api_acp_chat_sessions_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["AcpChatCreateRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AcpChatSessionOut"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_chat_session_detail_api_acp_chat_sessions__chat_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                chat_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AcpChatSessionOut"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    close_chat_session_api_acp_chat_sessions__chat_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                chat_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    cancel_chat_turn_api_acp_chat_sessions__chat_id__cancel_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                chat_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    update_chat_codex_configuration_api_acp_chat_sessions__chat_id__codex_configuration_patch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                chat_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["AcpChatConfigurationUpdateRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AcpChatSessionOut"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_chat_events_api_acp_chat_sessions__chat_id__events_get: {
-        parameters: {
-            query?: {
-                after_seq?: number;
-                limit?: number;
-            };
-            header?: never;
-            path: {
-                chat_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AcpChatEventOut"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    send_chat_message_api_acp_chat_sessions__chat_id__messages_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                chat_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["AcpChatMessageRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AcpChatSessionOut"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    delete_chat_session_permanently_api_acp_chat_sessions__chat_id__permanent_delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                chat_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    answer_chat_permission_api_acp_chat_sessions__chat_id__permission_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                chat_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["AcpChatPermissionRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    stream_chat_events_api_acp_chat_sessions__chat_id__stream_get: {
-        parameters: {
-            query?: {
-                after_seq?: number;
-            };
-            header?: {
-                "Last-Event-ID"?: string | null;
-            };
-            path: {
-                chat_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_codex_configuration_catalog_api_acp_codex_configuration_get: {
-        parameters: {
-            query?: {
-                model_id?: string | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AcpCodexConfigurationResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_default_agent_api_acp_default_agent_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-        };
-    };
-    create_run_api_acp_runs_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["AcpRunCreateRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AcpRunDetailResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_active_run_by_submission_api_acp_runs_by_submission__submission_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                submission_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AcpRunDetailResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_run_api_acp_runs__run_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                run_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AcpRunDetailResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    cancel_run_api_acp_runs__run_id__cancel_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                run_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    update_run_codex_configuration_api_acp_runs__run_id__codex_configuration_patch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                run_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["AcpConfigurationUpdateRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AcpRunDetailResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    list_run_events_api_acp_runs__run_id__events_get: {
-        parameters: {
-            query?: {
-                after_seq?: number;
-                limit?: number;
-            };
-            header?: never;
-            path: {
-                run_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AcpRunEventOut"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    reply_checkpoint_api_acp_runs__run_id__reply_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                run_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["AcpRunReplyRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    stream_run_events_api_acp_runs__run_id__stream_get: {
-        parameters: {
-            query?: {
-                after_seq?: number;
-            };
-            header?: {
-                "Last-Event-ID"?: string | null;
-            };
-            path: {
-                run_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     list_dead_jobs_api_admin_dead_jobs_get: {
         parameters: {
             query?: never;
@@ -3714,6 +1885,394 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RuntimeOut"];
+                };
+            };
+        };
+    };
+    list_providers_api_agent_providers_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderListResponse"];
+                };
+            };
+        };
+    };
+    set_default_provider_api_agent_providers_default_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProviderDefaultUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_provider_config_api_agent_providers__name__config_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProviderConfigUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_provider_api_agent_providers__name__test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderTestResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_run_api_agent_runs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentRunCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRunDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_active_run_by_submission_api_agent_runs_by_submission__submission_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                submission_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRunDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_run_api_agent_runs__run_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRunDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_run_api_agent_runs__run_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_run_configuration_api_agent_runs__run_id__configuration_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentConfigurationUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRunDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_run_events_api_agent_runs__run_id__events_get: {
+        parameters: {
+            query?: {
+                after_seq?: number;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                run_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRunEventOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reply_checkpoint_api_agent_runs__run_id__reply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentRunReplyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stream_run_events_api_agent_runs__run_id__stream_get: {
+        parameters: {
+            query?: {
+                after_seq?: number;
+            };
+            header?: {
+                "Last-Event-ID"?: string | null;
+            };
+            path: {
+                run_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -3888,297 +2447,6 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
-                };
-            };
-        };
-    };
-    mcp_health_api_mcp_health_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["McpHealthResponse"];
-                };
-            };
-        };
-    };
-    mcp_pending_assignments_api_mcp_pending_assignments_get: {
-        parameters: {
-            query?: {
-                cursor?: string | null;
-                limit?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["McpPendingAssignmentsResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    save_mcp_question_rubric_api_mcp_questions__question_id__rubric_put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                question_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["McpSaveRubricRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["McpSaveRubricResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    mcp_submission_preflight_api_mcp_submission_preflight_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["McpPreflightRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["McpPreflightResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    save_mcp_assessment_review_api_mcp_submissions__submission_id__assessment_review_put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                submission_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["McpSaveReviewRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["McpSaveReviewResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    save_mcp_assessment_api_mcp_submissions__submission_id__assessment_v2_put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                submission_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["McpSaveAssessmentRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["McpAssessmentResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    mcp_submission_package_api_mcp_submissions__submission_id__package_get: {
-        parameters: {
-            query?: {
-                continuation_token?: string | null;
-            };
-            header?: never;
-            path: {
-                submission_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["McpPackageResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    confirm_mcp_visual_review_api_mcp_submissions__submission_id__visual_confirmation_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                submission_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["McpVisualConfirmationRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["McpVisualConfirmationResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    mcp_wait_ready_api_mcp_submissions__submission_id__wait_ready_get: {
-        parameters: {
-            query?: {
-                timeout?: number;
-            };
-            header?: never;
-            path: {
-                submission_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["McpWaitReadyResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

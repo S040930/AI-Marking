@@ -1,4 +1,4 @@
-"""内嵌批改 agent:进程内 tool-calling 循环,不依赖 ACP/MCP。
+"""内嵌批改 agent:进程内 tool-calling 循环,不依赖外部协议进程。
 
 分层约束(见 tests/test_architecture_boundaries.py):
 - ``app.agent`` 不得 import ``app.api``;

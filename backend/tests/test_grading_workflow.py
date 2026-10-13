@@ -11,14 +11,14 @@ import json
 import pytest
 from pydantic import ValidationError as PydanticValidationError
 
-from app.application import mcp_workflow as workflow
-from app.application.mcp_workflow import build_grading_policy
+from app.application import grading_workflow as workflow
+from app.application.grading_workflow import build_grading_policy
 from app.core.config import settings
 from app.core.errors import ConflictError, ValidationError
 from app.models.question import Question, QuestionStatus
 from app.models.submission import Submission, SubmissionGradingMode, SubmissionStatus
 from app.models.submission_code_file import SubmissionCodeFile
-from app.schemas.mcp import McpAssessmentRequest, McpSaveAssessmentRequest
+from app.schemas.grading import GradingAssessmentRequest, GradingSaveAssessmentRequest
 from app.services.rubric import resolve_rubric
 
 REQUEST_ID = "11111111-1111-4111-8111-111111111111"
@@ -51,8 +51,8 @@ def _add_submission(db, question, *, ocr_text="学生内容") -> Submission:
         file_path="/tmp/a.pdf",
         question=question,
         ocr_text=ocr_text,
-        status=SubmissionStatus.awaiting_mcp,
-        grading_mode=SubmissionGradingMode.external_agent,
+        status=SubmissionStatus.awaiting_grading,
+        grading_mode=SubmissionGradingMode.agent,
     )
     db.add(sub)
     db.commit()
@@ -67,9 +67,9 @@ def _save(db, sub, package, details: list[dict], request_id: str = REQUEST_ID):
     return workflow.save_assessment(
         db,
         sub.id,
-        McpSaveAssessmentRequest(
+        GradingSaveAssessmentRequest(
             grading_handle=package.grading_handle,
-            assessment=McpAssessmentRequest(
+            assessment=GradingAssessmentRequest(
                 request_id=request_id,
                 confidence=0.8,
                 feedback="完成主要要求。",
@@ -155,7 +155,7 @@ def test_package_paginates_and_compact_save_enforces_handle(db_session):
     assert saved.grading_revision == 1
     db_session.expire_all()
     row = db_session.get(Submission, sub.id)
-    assert row.assessment_suggestion["mcp_metadata"]["source"] == "agent"
+    assert row.assessment_suggestion["agent_metadata"]["source"] == "agent"
     # 服务端推导总分:score=明细之和,max_score=权威 rubric 满分
     assert row.score == 0
     assert row.max_score == resolved["total_max_score"]
@@ -225,7 +225,7 @@ def test_save_derives_totals_and_rejects_bad_details(db_session):
 
     # v12 起客户端提交服务端可推导字段(旧版契约)一律拒绝(extra=forbid)
     with pytest.raises(PydanticValidationError):
-        McpAssessmentRequest.model_validate(
+        GradingAssessmentRequest.model_validate(
             {
                 "request_id": REQUEST_ID,
                 "rubric_snapshot_id": resolved["snapshot_id"],
@@ -250,7 +250,7 @@ def test_save_derives_totals_and_rejects_bad_details(db_session):
     assert row.details[0]["max_score"] == item_max
     # 服务端从 evidence_refs 投影可读证据,教师页无需感知结构化引用
     assert row.details[0]["evidence"] == ["学生内容"]
-    assert row.assessment_suggestion["mcp_metadata"]["rubric_source"] == "configured"
+    assert row.assessment_suggestion["agent_metadata"]["rubric_source"] == "configured"
 
 
 def test_package_returns_needs_rubric_with_single_use_handle(db_session):
@@ -676,13 +676,13 @@ def test_purge_expired_handles_removes_only_expired_rows(db_session):
     """批量清理删除过期句柄、保留未过期句柄；force 时必须全部完成。"""
     from datetime import timedelta
 
-    from app.application.mcp_workflow import purge_expired_handles
+    from app.application.grading_workflow import purge_expired_handles
     from app.core.time import utc_now_naive
-    from app.models.mcp_workflow_handle import McpWorkflowHandle
+    from app.models.grading_handle import GradingHandle
 
     db_session.add_all(
         [
-            McpWorkflowHandle(
+            GradingHandle(
                 token_hash="expired" + "0" * 57,
                 kind="package",
                 submission_id=1,
@@ -690,7 +690,7 @@ def test_purge_expired_handles_removes_only_expired_rows(db_session):
                 grading_revision=0,
                 expires_at=utc_now_naive() - timedelta(seconds=1),
             ),
-            McpWorkflowHandle(
+            GradingHandle(
                 token_hash="alive" + "0" * 59,
                 kind="package",
                 submission_id=1,
@@ -705,13 +705,13 @@ def test_purge_expired_handles_removes_only_expired_rows(db_session):
     purge_expired_handles(db_session, force=True)
     db_session.commit()
 
-    remaining = db_session.query(McpWorkflowHandle).all()
+    remaining = db_session.query(GradingHandle).all()
     assert [row.token_hash for row in remaining] == ["alive" + "0" * 59]
 
 
 def test_purge_expired_handles_is_probabilistic(db_session, monkeypatch):
     """默认非 force 调用按 1/16 概率触发；低随机值时执行清理。"""
-    from app.application import mcp_workflow
+    from app.application import grading_workflow
 
     calls = {"count": 0}
 
@@ -719,11 +719,42 @@ def test_purge_expired_handles_is_probabilistic(db_session, monkeypatch):
         calls["count"] += 1
         return None
 
-    monkeypatch.setattr(mcp_workflow.random, "random", lambda: 0.99)
+    monkeypatch.setattr(grading_workflow.random, "random", lambda: 0.99)
     monkeypatch.setattr(db_session, "execute", count_execute)
-    mcp_workflow.purge_expired_handles(db_session)
+    grading_workflow.purge_expired_handles(db_session)
     assert calls["count"] == 0
 
-    monkeypatch.setattr(mcp_workflow.random, "random", lambda: 0.0)
-    mcp_workflow.purge_expired_handles(db_session)
+    monkeypatch.setattr(grading_workflow.random, "random", lambda: 0.0)
+    grading_workflow.purge_expired_handles(db_session)
     assert calls["count"] == 1
+
+
+def test_build_assessment_summary_bridges_legacy_metadata_key():
+    """v12 及更早历史元数据键为 mcp_metadata;summary 输出统一 agent_metadata。"""
+    from types import SimpleNamespace
+
+    legacy = SimpleNamespace(
+        assessment_suggestion={
+            "score": 80,
+            "max_score": 100,
+            "mcp_metadata": {"source": "mcp"},
+        }
+    )
+    summary = workflow.build_assessment_summary(legacy)
+    assert summary["agent_metadata"] == {"source": "mcp"}
+    assert "mcp_metadata" not in summary
+    assert summary["score"] == 80
+
+    current = SimpleNamespace(
+        assessment_suggestion={"agent_metadata": {"source": "agent"}}
+    )
+    assert workflow.build_assessment_summary(current)["agent_metadata"] == {
+        "source": "agent"
+    }
+    empty = SimpleNamespace(assessment_suggestion=None)
+    assert workflow.build_assessment_summary(empty) is None
+
+
+def test_handle_ttl_covers_overnight_checkpoints():
+    """句柄 TTL 为 24h:检查点驻留可跨夜,教师隔日答复仍有效。"""
+    assert workflow.HANDLE_TTL_SECONDS == 24 * 60 * 60

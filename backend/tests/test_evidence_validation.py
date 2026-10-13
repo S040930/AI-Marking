@@ -5,13 +5,13 @@ from uuid import UUID
 
 import pytest
 
-from app.application.mcp_workflow import validate_evidence_refs
+from app.application.grading_workflow import validate_evidence_refs
 from app.core.errors import ValidationError
-from app.schemas.mcp import McpAssessmentRequest
+from app.schemas.grading import GradingAssessmentRequest
 
 
-def _request(details: list[dict]) -> McpAssessmentRequest:
-    return McpAssessmentRequest(
+def _request(details: list[dict]) -> GradingAssessmentRequest:
+    return GradingAssessmentRequest(
         request_id=UUID("11111111-1111-4111-8111-111111111111"),
         confidence=0.8,
         feedback="ok",
@@ -31,7 +31,7 @@ def _detail(**overrides: object) -> dict:
     return detail
 
 
-def _assessment_with_report_quote(quote: str) -> McpAssessmentRequest:
+def _assessment_with_report_quote(quote: str) -> GradingAssessmentRequest:
     return _request(
         [
             _detail(
@@ -94,7 +94,7 @@ def _report_only_submission() -> SimpleNamespace:
     )
 
 
-def _assessment_with_source_line(ref: dict) -> McpAssessmentRequest:
+def _assessment_with_source_line(ref: dict) -> GradingAssessmentRequest:
     return _request([_detail(evidence_refs=[ref])])
 
 

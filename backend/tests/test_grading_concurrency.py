@@ -12,13 +12,13 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import update
 
-from app.application import mcp_workflow as workflow
+from app.application import grading_workflow as workflow
 from app.application.locking import lock_submission_after_question
 from app.core.errors import ConflictError
-from app.models.mcp_workflow_handle import McpWorkflowHandle
+from app.models.grading_handle import GradingHandle
 from app.models.question import Question, QuestionStatus
 from app.models.submission import Submission, SubmissionStatus
-from app.schemas.mcp import McpAssessmentRequest, McpSaveAssessmentRequest
+from app.schemas.grading import GradingAssessmentRequest, GradingSaveAssessmentRequest
 from app.services.config import upsert_config
 
 
@@ -38,7 +38,7 @@ def assignment(db_session):
         original_filename="answer.pdf",
         file_path="/tmp/answer.pdf",
         ocr_text="Report evidence",
-        status=SubmissionStatus.awaiting_mcp,
+        status=SubmissionStatus.awaiting_grading,
     )
     db_session.add(sub)
     db_session.commit()
@@ -65,7 +65,7 @@ def open_package(db, sub, token=None):
     return workflow.open_grading_package(db, sub, token)
 
 
-def assessment(package, score=10, *, not_found=False) -> McpSaveAssessmentRequest:
+def assessment(package, score=10, *, not_found=False) -> GradingSaveAssessmentRequest:
     header = json.loads(package.content.split("\n", 1)[1].split("\n\n", 1)[0])
     item = header["grading_policy"]["resolved_rubric"]["items"][0]
     detail = {
@@ -77,9 +77,9 @@ def assessment(package, score=10, *, not_found=False) -> McpSaveAssessmentReques
         detail.update(evidence_refs=[], evidence_status="not_found")
     else:
         detail["evidence_refs"] = [{"type": "report_quote", "quote": "Report evidence"}]
-    return McpSaveAssessmentRequest(
+    return GradingSaveAssessmentRequest(
         grading_handle=package.grading_handle,
-        assessment=McpAssessmentRequest(
+        assessment=GradingAssessmentRequest(
             request_id=uuid4(),
             confidence=0.8,
             feedback="Feedback",
@@ -212,8 +212,8 @@ def test_handle_lock_refreshes_preloaded_confirmation(db_session, assignment):
     db_session.commit()
     handle = workflow.load_workflow_handle(db_session, token, kind="grading")
     db_session.execute(
-        update(McpWorkflowHandle)
-        .where(McpWorkflowHandle.id == handle.id)
+        update(GradingHandle)
+        .where(GradingHandle.id == handle.id)
         .values(grading_revision=2),
         execution_options={"synchronize_session": False},
     )

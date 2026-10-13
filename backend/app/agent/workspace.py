@@ -1,6 +1,6 @@
 """批改工作区:有界物化与保留期清理。
 
-自 ``app/acp/workspace.py`` 裁剪:删除 skill.md 物化(流程已收敛到
+由旧工作区模块裁剪:删除 skill.md 物化(流程已收敛到
 prompts/grading.md)与交互式对话工作区(功能删除);根目录改为
 ``uploads/grading-workspaces``。
 """

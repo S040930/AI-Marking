@@ -1,6 +1,6 @@
 """GradingRun 数据访问与租约操作;纯持久化,无协议逻辑。
 
-自 ``app/acp/runs.py`` 平移:表名/Acp 前缀改名,删除 agent 会话与
+由旧运行骨架平移:表名/前缀改名,删除 agent 会话与
 codex 专属配置(改 model/effort 语义),恢复策略保持统一。
 """
 

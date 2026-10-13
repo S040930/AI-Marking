@@ -280,7 +280,7 @@ async def question_collection_event_stream() -> AsyncIterator[str]:
         _sse_slots.release()
 
 
-# MCP wait-ready 长轮询参数:等待期间每次 NOTIFY poll 间隔与 SSE 相同;
+# 作业状态等待参数:等待期间每次 NOTIFY poll 间隔与 SSE 相同;
 # 非 PG 后端(SQLite 测试)NOTIFY 不可用,退化为状态轮询。
 _WAIT_POLL_INTERVAL_SECONDS = 0.5
 _WAIT_FALLBACK_INTERVAL_SECONDS = 1.0

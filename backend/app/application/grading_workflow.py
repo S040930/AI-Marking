@@ -1,6 +1,6 @@
-"""MCP 工作流业务逻辑：句柄管理、评分策略、上下文打包与评分持久化。
+"""批改工作流业务逻辑：句柄管理、评分策略、上下文打包与评分持久化。
 
-从 ``app/api/mcp.py`` 迁移的业务函数；错误由 API 适配层统一映射。
+由原协议服务迁移而来；错误由工具层/API 适配层统一映射。
 """
 
 from __future__ import annotations
@@ -24,15 +24,15 @@ from app.application.lifecycle import transition_submission
 from app.core.config import settings
 from app.core.errors import ConflictError, NotFoundError, ValidationError
 from app.core.time import utc_now_naive
-from app.models.mcp_assessment_receipt import McpAssessmentReceipt
-from app.models.mcp_workflow_handle import McpWorkflowHandle
+from app.models.grading_assessment_receipt import GradingAssessmentReceipt
+from app.models.grading_handle import GradingHandle
 from app.models.question import Question
 from app.models.submission import Submission, SubmissionGradingMode, SubmissionStatus
-from app.schemas.mcp import (
-    McpAssessmentRequest,
-    McpAssessmentResponse,
-    McpPackageResponse,
-    McpSaveAssessmentRequest,
+from app.schemas.grading import (
+    GradingAssessmentRequest,
+    GradingAssessmentResponse,
+    GradingPackageResponse,
+    GradingSaveAssessmentRequest,
 )
 from app.services.config import get_config_dict
 from app.services.events import notify_submission_status
@@ -45,7 +45,9 @@ from app.services.rubric import (
 
 logger = logging.getLogger(__name__)
 PACKAGE_PAGE_CHARS = 40_000
-HANDLE_TTL_SECONDS = 30 * 60
+# 句柄 TTL 24h:含代码作业的检查点驻留可能隔夜,教师答复前句柄不得过期;
+# 续跑提示词已要求"句柄失效则重新 open_grading_package"作双保险。
+HANDLE_TTL_SECONDS = 24 * 60 * 60
 # 过期句柄批量清理的触发概率：load_workflow_handle 已对命中的过期句柄做
 # 单条删除，批量清理只是防止长期不重复访问的句柄残留，无需每次创建都
 # 对热路径做一次全表 DELETE（写锁 + 死元组 churn）。
@@ -56,7 +58,7 @@ def token_hash(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
-def assessment_payload_hash(payload: McpAssessmentRequest) -> str:
+def assessment_payload_hash(payload: GradingAssessmentRequest) -> str:
     data = payload.model_dump(
         mode="json",
         exclude={"request_id", "expected_revision", "context_hash"},
@@ -74,16 +76,16 @@ def purge_expired_handles(db: Session, *, force: bool = False) -> None:
     if not force and random.random() >= _EXPIRED_PURGE_PROBABILITY:
         return
     db.execute(
-        delete(McpWorkflowHandle).where(McpWorkflowHandle.expires_at < utc_now_naive())
+        delete(GradingHandle).where(GradingHandle.expires_at < utc_now_naive())
     )
 
 
 def create_workflow_handle(db: Session, payload: dict) -> str:
-    """Create a DB-backed opaque MCP handle; plaintext is never persisted."""
+    """Create a DB-backed opaque grading handle; plaintext is never persisted."""
     purge_expired_handles(db)
     handle = secrets.token_urlsafe(32)
     db.add(
-        McpWorkflowHandle(
+        GradingHandle(
             token_hash=token_hash(handle),
             kind=payload["kind"],
             submission_id=payload["submission_id"],
@@ -100,21 +102,21 @@ def create_workflow_handle(db: Session, payload: dict) -> str:
 
 def load_workflow_handle(
     db: Session, value: str, *, kind: str, lock: bool = False
-) -> McpWorkflowHandle:
-    query = select(McpWorkflowHandle).where(
-        McpWorkflowHandle.token_hash == token_hash(value),
-        McpWorkflowHandle.kind == kind,
+) -> GradingHandle:
+    query = select(GradingHandle).where(
+        GradingHandle.token_hash == token_hash(value),
+        GradingHandle.kind == kind,
     )
     if lock:
         query = query.with_for_update().execution_options(populate_existing=True)
     payload = db.execute(query).scalar_one_or_none()
     if payload is None:
-        raise ConflictError("MCP 工作流令牌无效，请重新打开作业")
+        raise ConflictError("批改工作流令牌无效，请重新打开作业")
     if payload.expires_at < utc_now_naive():
         if lock:
             db.delete(payload)
             db.flush()
-        raise ConflictError("MCP 工作流令牌已过期，请重新打开作业")
+        raise ConflictError("批改工作流令牌已过期，请重新打开作业")
     payload._plaintext_token = value
     return payload
 
@@ -123,7 +125,7 @@ def build_grading_policy(resolved: ResolvedRubric) -> dict:
     """构建评分包 grading_policy(每次现算,不持久化)。
 
     v12 起不再包含 review_required/第二遍复核要求:单次证据化评分是正常
-    路径,交叉复核(save_ai_marking_assessment_review)是独立可选能力。
+    路径,交叉复核(save_assessment_review)是独立可选能力。
     """
     requirements = [
         "评分包中的 resolved_rubric 是唯一评分标准；不得根据题目或学生作业自行改写。",
@@ -202,8 +204,8 @@ def get_submission_or_404(db: Session, submission_id: int) -> Submission:
     )
     if sub is None:
         raise NotFoundError("提交记录不存在")
-    if sub.grading_mode != SubmissionGradingMode.external_agent:
-        raise ConflictError("该提交不是外部编程助手评分模式")
+    if sub.grading_mode != SubmissionGradingMode.agent:
+        raise ConflictError("该提交不是 agent 评分模式")
     return sub
 
 
@@ -219,8 +221,8 @@ def get_locked_submission_or_404(db: Session, submission_id: int) -> Submission:
     ).scalar_one_or_none()
     if sub is None:
         raise NotFoundError("提交记录不存在")
-    if sub.grading_mode != SubmissionGradingMode.external_agent:
-        raise ConflictError("该提交不是外部编程助手评分模式")
+    if sub.grading_mode != SubmissionGradingMode.agent:
+        raise ConflictError("该提交不是 agent 评分模式")
     return sub
 
 
@@ -344,7 +346,7 @@ def _evidence_display_lines(evidence_refs: list[dict]) -> list[str]:
     return lines
 
 
-def validate_evidence_refs(sub: Submission, payload: McpAssessmentRequest) -> None:
+def validate_evidence_refs(sub: Submission, payload: GradingAssessmentRequest) -> None:
     """Validate structured evidence refs for every scored detail.
 
     放宽策略(保持“引文必须是服务端上下文的原文子串”这一核心可审计性):
@@ -452,12 +454,16 @@ def validate_evidence_refs(sub: Submission, payload: McpAssessmentRequest) -> No
 def build_assessment_summary(sub: Submission) -> dict | None:
     if not sub.assessment_suggestion:
         return None
-    keys = ("score", "max_score", "confidence", "feedback", "details", "mcp_metadata")
-    return {
+    summary = {
         key: sub.assessment_suggestion.get(key)
-        for key in keys
+        for key in ("score", "max_score", "confidence", "feedback", "details")
         if key in sub.assessment_suggestion
     }
+    # 兼容读:新数据用 agent_metadata,旧数据(v12 及更早)为 mcp_metadata
+    metadata = sub.assessment_suggestion.get("agent_metadata") or sub.assessment_suggestion.get("mcp_metadata")
+    if metadata is not None:
+        summary["agent_metadata"] = metadata
+    return summary
 
 
 def normalized_name(value: str) -> str:
@@ -466,14 +472,14 @@ def normalized_name(value: str) -> str:
 
 def save_agent_assessment(
     submission_id: int,
-    payload: McpAssessmentRequest,
+    payload: GradingAssessmentRequest,
     db: Session,
-    handle: McpWorkflowHandle,
+    handle: GradingHandle,
     *,
     client: str | None = None,
-) -> McpAssessmentResponse:
+) -> GradingAssessmentResponse:
     logger.info(
-        "MCP assessment save requested [submission=%s, request_id=%s]",
+        "grading assessment save requested [submission=%s, request_id=%s]",
         submission_id,
         payload.request_id,
     )
@@ -500,7 +506,7 @@ def save_agent_assessment(
             "评分上下文超过 GRADING_MAX_CONTEXT_CHARS，请拆分作业或缩减提交内容后重试"
         )
     if sub.status not in (
-        SubmissionStatus.awaiting_mcp,
+        SubmissionStatus.awaiting_grading,
         SubmissionStatus.ready_for_review,
     ):
         raise ConflictError("该作业当前不可保存评分建议")
@@ -538,7 +544,7 @@ def save_agent_assessment(
         raise ConflictError("评分上下文已变化，请重新读取 manifest")
 
     # v12:rubric 来源/快照 ID/单项 criterion/max_score/总分全部由服务端推导,
-    # 客户端只提交逐项 rubric_item_id/score/comment/evidence,消灭抄写类错误。
+    # agent 只提交逐项 rubric_item_id/score/comment/evidence,消灭抄写类错误。
     items_by_id = {item["rubric_item_id"]: item for item in resolved.items}
     seen: set[str] = set()
     for detail in payload.details:
@@ -635,13 +641,13 @@ def save_agent_assessment(
         "confidence": payload.confidence,
         "outcome": "review_required",
         "review_reason": "AI 批改评分建议需要教师确认",
-        "mcp_metadata": metadata,
+        "agent_metadata": metadata,
     }
     sub.graded_at = now
     sub.grading_revision = next_revision
     transition_submission(sub, SubmissionStatus.ready_for_review)
     notify_submission_status(db, sub.id, SubmissionStatus.ready_for_review.value)
-    response = McpAssessmentResponse(
+    response = GradingAssessmentResponse(
         submission_id=sub.id,
         status=sub.status,
         grading_revision=sub.grading_revision,
@@ -649,7 +655,7 @@ def save_agent_assessment(
         quality_checks=quality_checks,
     )
     db.add(
-        McpAssessmentReceipt(
+        GradingAssessmentReceipt(
             submission_id=sub.id,
             request_id=request_id,
             handle_hash=token_hash(getattr(handle, "_plaintext_token", ""))
@@ -664,9 +670,9 @@ def save_agent_assessment(
     except IntegrityError:
         db.rollback()
         existing = db.execute(
-            select(McpAssessmentReceipt).where(
-                McpAssessmentReceipt.submission_id == submission_id,
-                McpAssessmentReceipt.request_id == request_id,
+            select(GradingAssessmentReceipt).where(
+                GradingAssessmentReceipt.submission_id == submission_id,
+                GradingAssessmentReceipt.request_id == request_id,
             )
         ).scalar_one_or_none()
         if (
@@ -675,13 +681,13 @@ def save_agent_assessment(
             and existing.handle_hash
             == token_hash(getattr(handle, "_plaintext_token", ""))
         ):
-            replay = McpAssessmentResponse.model_validate(existing.response)
+            replay = GradingAssessmentResponse.model_validate(existing.response)
             replay.idempotent = True
             return replay
         raise ConflictError("request_id 已用于另一份评分内容")
     db.refresh(sub)
     logger.info(
-        "MCP assessment saved [submission=%s, revision=%s, status=%s]",
+        "grading assessment saved [submission=%s, revision=%s, status=%s]",
         sub.id,
         sub.grading_revision,
         sub.status.value,
@@ -744,35 +750,35 @@ def open_grading_package(
     db: Session,
     sub: Submission,
     continuation_token: str | None,
-) -> McpPackageResponse:
+) -> GradingPackageResponse:
     """打开评分包：失败/已审阅/处理中分支与分页游标、评分句柄签发。
 
-    从 ``app/api/mcp.py`` 的 ``mcp_submission_package`` 迁入；调用方保证
+    自原服务实现迁入；调用方保证
     ``sub`` 来自 ``get_submission_or_404``。
     """
     from app.services.question_rubric import EXTRACTOR_VERSION
 
     if sub.status == SubmissionStatus.failed:
-        return McpPackageResponse(
+        return GradingPackageResponse(
             submission_id=sub.id,
             status=sub.status,
             error_message=sub.error_message,
         )
     if sub.status == SubmissionStatus.reviewed:
-        return McpPackageResponse(
+        return GradingPackageResponse(
             submission_id=sub.id,
             status=sub.status,
             assessment=build_assessment_summary(sub),
         )
     if sub.status not in (
-        SubmissionStatus.awaiting_mcp,
+        SubmissionStatus.awaiting_grading,
         SubmissionStatus.ready_for_review,
     ):
-        return McpPackageResponse(submission_id=sub.id, status=sub.status)
+        return GradingPackageResponse(submission_id=sub.id, status=sub.status)
 
     # needs_rubric 分支:题目没有可信 rubric 快照、配置项目也没有 rubric 时,
     # 服务端解析回退到内置默认(100 分)。此时要求客户端先从题目 OCR 提取
-    # rubric 并保存(save_ai_marking_question_rubric),再重新打开作业评分。
+    # rubric 并保存(save_question_rubric),再重新打开作业评分。
     # 返回题目 OCR 与短期 rubric 提取句柄;同一题目同时只允许一个有效
     # 提取句柄,防止并发提取互相覆盖。
     resolved = resolve_submission_rubric(db, sub)
@@ -784,7 +790,7 @@ def open_grading_package(
         ocr_text = sub.question.ocr_text or ""
         ocr_hash = "sha256:" + hashlib.sha256(ocr_text.encode()).hexdigest()
         # 当前 OCR 已做过一次提取(complete 会走 question_extracted 分支,
-        # absent_or_ambiguous 表示题目没有明确标准)时,不再重复询问客户端,
+        # absent_or_ambiguous 表示题目没有明确标准)时,不再重复询问 agent,
         # 直接落到下面的内置默认评分包。
         already_extracted = (
             sub.question.extracted_rubric_ocr_hash == ocr_hash
@@ -793,16 +799,16 @@ def open_grading_package(
         if not already_extracted:
             # 撤销该题目已有的 rubric 提取句柄,保证单一有效句柄
             db.execute(
-                delete(McpWorkflowHandle).where(
-                    McpWorkflowHandle.kind == "rubric_extraction",
-                    McpWorkflowHandle.question_id == sub.question.id,
+                delete(GradingHandle).where(
+                    GradingHandle.kind == "rubric_extraction",
+                    GradingHandle.question_id == sub.question.id,
                 )
             )
             purge_expired_handles(db)
             now = utc_now_naive()
             handle = secrets.token_urlsafe(32)
             db.add(
-                McpWorkflowHandle(
+                GradingHandle(
                     token_hash=token_hash(handle),
                     kind="rubric_extraction",
                     submission_id=sub.id,
@@ -814,7 +820,7 @@ def open_grading_package(
                 )
             )
             db.commit()
-            return McpPackageResponse(
+            return GradingPackageResponse(
                 submission_id=sub.id,
                 status=sub.status,
                 needs_rubric=True,
@@ -868,7 +874,7 @@ def open_grading_package(
             },
         )
     db.commit()
-    return McpPackageResponse(
+    return GradingPackageResponse(
         submission_id=sub.id,
         status=sub.status,
         content=package[offset:end],
@@ -884,8 +890,8 @@ def confirm_visual_review(
     grading_handle: str,
     verdict: str,
     note: str | None,
-) -> McpWorkflowHandle:
-    """保存代码运行结果与报告一致性确认（教师/客户端双侧确认链的一环）。"""
+) -> GradingHandle:
+    """保存代码运行结果与报告一致性确认（教师确认链的一环）。"""
     handle = load_workflow_handle(db, grading_handle, kind="grading")
     if handle.submission_id != submission_id or not handle.context_complete:
         raise ConflictError("评分句柄与作业不匹配")
@@ -980,7 +986,7 @@ def save_assessment_review(
     notify_submission_status(db, sub.id, sub.status.value)
     db.commit()
     logger.info(
-        "MCP assessment review saved [submission=%s, revision=%s, verdict=%s]",
+        "grading assessment review saved [submission=%s, revision=%s, verdict=%s]",
         sub.id,
         sub.grading_revision,
         verdict,
@@ -997,14 +1003,14 @@ def save_question_rubric(
     items: list[dict],
     total_max_score: float,
 ) -> dict:
-    """保存客户端从题目 OCR 提取的 rubric（服务端确定性校验）。
+    """保存 agent 从题目 OCR 提取的 rubric（服务端确定性校验）。
 
     - 校验 rubric 提取句柄有效、绑定 submission/question、OCR 未变化
     - ``complete`` 时逐项 source_quote 必须是 OCR 子串且含满分、分项=总分、
       条目不重复,通过后写入题目级权威快照
     - ``absent_or_ambiguous`` 时持久化识别结果,后续评分走配置 rubric 或
-      内置默认,避免重复询问客户端
-    - 保存后旧评分句柄失效,客户端必须重新 ``open_ai_marking_assignment``
+      内置默认,避免重复询问 agent
+    - 保存后旧评分句柄失效,agent 必须重新 ``open_grading_package``
       以新 rubric 快照评分
     """
     from app.services.question_rubric import (
@@ -1026,8 +1032,8 @@ def save_question_rubric(
     )
     if handle.ocr_hash != current_ocr_hash:
         raise ConflictError("题目 OCR 已变化，请重新打开作业提取 rubric")
-    # 绑定 submission 仍处于 awaiting_mcp(评分句柄未生成时才有提取句柄)
-    if sub is None or sub.status != SubmissionStatus.awaiting_mcp:
+    # 绑定 submission 仍处于 awaiting_grading(评分句柄未生成时才有提取句柄)
+    if sub is None or sub.status != SubmissionStatus.awaiting_grading:
         raise ConflictError("作业状态已变化，请重新打开作业")
 
     extraction = RubricExtraction(
@@ -1048,7 +1054,7 @@ def save_question_rubric(
         validated=validated,
         ocr_text=question.ocr_text,
     )
-    # 提取句柄是一次性的:保存后立即失效,客户端必须重新打开作业
+    # 提取句柄是一次性的:保存后立即失效,agent 必须重新打开作业
     db.delete(handle)
     db.commit()
     snapshot_id = None
@@ -1064,12 +1070,12 @@ def save_question_rubric(
 
 
 def assessment_receipt_response(
-    db: Session, submission_id: int, payload: McpAssessmentRequest, grading_handle: str
-) -> McpAssessmentResponse | None:
+    db: Session, submission_id: int, payload: GradingAssessmentRequest, grading_handle: str
+) -> GradingAssessmentResponse | None:
     receipt = db.execute(
-        select(McpAssessmentReceipt).where(
-            McpAssessmentReceipt.submission_id == submission_id,
-            McpAssessmentReceipt.request_id == str(payload.request_id),
+        select(GradingAssessmentReceipt).where(
+            GradingAssessmentReceipt.submission_id == submission_id,
+            GradingAssessmentReceipt.request_id == str(payload.request_id),
         )
     ).scalar_one_or_none()
     if receipt is None:
@@ -1077,7 +1083,7 @@ def assessment_receipt_response(
     if (receipt.payload_hash != assessment_payload_hash(payload)
             or receipt.handle_hash != token_hash(grading_handle)):
         raise ConflictError("request_id 已用于另一份评分内容")
-    saved = McpAssessmentResponse.model_validate(receipt.response)
+    saved = GradingAssessmentResponse.model_validate(receipt.response)
     saved.idempotent = True
     return saved
 
@@ -1085,8 +1091,8 @@ def assessment_receipt_response(
 def save_assessment(
     db: Session,
     submission_id: int,
-    payload: McpSaveAssessmentRequest,
-) -> McpAssessmentResponse:
+    payload: GradingSaveAssessmentRequest,
+) -> GradingAssessmentResponse:
     """保存评分：回执幂等，锁内绑定句柄上下文与版本。"""
     replay = assessment_receipt_response(
         db, submission_id, payload.assessment, payload.grading_handle

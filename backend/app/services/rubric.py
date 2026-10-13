@@ -1,6 +1,6 @@
 """服务端 rubric 的唯一事实来源。
 
-Agent、网页复核和外部编程助手 MCP 都必须从本模块取得同一份不可变 rubric。
+批改 agent 与网页复核都必须从本模块取得同一份不可变 rubric。
 调用方只能引用服务端生成的 snapshot，不能上传自由文本来改变评分项。
 """
 
@@ -214,7 +214,7 @@ def validate_assessment_details(
 
     ``require_full_coverage=False`` 是教师 finalize 语义:明细可省略
     ``rubric_item_id``(schema 注释允许,该情形直接跳过),携带 id 的项仍
-    必须与当前 rubric 一致,且不要求完整覆盖。默认 MCP 语义:逐项必填
+    必须与当前 rubric 一致,且不要求完整覆盖。默认 agent 语义:逐项必填
     且必须完整覆盖。
     """
     expected = {item.rubric_item_id: item for item in resolved.definition.items}
