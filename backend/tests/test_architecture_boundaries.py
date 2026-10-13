@@ -77,3 +77,63 @@ def test_infrastructure_does_not_import_routes():
     ]
     assert not violations, violations
 
+
+# ---------------------------------------------------------------------------
+# 自研 agent 分层(api -> agent -> application -> services -> core/domain)
+# ---------------------------------------------------------------------------
+
+
+def test_agent_does_not_import_api():
+    agent = APP_ROOT / "agent"
+    if not agent.exists():
+        return
+    violations = [
+        f"{path.relative_to(APP_ROOT)} -> {imported}"
+        for path in agent.rglob("*.py")
+        for imported in _imports(path)
+        if imported.startswith("app.api")
+    ]
+    assert not violations, violations
+
+
+def test_agent_providers_only_use_stdlib_httpx_core_agent():
+    """providers 只许标准库/httpx/app.core/app.agent:凭证注入,不触业务层。"""
+    import sys
+
+    providers = APP_ROOT / "agent" / "providers"
+    if not providers.exists():
+        return
+    violations = []
+    for path in providers.rglob("*.py"):
+        for imported in _imports(path):
+            root = imported.split(".", 1)[0]
+            if root in sys.stdlib_module_names or root == "httpx":
+                continue
+            if imported.startswith(("app.core", "app.agent")):
+                continue
+            violations.append(f"{path.relative_to(APP_ROOT)} -> {imported}")
+    assert not violations, violations
+
+
+def test_application_does_not_import_agent():
+    application = APP_ROOT / "application"
+    if not application.exists():
+        return
+    violations = [
+        f"{path.relative_to(APP_ROOT)} -> {imported}"
+        for path in application.rglob("*.py")
+        for imported in _imports(path)
+        if imported.startswith("app.agent")
+    ]
+    assert not violations, violations
+
+
+def test_services_do_not_import_agent():
+    violations = [
+        f"{path.relative_to(APP_ROOT)} -> {imported}"
+        for path in (APP_ROOT / "services").rglob("*.py")
+        for imported in _imports(path)
+        if imported.startswith("app.agent")
+    ]
+    assert not violations, violations
+
