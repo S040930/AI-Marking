@@ -425,7 +425,8 @@ async def test_grading_prompt_needs_rubric_with_default_rubric(client, db_sessio
     assert payload["question_id"] == question.id
     assert payload["name"] == question.name
     assert payload["grading_mode"] == "external_agent"
-    assert payload["review_enabled"] is True
+    # v12:第二遍自检开关已移除,评分建议始终只待教师确认
+    assert "review_enabled" not in payload
     assert payload["source"] == "built_in_default"
     assert payload["needs_rubric"] is True
     assert payload["total_max_score"] == 100

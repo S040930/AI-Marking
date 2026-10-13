@@ -23,13 +23,12 @@ dependencies = [
     "agent-client-protocol==0.12.1",
 ]
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
     "ruff==0.15.20",
     "black==26.5.1",
     "pytest==9.1.1",
     "pytest-asyncio==1.4.0",
-    "pip-tools==7.5.2",
     "mcp[cli]==2.0.0",
 ]
 

@@ -598,6 +598,7 @@ def finalize_submission(
     return finalize_submission_use_case(
         db,
         submission_id,
+        expected_revision=payload.expected_revision,
         score=payload.score,
         max_score=payload.max_score,
         feedback=payload.feedback,

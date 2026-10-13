@@ -8,7 +8,6 @@ from datetime import datetime
 
 from sqlalchemy import (
     JSON,
-    Boolean,
     DateTime,
     Enum,
     Float,
@@ -53,9 +52,6 @@ class Submission(Base):
         server_default="external_agent",
         nullable=False,
     )
-    # 是否要求 MCP 客户端双遍自检（固定必需）。保留配置项语义从"后端 critic
-    # 开关"变为"MCP self_check 必需开关"。
-    review_enabled: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     grading_revision: Mapped[int] = mapped_column(
         default=0,
         server_default="0",

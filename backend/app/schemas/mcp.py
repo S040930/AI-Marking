@@ -7,15 +7,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models.submission import SubmissionGradingMode, SubmissionStatus
-from app.schemas.scoring import ScoreDetail
 from app.schemas.submission import AssessmentSuggestionOut, McpQualityChecksOut
-
-
-class McpSelfCheck(BaseModel):
-    rubric_items_reviewed: list[str] = Field(default_factory=list, max_length=100)
-    issues_found: list[str] = Field(default_factory=list, max_length=20)
-    changes_made: list[str] = Field(default_factory=list, max_length=20)
-    second_pass_completed: bool = False
 
 
 class McpAssessmentResponse(BaseModel):
@@ -35,7 +27,7 @@ class McpHealthResponse(BaseModel):
     mcp_api_version: str
 
 
-# Public MCP workflow (API v10) --------------------------------------------
+# Public MCP workflow (API v12) --------------------------------------------
 
 
 class McpPreflightFile(BaseModel):
@@ -144,40 +136,44 @@ class McpSaveRubricResponse(BaseModel):
     rubric_snapshot_id: str | None = None
 
 
-class McpAssessmentRequest(BaseModel):
-    """外部编程助手提交的评分建议(对外唯一请求模型)。
+class McpScoreDetail(BaseModel):
+    """v12 起客户端提交的单项评分。
 
-    ``expected_revision``/``context_hash`` 由服务端在保存时从作业当前状态
-    补全,不在对外请求中出现;它们是防呆用的版本校验字段。
+    客户端只决定它真正负责的内容:引用哪个 rubric item、给多少分、
+    评语与证据。``criterion``/``max_score`` 由服务端按权威 rubric 回填,
+    不接受客户端提交。
     """
 
     model_config = ConfigDict(extra="forbid")
-    rubric_source: Literal["configured", "question_extracted", "built_in_default"]
-    rubric_snapshot_id: str = Field(min_length=8, max_length=128)
-    request_id: UUID
+
+    rubric_item_id: str = Field(min_length=5, max_length=100)
     score: float = Field(ge=0)
-    max_score: float = Field(gt=0)
+    comment: str = Field(min_length=1)
+    # 结构化证据引用(报告引用/源码行),格式见评分包 evidence_format。
+    evidence_refs: list[dict] = Field(default_factory=list)
+    # supported(默认):存在可引用的评分依据;
+    # not_found:完整上下文(评分包仅在最末页签发 grading handle)中找不到
+    # 对应内容,必须 score=0 且不引用证据,评语说明依据。
+    evidence_status: Literal["supported", "not_found"] = "supported"
+
+
+class McpAssessmentRequest(BaseModel):
+    """外部编程助手提交的评分建议(MCP API v12)。
+
+    v12 起客户端只提交自己决定的内容:逐项 ``rubric_item_id``/得分/评语/
+    证据,加总分置信度与反馈。单项 ``criterion``/``max_score``、总得分、
+    总满分、rubric 来源与快照 ID 全部由服务端从 ``grading_handle`` 对应的
+    权威 rubric 推导,客户端提交这些字段会被拒绝(extra=forbid)。
+    版本和上下文由服务端从评分句柄读取并在持锁后核对,
+    不在对外请求中出现。
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    request_id: UUID
     confidence: float = Field(ge=0, le=1, default=0)
     feedback: str = Field(min_length=1, max_length=20_000)
-    details: list[ScoreDetail] = Field(min_length=1, max_length=100)
-    self_check: McpSelfCheck = Field(default_factory=McpSelfCheck)
-
-    @model_validator(mode="after")
-    def totals_are_consistent(self):
-        """与 FinalizeRequest 一致的总分一致性校验。
-
-        编程助手提交的 score 必须等于各评分项得分之和且不超过满分，否则
-        服务端 quality_checks["arithmetic_valid"]=True 与写入的
-        sub.score / assessment_suggestion 会自相矛盾，教师端展示也会出现总分
-        与明细不符。
-        """
-        if self.score > self.max_score:
-            raise ValueError("总分不能超过满分")
-        if abs(sum(item.score for item in self.details) - self.score) > 0.01:
-            raise ValueError("各评分项得分之和必须等于总分")
-        if abs(sum(item.max_score for item in self.details) - self.max_score) > 0.01:
-            raise ValueError("各评分项满分之和必须等于总满分")
-        return self
+    details: list[McpScoreDetail] = Field(min_length=1, max_length=100)
 
 
 class McpSaveAssessmentRequest(BaseModel):

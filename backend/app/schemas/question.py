@@ -33,7 +33,6 @@ class GradingPromptOut(BaseModel):
     question_id: str
     name: str
     grading_mode: str
-    review_enabled: bool
     source: str
     snapshot_id: str | None = None
     total_max_score: float

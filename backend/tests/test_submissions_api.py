@@ -541,6 +541,7 @@ async def test_teacher_can_finalize_submission(client, db_session):
         f"/api/submissions/{sub.id}/finalize",
         json={
             "reviewer_name": "Dr Chen",
+            "expected_revision": 0,
             "score": 85,
             "max_score": 100,
             "feedback": "教师确认后的反馈",
@@ -579,6 +580,7 @@ async def test_finalize_rejects_already_reviewed(client, db_session):
         f"/api/submissions/{sub.id}/finalize",
         json={
             "reviewer_name": "Dr Chen",
+            "expected_revision": 0,
             "score": 85,
             "max_score": 100,
             "feedback": "反馈",
@@ -611,6 +613,7 @@ async def test_finalize_rejects_inconsistent_totals(client, db_session):
         f"/api/submissions/{sub.id}/finalize",
         json={
             "reviewer_name": "Dr Chen",
+            "expected_revision": 0,
             "score": 90,
             "max_score": 100,
             "feedback": "反馈",
@@ -645,6 +648,7 @@ async def test_finalize_rejects_max_score_mismatch_with_rubric(client, db_sessio
         f"/api/submissions/{sub.id}/finalize",
         json={
             "reviewer_name": "Dr Chen",
+            "expected_revision": 0,
             "score": 150,
             "max_score": 200,
             "feedback": "反馈",

@@ -31,8 +31,6 @@ def _to_config_out(config: dict[str, str]) -> ConfigOut:
         paddleocr_api_url=config.get("paddleocr_api_url", "") or "",
         paddleocr_token=config.get("paddleocr_token", "") or "",
         rubric_definition=rubric_definition,
-        review_enabled=(config.get("review_enabled", "true") or "true").lower()
-        == "true",
     )
 
 

@@ -15,14 +15,12 @@ from app.models.system_config import SystemConfig
 
 # 可配置项白名单,供 API 校验。各 key 的语义说明见 schemas/system_config.py
 # 中 ConfigUpdate 各字段的 description。
-# 收敛为 MCP-only 后不再有 LLM/Agent 相关配置项;OCR、结构化 rubric 与
-# MCP 双遍自检开关(固定必需)保留。
+# 收敛为 MCP-only 后不再有 LLM/Agent 相关配置项;OCR 与结构化 rubric 保留。
 CONFIG_KEYS: frozenset[str] = frozenset(
     {
         "paddleocr_api_url",
         "paddleocr_token",
         "rubric_definition",
-        "review_enabled",
     }
 )
 

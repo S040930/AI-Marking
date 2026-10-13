@@ -22,8 +22,9 @@ class McpQualityChecksOut(BaseModel):
     arithmetic_valid: bool
     evidence_valid: bool
     code_evidence_valid: bool
-    client_self_check: dict[str, object]
-    second_pass_valid: bool
+    # MCP API v11 及更早的旧数据仍带第二遍自检字段;v12 起不再产生。
+    client_self_check: dict[str, object] | None = None
+    second_pass_valid: bool | None = None
     visual_confirmation_valid: bool
 
 
@@ -41,7 +42,8 @@ class McpMetadataOut(BaseModel):
     payload_hash: str
     quality_checks: McpQualityChecksOut
     generated_at: str
-    review_required: bool
+    # v11 及更早的旧数据带 review_required;v12 起不再产生(复核为可选能力)。
+    review_required: bool | None = None
     visual_confirmation: McpVisualConfirmationOut | None = None
 
 
@@ -157,6 +159,7 @@ class SubmissionDetail(SubmissionOut):
 class FinalizeRequest(BaseModel):
     """教师确认最终评分。"""
 
+    expected_revision: int = Field(ge=0)
     reviewer_name: str = Field(min_length=1, max_length=100)
     score: float = Field(ge=0)
     max_score: float = Field(gt=0)

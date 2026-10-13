@@ -343,13 +343,19 @@ async def save_ai_marking_assessment(
     grading_handle: str,
     assessment: McpAssessmentRequest,
 ) -> dict:
-    """保存外部编程助手建议；request_id 与 rubric snapshot 必须来自当前评分包。
+    """保存外部编程助手评分建议(MCP API v12)。
 
-    含代码作业的每个打分明细 ``evidence_refs`` 必须带至少一条服务端可逐字定位
-    的证据:代码用 ``{"type": "source_line", "filename", "line", "end_line?", "quote"}``
+    客户端只提交自己决定的内容:逐项 ``rubric_item_id``/``score``/``comment``/
+    ``evidence_refs``/``evidence_status``,加 ``confidence``/``feedback``/
+    ``request_id``;``criterion``、``max_score``、总分、rubric 来源与快照 ID
+    由服务端从评分句柄对应的权威 rubric 推导,提交这些字段会被拒绝。
+
+    得分大于 0 的明细 ``evidence_refs`` 必须带至少一条服务端可逐字定位的
+    证据:代码用 ``{"type": "source_line", "filename", "line", "end_line?", "quote"}``
     (行号按单个代码文件计,见评分包 ``grading_policy.evidence_format``),报告用
     ``{"type": "report_quote", "quote"}``(逐字取自评分包 submission OCR 段)。
-    引文不可定位时服务端返回 422 并逐条列出原因。
+    对应内容确实完全不存在时用 ``evidence_status: "not_found"`` 记 0 分且
+    不引用证据。引文不可定位时服务端返回 422 并逐条列出原因。
     """
     result = await _call(
         "PUT",

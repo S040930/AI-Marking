@@ -1,8 +1,31 @@
-# MCP v10 评分保存契约
+# MCP 评分保存契约（语义说明，API v12）
 
-`open_ai_marking_assignment` 返回的评分包是唯一评分依据。打开作业时先处理 `needs_rubric` 分支（见下），再完整读取评分包至 `context_complete=true`，并逐项使用服务端返回的 `rubric_item_id`、`criterion` 和 `max_score`；不能从题目文本、学生作业或旧缓存自行生成 rubric。
+本文件只解释 `save_ai_marking_assessment` 的**语义**。参数与字段结构以 MCP tool 当前暴露的 JSON Schema 为唯一权威；本文件与 SKILL.md 都不复制字段清单，避免随版本漂移。
 
-## Rubric 来源（v10）
+## 谁决定什么
+
+`open_ai_marking_assignment` 返回的评分包是唯一评分依据。打开作业时先处理 `needs_rubric` 分支（见下），再完整读取评分包至 `context_complete=true`（评分句柄只在最后一页签发，“完整上下文已读”由句柄语义保证）。
+
+客户端（编程助手）只提交它真正决定的内容：
+
+- 逐项 `rubric_item_id`、`score`、`comment`；
+- 逐项 `evidence_refs` 与 `evidence_status`；
+- 总体 `confidence`、`feedback`；
+- 幂等用的 `request_id`（重试时必须精确复用）。
+
+以下内容一律由服务端从 grading handle 对应的权威 rubric 推导，客户端提交会被拒绝：
+
+- 每项 `criterion` 与 `max_score`；
+- 总 `score`（= 各项得分之和）与总 `max_score`（= resolved rubric 总分）；
+- `rubric_source`、`rubric_snapshot_id`；
+- `expected_revision`、`context_hash`（乐观锁与上下文版本校验字段）。
+
+## evidence_status 语义
+
+- `supported`（默认）：存在可引用的评分依据。得分大于 0 时必须至少一条 `evidence_refs`，且逐条可在服务端上下文中定位。
+- `not_found`：完整上下文中确实找不到对应内容。必须 `score=0`、`evidence_refs=[]`，并在评语中说明依据；不得为 0 分编造证据。
+
+## Rubric 来源
 
 rubric 按以下顺序生效，最终以评分包 `grading_policy` 中的 `resolved_rubric` 为准：
 
@@ -13,18 +36,17 @@ rubric 按以下顺序生效，最终以评分包 `grading_policy` 中的 `resol
 2. **服务端配置**（`configured`）：系统设置中配置的结构化 rubric。
 3. **内置默认**（`built_in_default`）：以上都没有时使用。
 
-## 保存建议
+## 证据类型
 
-`save_ai_marking_assessment` 的 `assessment` 必须包含：
+证据只允许引用服务端可验证的 `source_line` 和 `report_quote`（格式与示例以评分包 `grading_policy.evidence_format` 为准）。`run_log`、代码产物、`visual_comparison`、`visual_reviews` 以及其他视觉输入都不是合法的评分证据。
 
-- `request_id`：本次保存请求的 UUID；重试时必须精确复用。
-- `rubric_source` 与 `rubric_snapshot_id`：必须与评分包完全一致（`question_extracted` / `configured` / `built_in_default` 之一）。
-- 总 `score`、`max_score`、`confidence`、`feedback`。
-- 覆盖每个权威 rubric item 一次且仅一次的 `details`，每项包含匹配的 `rubric_item_id`、`criterion`、`max_score`、得分、评语和服务端可定位证据。
-- `self_check`：列出实际复核的条目、发现的问题、修正内容；复核开启（`grading_policy.review_required=true`）时必须声明 `second_pass_completed=true` 且 `rubric_items_reviewed` 非空。
+## 一致性检查与复核
 
-证据只允许引用服务端可验证的 `source_line` 和 `report_quote`。`run_log`、代码产物、`visual_comparison`、`visual_reviews` 以及其他视觉输入都不是合法的新评分证据。
+- 含代码作业在评分前必须完成教师一致性检查点：使用者确认编程助手本地运行表现与报告一致（`consistent`），或提交带非空说明的 `mismatch`。确认结果只通过 grading handle（或 ACP run）传递并写入审计元数据，不放入 assessment 自由字段。无代码作业不需要。
+- 交叉复核（`save_ai_marking_assessment_review`）是**独立可选能力**：保存评分建议从不要求先复核；复核不修改原建议，最终成绩由教师在网页确认。
 
-含代码作业在评分前必须调用人工一致性确认工具：使用者确认编程助手本地运行表现与报告一致，或提交带非空说明的 `mismatch`。确认结果只通过 grading handle 传递并写入审计元数据，不放入 assessment 自由字段。无代码作业不调用该工具。
+## 幂等与冲突
 
-不要提交 `question_rubric`、自由 rubric 文本、`rubric_used`、`expected_revision`、`context_hash`、模型型号或未知字段；这些字段由 MCP v10 服务端生成、校验或明确禁止。旧版本请求不会兼容，服务端会返回结构校验错误。
+- `request_id` 已存在时：内容与句柄完全一致 → 幂等返回原响应；不一致 → 409。
+- 评分句柄有效期 30 分钟；句柄过期、上下文或建议版本变化时返回 409，须重新打开并读完评分包后再保存。
+- 未知字段一律 422（`extra=forbid`）；v12 之前的旧版本请求不兼容。

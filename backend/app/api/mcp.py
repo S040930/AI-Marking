@@ -337,7 +337,8 @@ def save_mcp_question_rubric(
     return McpSaveRubricResponse(**result)
 
 
-# The v2 URL is retained for existing local clients; the MCP contract itself is v8.
+# The v2 URL is retained for existing local clients; the MCP contract version
+# is tracked by MCP_API_VERSION (app/core/config.py), currently v12.
 @router.put(
     "/submissions/{submission_id}/assessment-v2", response_model=McpAssessmentResponse
 )

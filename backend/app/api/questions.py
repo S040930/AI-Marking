@@ -52,7 +52,6 @@ from app.schemas.question import (
     QuestionRenameRequest,
     QuestionReplacementResponse,
 )
-from app.services.config import get_config_dict
 from app.services.document_storage import (
     discard_uncommitted_document as _discard_uncommitted_document,
 )
@@ -223,9 +222,7 @@ def get_question_grading_prompt(question_id: str, db: Session = Depends(get_db))
     resolved = resolve_submission_rubric(
         db, SimpleNamespace(question=question)
     )
-    config = get_config_dict(db)
-    review_enabled = (config.get("review_enabled", "true") or "true").lower() == "true"
-    grading_policy = build_grading_policy(resolved, review_required=review_enabled)
+    grading_policy = build_grading_policy(resolved)
 
     text = (
         "[AI-Marking grading prompt]\n"
@@ -234,7 +231,6 @@ def get_question_grading_prompt(question_id: str, db: Session = Depends(get_db))
                 "question_id": question.id,
                 "question_name": question.name,
                 "grading_mode": SubmissionGradingMode.external_agent.value,
-                "review_enabled": review_enabled,
             },
             ensure_ascii=False,
             sort_keys=True,
@@ -248,7 +244,6 @@ def get_question_grading_prompt(question_id: str, db: Session = Depends(get_db))
         question_id=question.id,
         name=question.name,
         grading_mode=SubmissionGradingMode.external_agent.value,
-        review_enabled=review_enabled,
         source=resolved.source,
         snapshot_id=resolved.snapshot_id,
         total_max_score=resolved.total_max_score,

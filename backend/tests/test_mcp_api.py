@@ -48,6 +48,10 @@ def test_grading_policy_requires_manual_visual_confirmation():
     assert "尚未检查、含糊回答或未回答时必须暂停" in requirements
     assert "读取视觉资产" in requirements
     assert "不得调用 read_ai_marking_evidence_image" not in requirements
+    # v12:单次证据化评分是正常路径,不再有第二遍复核要求
+    assert "review_required" not in policy
+    assert "第二遍" not in requirements
+    assert "not_found" in requirements
 
 
 @pytest.mark.asyncio
@@ -182,14 +186,13 @@ async def test_package_paginates_and_compact_save_enforces_handle(client, db_ses
     import json
     header = json.loads(first_payload["content"].split("\n", 1)[1].split("\n\n", 1)[0])
     resolved = header["grading_policy"]["resolved_rubric"]
+    # v12:客户端只提交 rubric_item_id/score/comment;0 分且无证据合法。
     rubric_details = [
         {
             "rubric_item_id": item["rubric_item_id"],
-            "criterion": item["criterion"],
             "score": 0,
-            "max_score": item["max_score"],
             "comment": "待改进。",
-            "evidence": ["证据"],
+            "evidence_status": "not_found",
         }
         for item in resolved["items"]
     ]
@@ -201,14 +204,9 @@ async def test_package_paginates_and_compact_save_enforces_handle(client, db_ses
                 "client": "claude-code",
                 "assessment": {
                     "request_id": "11111111-1111-4111-8111-111111111111",
-                    "rubric_snapshot_id": resolved["snapshot_id"],
-                    "rubric_source": "configured",
-                    "score": 0,
-                    "max_score": resolved["total_max_score"],
                     "confidence": 0.8,
                     "feedback": "完成主要要求。",
                     "details": rubric_details,
-                    "self_check": {"rubric_items_reviewed": ["默认 rubric"], "issues_found": ["无额外问题"], "changes_made": ["完成独立复核"], "second_pass_completed": True},
             },
         },
     )
@@ -217,10 +215,16 @@ async def test_package_paginates_and_compact_save_enforces_handle(client, db_ses
     saved = db_session.get(Submission, submission.id)
     assert saved.assessment_suggestion["mcp_metadata"]["source"] == "mcp"
     assert saved.assessment_suggestion["mcp_metadata"]["client"] == "claude-code"
+    # 服务端推导总分:score=明细之和,max_score=权威 rubric 满分
+    assert saved.score == 0
+    assert saved.max_score == resolved["total_max_score"]
+    assert saved.details[0]["criterion"] == resolved["items"][0]["criterion"]
+    assert saved.details[0]["max_score"] == resolved["items"][0]["max_score"]
     finalized = await client.post(
         f"/api/submissions/{submission.id}/finalize",
         json={
             "reviewer_name": "Teacher",
+            "expected_revision": 1,
             "score": 0,
             "max_score": 100,
             "feedback": "完成主要要求。",
@@ -240,7 +244,7 @@ async def test_package_paginates_and_compact_save_enforces_handle(client, db_ses
     stale = await client.put(
         f"/api/mcp/submissions/{submission.id}/assessment-v2",
         headers=_headers(),
-        json={"grading_handle": final_payload["grading_handle"], "assessment": {"request_id": "11111111-1111-4111-8111-111111111111", "rubric_snapshot_id": resolved["snapshot_id"], "rubric_source": "built_in_default", "score": 0, "max_score": resolved["total_max_score"], "confidence": 0.8, "feedback": "完成主要要求。", "details": rubric_details, "self_check": {"rubric_items_reviewed": [item["rubric_item_id"] for item in resolved["items"]], "second_pass_completed": True}}},
+        json={"grading_handle": final_payload["grading_handle"], "assessment": {"request_id": "11111111-1111-4111-8111-111111111111", "confidence": 0.8, "feedback": "改动后的反馈内容。", "details": rubric_details}},
     )
     assert stale.status_code == 409
 
@@ -276,8 +280,8 @@ async def test_package_hard_limit_returns_actionable_error(client, db_session, m
 
 
 @pytest.mark.asyncio
-async def test_save_rejects_inconsistent_score_totals(client, db_session, monkeypatch):
-    """C1: 总分超过满分或与明细之和不一致的评分建议在保存时被 422 拒绝。"""
+async def test_save_derives_totals_and_rejects_bad_details(client, db_session, monkeypatch):
+    """v12:总分由服务端推导;未知/覆盖不全/超满分明细与旧版字段被 422 拒绝。"""
     question = Question(
         name="评分题",
         original_filename="q.pdf",
@@ -294,7 +298,7 @@ async def test_save_rejects_inconsistent_score_totals(client, db_session, monkey
         grading_mode=SubmissionGradingMode.external_agent,
     )
     db_session.add(submission)
-    # 配置 rubric,避免触发 v10 needs_rubric 提前返回
+    # 配置 rubric,避免触发 needs_rubric 提前返回
     _configure_default_rubric(db_session)
     db_session.commit()
 
@@ -308,64 +312,93 @@ async def test_save_rejects_inconsistent_score_totals(client, db_session, monkey
         payload["content"].split("\n", 1)[1].split("\n\n", 1)[0]
     )
     resolved = header["grading_policy"]["resolved_rubric"]
-    total = resolved["total_max_score"]
+    item_id = resolved["items"][0]["rubric_item_id"]
+    item_max = resolved["items"][0]["max_score"]
 
-    def _request(score: float, detail_scores: list[float]):
+    def _details(details: list[dict]):
         return {
+            "grading_handle": payload["grading_handle"],
+            "assessment": {
+                "request_id": "22222222-2222-4222-8222-222222222222",
+                "confidence": 0.8,
+                "feedback": "完成主要要求。",
+                "details": details,
+            },
+        }
+
+    def _detail(**overrides: object) -> dict:
+        detail = {
+            "rubric_item_id": item_id,
+            "score": 70,
+            "comment": "待改进。",
+            "evidence_refs": [{"type": "report_quote", "quote": "学生内容"}],
+        }
+        detail.update(overrides)
+        return detail
+
+    # 单项得分超过该项满分
+    over = await client.put(
+        f"/api/mcp/submissions/{submission.id}/assessment-v2",
+        headers=_headers(),
+        json=_details([_detail(score=item_max + 1)]),
+    )
+    assert over.status_code == 422, over.text
+    assert "不能超过该项满分" in over.json()["detail"]
+
+    # 未知 rubric_item_id
+    unknown = await client.put(
+        f"/api/mcp/submissions/{submission.id}/assessment-v2",
+        headers=_headers(),
+        json=_details([_detail(rubric_item_id="rubric_item_unknown")]),
+    )
+    assert unknown.status_code == 422, unknown.text
+
+    # 未完整覆盖当前 rubric(空明细被 schema 拒绝,重复项同理)
+    duplicate = await client.put(
+        f"/api/mcp/submissions/{submission.id}/assessment-v2",
+        headers=_headers(),
+        json=_details([_detail(score=0, evidence_refs=[]), _detail(score=0, evidence_refs=[])]),
+    )
+    assert duplicate.status_code == 422, duplicate.text
+
+    # v12 起客户端提交服务端可推导字段(旧版契约)一律 422(extra=forbid)
+    legacy = await client.put(
+        f"/api/mcp/submissions/{submission.id}/assessment-v2",
+        headers=_headers(),
+        json={
             "grading_handle": payload["grading_handle"],
             "assessment": {
                 "request_id": "22222222-2222-4222-8222-222222222222",
                 "rubric_snapshot_id": resolved["snapshot_id"],
                 "rubric_source": "configured",
-                "score": score,
-                "max_score": total,
+                "score": 70,
+                "max_score": 100,
                 "confidence": 0.8,
                 "feedback": "完成主要要求。",
-                "details": [
-                    {
-                        "rubric_item_id": item["rubric_item_id"],
-                        "criterion": item["criterion"],
-                        "score": s,
-                        "max_score": item["max_score"],
-                        "comment": "待改进。",
-                        "evidence": ["学生内容"],
-                    }
-                    for item, s in zip(resolved["items"], detail_scores, strict=True)
-                ],
-                "self_check": {
-                    "rubric_items_reviewed": [item["rubric_item_id"] for item in resolved["items"]],
-                    "second_pass_completed": True,
-                },
+                "details": [_detail()],
+                "self_check": {"second_pass_completed": True},
             },
-        }
-
-    items = resolved["items"]
-    item_maxes = [item["max_score"] for item in items]
-
-    # 总分超过满分
-    over = await client.put(
-        f"/api/mcp/submissions/{submission.id}/assessment-v2",
-        headers=_headers(),
-        json=_request(total + 20, item_maxes),
+        },
     )
-    assert over.status_code == 422, over.text
+    assert legacy.status_code == 422, legacy.text
 
-    # 总分与明细之和不一致
-    mismatch = await client.put(
-        f"/api/mcp/submissions/{submission.id}/assessment-v2",
-        headers=_headers(),
-        json=_request(total - 10, item_maxes),
-    )
-    assert mismatch.status_code == 422, mismatch.text
-
-    # 自洽的总分能正常保存
+    # 合法 slim 保存:服务端推导 score/max_score 并回填 criterion
     ok = await client.put(
         f"/api/mcp/submissions/{submission.id}/assessment-v2",
         headers=_headers(),
-        json=_request(total, item_maxes),
+        json=_details([_detail()]),
     )
     assert ok.status_code == 200, ok.text
     assert ok.json()["grading_revision"] == 1
+    db_session.expire_all()
+    saved = db_session.get(Submission, submission.id)
+    assert saved.score == 70
+    assert saved.max_score == 100
+    assert saved.details[0]["criterion"] == resolved["items"][0]["criterion"]
+    assert saved.details[0]["max_score"] == item_max
+    # 服务端从 evidence_refs 投影可读证据,教师页无需感知结构化引用
+    assert saved.details[0]["evidence"] == ["学生内容"]
+    assert saved.assessment_suggestion["mcp_metadata"]["rubric_source"] == "configured"
 
 
 # ---------- MCP v10:待办列表 / needs_rubric / 保存题目 rubric ----------
@@ -767,27 +800,19 @@ async def _prepare_reviewed_suggestion(client, db_session):
             "client": "claude-code",
             "assessment": {
                 "request_id": "33333333-3333-4333-8333-333333333333",
-                "rubric_snapshot_id": resolved["snapshot_id"],
-                "rubric_source": "configured",
-                "score": 80,
-                "max_score": 100,
                 "confidence": 0.8,
                 "feedback": "整体完成较好。",
                 "details": [
                     {
                         "rubric_item_id": item["rubric_item_id"],
-                        "criterion": item["criterion"],
                         "score": score,
-                        "max_score": item["max_score"],
                         "comment": "完成。",
-                        "evidence": ["学生内容"],
+                        "evidence_refs": [
+                            {"type": "report_quote", "quote": "学生内容"}
+                        ],
                     }
                     for item, score in zip(resolved["items"], (50, 30), strict=True)
                 ],
-                "self_check": {
-                    "rubric_items_reviewed": [item["rubric_item_id"] for item in resolved["items"]],
-                    "second_pass_completed": True,
-                },
             },
         },
     )
@@ -958,6 +983,7 @@ async def test_save_assessment_review_rejects_after_finalize(client, db_session)
         f"/api/submissions/{submission.id}/finalize",
         json={
             "reviewer_name": "Teacher",
+            "expected_revision": 1,
             "score": 80,
             "max_score": 100,
             "feedback": "确认成绩。",

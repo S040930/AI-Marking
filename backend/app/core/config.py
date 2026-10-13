@@ -17,7 +17,10 @@ AI_MARKING_SERVICE = "ai-marking"
 BACKEND_API_VERSION = "1"
 # v11: 新增 GET /api/mcp/submissions/{id}/wait-ready 长轮询端点,
 # MCP open 工具由固定 10s 轮询改为 NOTIFY 驱动的状态等待。
-MCP_API_VERSION = "11"
+# v12: 评分保存契约瘦身——客户端只提交逐项 rubric_item_id/score/comment/
+# evidence_refs/evidence_status,其余字段由服务端推导;移除强制第二遍自检
+# (review_enabled/self_check),新增 evidence_status=supported|not_found。
+MCP_API_VERSION = "12"
 
 
 class Settings(BaseSettings):

@@ -128,6 +128,7 @@ def finalize_submission(
     db: Session,
     submission_id: int,
     *,
+    expected_revision: int,
     score: float,
     max_score: float,
     feedback: str | None,
@@ -145,6 +146,11 @@ def finalize_submission(
     sub = lock_submission_after_question(db, submission_id)
     if sub is None:
         raise NotFoundError("提交记录不存在")
+    if expected_revision != sub.grading_revision:
+        raise ConflictError(
+            {"message": "评分建议已更新，请载入最新建议后重新复核",
+             "current_revision": sub.grading_revision}
+        )
     if sub.status == SubmissionStatus.reviewed:
         raise ConflictError("该作业已审阅,不可重复提交")
     if sub.status != SubmissionStatus.ready_for_review:
