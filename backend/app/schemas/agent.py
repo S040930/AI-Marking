@@ -93,11 +93,27 @@ class ProviderStatusOut(BaseModel):
     default_model: str = ""
     reasoning_effort: str = ""
     available: bool = True
+    # 订阅通道专有:套餐、账号后四位、令牌过期时间(UTC ISO)
+    plan: str = ""
+    account_last4: str | None = None
+    expires_at: str = ""
 
 
 class ProviderListResponse(BaseModel):
     provider_default: str
     providers: dict[str, ProviderStatusOut]
+
+
+class ProviderOAuthStartResponse(BaseModel):
+    authorize_url: str
+    expires_at: str | None = None
+
+
+class ProviderOAuthStatusResponse(BaseModel):
+    status: Literal["idle", "pending", "completed", "failed"]
+    detail: str | None = None
+    authorize_url: str | None = None
+    expires_at: str | None = None
 
 
 class ProviderConfigUpdateRequest(BaseModel):

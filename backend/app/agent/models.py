@@ -8,7 +8,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
 from typing import Any, Literal
 
 # 对话项:{"role": "user"/"assistant", "content": ...} 或
@@ -33,12 +32,17 @@ def function_call_output(call_id: str, output: Any) -> ChatItem:
 
 @dataclass(frozen=True)
 class ToolSpec:
-    """暴露给模型的单个工具定义。"""
+    """暴露给模型的单个工具定义。
+
+    ``writes`` 只用于编排层做白名单：只有 supervisor 节点能拿到写工具；
+    模型本身看不到这个字段。
+    """
 
     name: str
     description: str
     parameters: dict[str, Any]
     strict: bool = False
+    writes: bool = False
 
 
 @dataclass
@@ -66,6 +70,10 @@ class TurnRequest:
     reasoning_effort: str | None = None
     max_output_tokens: int | None = None
     store: bool = False
+    # 官方通道的稳定缓存键；订阅端不接受该字段，序列化时忽略。
+    prompt_cache_key: str | None = None
+    # 通道私有的续会话状态(如订阅端的 x-codex-turn-state),原样透传
+    provider_state: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -86,29 +94,5 @@ class EngineEvent:
     payload: dict[str, Any] = field(default_factory=dict)
 
 
-class EngineStatus(str, Enum):
-    """一次 engine.run 的结局分类。"""
-
-    # save_assessment 成功落库,批改建议已就绪
-    completed = "completed"
-    # request_teacher_confirmation 触发的检查点,等待教师答复后续跑
-    checkpoint = "checkpoint"
-    # 收到取消信号
-    cancelled = "cancelled"
-    # 回合自然结束但未产出终态工具调用;由 runner 判定最终语义
-    incomplete = "incomplete"
-    # 达到回合上限或不可恢复错误
-    failed = "failed"
-
-
-@dataclass
-class EngineOutcome:
-    status: EngineStatus
-    error: str | None = None
-    checkpoint_message: str | None = None
-    # 完整对话(重放与检查点续跑的状态),含本回合全部 items
-    items: list[ChatItem] = field(default_factory=list)
-    # 累计 usage(跨回合求和)
-    usage: dict[str, Any] = field(default_factory=dict)
-    # 已完成的回合数
-    rounds: int = 0
+# 结局分类(completed/checkpoint/cancelled/incomplete/failed)现由
+# ``graph.model_gateway.LoopResult`` 承载；本模块只剩中立数据模型。

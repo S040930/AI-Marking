@@ -1,16 +1,16 @@
 # AI 作业批改系统
 
 基于 OCR 与**后端内嵌批改 agent** 的作业批改辅助系统。系统集成 PaddleOCR-VL
-文档解析；评分由后端进程内的自研 agent（tool-calling 循环，官方 OpenAI API
-通道）完成并保存可审计建议，教师最终在网页确认。评分不再依赖外部编程助手、
-ACP 或 MCP。
+文档解析；评分由后端进程内的自研 agent（tool-calling 循环，官方 OpenAI API 或
+ChatGPT 订阅通道）完成并保存可审计建议，教师最终在网页确认。评分不再依赖外部
+编程助手、ACP 或 MCP。
 
 ## 主要功能
 
 - **PDF 与 ZIP 上传**：题目 PDF 通过专门的题目上传页批量上传（拖拽/选择，单文件 ≤50MB）并直接进入 OCR 链路；学生作业在作业上传页提交纯 PDF，或一份 ZIP 作业包（≤150MB，内含恰好一份报告 PDF、文件名以小题号结尾的代码文件（如 `task3.py`）与其余文件作为数据集）。选中 ZIP 后前端只读解析中央目录即时预览分类结果，上传后由后端解包权威校验并自动分类，数据集随批改物化到隔离工作区。
 - **独立题目库**：题目只需上传并 OCR 一次，后续可直接复用于多份学生作业。
 - **AI 批改 agent**：进入作业详情页（`awaiting_grading`）后选择模型通道与思考强度并点「开始批改」；后端批改 worker 驱动内嵌 agent 读取评分包、完成证据化评分并保存建议；含代码作业在评分前弹出教师检查点（可在本地运行学生代码后核对，或直接确认）。运行进度经 SSE 实时转录，运行中可热切换模型/思考强度（下一回合生效）。
-- **模型通道配置**：设置页提供官方 OpenAI API 通道（API key 只写不读、连接测试、默认模型与思考强度）与 ChatGPT 订阅通道占位（未开放）；可设置默认批改通道。
+- **模型通道配置**：设置页提供官方 OpenAI API 通道（API key 只写不读、连接测试、默认模型与思考强度）与 ChatGPT 订阅通道（ChatGPT OAuth 登录，显示套餐与令牌有效期，可退出）；可设置默认批改通道。
 - **人工复核与确认**：教师可查看原文证据、表单式调整单项分数与反馈并确认最终评分。
 - **历史记录管理**：按处理状态查看、选择和安全删除批改记录。
 - **题目安全管理**：支持搜索、预览、重命名、OCR 重试、上传新版及级联删除。
@@ -205,12 +205,17 @@ cd backend
 ```
 
 模型通道在「系统设置」配置：官方 OpenAI API 通道（API key 只写不读，响应仅
-回显后四位；可做连接测试与设置默认模型/思考强度）；ChatGPT 订阅通道为未开放
-占位。查询接口为 `GET /api/agent/providers`；运行中配置切换使用
-`PATCH /api/agent/runs/{id}/configuration`。
+回显后四位；可做连接测试与设置默认模型/思考强度）；ChatGPT 订阅通道通过
+ChatGPT OAuth 登录（PKCE + `127.0.0.1:1455` 回调），令牌由后端保存并自动刷新，
+页面只显示套餐、账号后四位与到期时间。查询接口为 `GET /api/agent/providers`；
+运行中配置切换使用 `PATCH /api/agent/runs/{id}/configuration`。
+
+需要代理才能访问 `chatgpt.com` / `api.openai.com` 时，在 `backend/.env` 设置
+`MODEL_PROXY_URL`（如 `http://127.0.0.1:7890`）；订阅端模型目录的
+`client_version` 可用 `CODEX_CLIENT_VERSION` 覆盖（默认 `0.162.0`）。
 
 完整状态机、工具契约、检查点与恢复语义见
-[docs/architecture/agent-grading.md](docs/architecture/agent-grading.md)。
+[docs/architecture/langgraph-grading.md](docs/architecture/langgraph-grading.md)。
 
 ## 环境变量
 
@@ -258,7 +263,7 @@ cd backend
 批改全程不需要任何外部编程助手；如批改失败，可在评审页重新配置并发起。
 
 完整状态机、工具契约、检查点跨夜与恢复语义见
-[docs/architecture/agent-grading.md](docs/architecture/agent-grading.md)。
+[docs/architecture/langgraph-grading.md](docs/architecture/langgraph-grading.md)。
 
 ## 持久化任务 worker
 

@@ -48,6 +48,8 @@ vi.mock('@/api/agent', async (importOriginal) => {
 
 import { LanguageProvider } from '@/i18n';
 import { AgentRunPanel } from '@/components/review/AgentRunPanel';
+import { AgentTranscript } from '@/components/review/AgentRunProgress';
+import type { AgentRunEvent } from '@/api/agent';
 
 function renderPanel() {
   return render(
@@ -100,7 +102,7 @@ describe('AgentRunPanel', () => {
     expect(screen.getByText('开始 AI 批改')).toBeInTheDocument();
     expect(screen.getByText('官方 OpenAI API')).toBeInTheDocument();
     expect(screen.getByText('ChatGPT 订阅')).toBeInTheDocument();
-    expect(screen.getByText('未开放')).toBeInTheDocument();
+    expect(screen.getByText('未登录')).toBeInTheDocument();
     expect(screen.getByLabelText('模型 ID')).toBeInTheDocument();
     expect(screen.getByLabelText('思考强度')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '开始批改' })).toBeInTheDocument();
@@ -194,5 +196,70 @@ describe('AgentRunPanel', () => {
 
     expect(screen.getByText('已完成')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '开始批改' })).not.toBeInTheDocument();
+  });
+});
+
+function agentEvent(
+  seq: number,
+  agent: string,
+  kind: string,
+  payload: Record<string, unknown> = {},
+): AgentRunEvent {
+  return {
+    seq,
+    kind,
+    payload: { agent, ...payload },
+    created_at: '2026-10-13T08:00:00',
+  };
+}
+
+function renderTranscript(events: AgentRunEvent[]) {
+  return render(
+    <LanguageProvider>
+      <AgentTranscript events={events} />
+    </LanguageProvider>,
+  );
+}
+
+describe('AgentTranscript', () => {
+  it('按产出 agent 分组并显示徽标', () => {
+    const { container } = renderTranscript([
+      agentEvent(1, 'supervisor', 'message_delta', { text: '开始读取评分包' }),
+      agentEvent(2, 'item:r1', 'message_delta', { text: '第 1 项证据不足' }),
+      agentEvent(3, 'supervisor', 'tool_finished', { title: '已保存评分建议' }),
+    ]);
+
+    const badges = screen.getAllByTestId('agent-badge');
+    expect(badges.map((badge) => badge.textContent)).toEqual(['主管', '评分项 r1']);
+    const text = container.textContent ?? '';
+    expect(text).toContain('开始读取评分包');
+    // 同一 agent 的后续事件并入同一分组
+    expect(text).toContain('已保存评分建议');
+    expect(text).toContain('第 1 项证据不足');
+  });
+
+  it('超过 300 条事件时只渲染最近 300 条', () => {
+    const events = Array.from({ length: 305 }, (_, index) =>
+      agentEvent(index + 1, 'supervisor', 'message_delta', {
+        text: `内容-${String(index + 1).padStart(3, '0')}`,
+      }),
+    );
+    const { container } = renderTranscript(events);
+
+    const text = container.textContent ?? '';
+    expect(text).not.toContain('内容-001');
+    expect(text).not.toContain('内容-005');
+    expect(text).toContain('内容-006');
+    expect(text).toContain('内容-305');
+    expect(text).toContain('仅显示最近 300 条事件');
+  });
+
+  it('无文本事件不渲染转录面板', () => {
+    const { container } = renderTranscript([
+      agentEvent(1, 'supervisor', 'turn_completed', { stop_reason: 'stop' }),
+    ]);
+
+    expect(container.textContent).toBe('');
+    expect(screen.queryByText('执行转录')).not.toBeInTheDocument();
   });
 });

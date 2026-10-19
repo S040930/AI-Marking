@@ -46,6 +46,10 @@ tmp_ch/
 # Build/generated artifacts
 .codex-build/
 output/
+build/
 
 # Test temp dirs
 .pytest_tmp/
+
+# Spike 报告与原始证据（含账号痕迹，禁止入库）
+backend/.spike/

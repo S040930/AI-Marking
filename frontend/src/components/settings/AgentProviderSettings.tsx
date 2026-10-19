@@ -1,9 +1,20 @@
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { BadgeCheck, FlaskConical, KeyRound, Loader2, Save } from 'lucide-react';
+import {
+  BadgeCheck,
+  FlaskConical,
+  KeyRound,
+  Loader2,
+  LogIn,
+  LogOut,
+  Save,
+} from 'lucide-react';
 import {
   useAgentProviders,
+  useChatGptLoginStatus,
+  useLogoutChatGpt,
   useSetDefaultProvider,
+  useStartChatGptLogin,
   useTestProvider,
   useUpdateProviderConfig,
   type AgentProviderName,
@@ -23,9 +34,10 @@ import { IconBadge } from '@/components/common/IconBadge';
 const EFFORT_OPTIONS = ['', 'minimal', 'low', 'medium', 'high'] as const;
 
 /**
- * 模型通道设置:官方 OpenAI API(主通道)与 ChatGPT 订阅(占位,未开放)。
+ * 模型通道设置:官方 OpenAI API(主通道)与 ChatGPT 订阅登录。
  *
- * 密钥只写不读:本页永不回显已保存的 key,只显示后四位。
+ * 密钥只写不读:本页永不回显已保存的 key,只显示后四位;
+ * 订阅令牌由后端 OAuth 流程落库,前端只轮询状态。
  */
 export function AgentProviderSettings() {
   const { t } = useLanguage();
@@ -34,12 +46,19 @@ export function AgentProviderSettings() {
   const [baseUrl, setBaseUrl] = useState('');
   const [defaultModel, setDefaultModel] = useState('');
   const [effort, setEffort] = useState('');
+  const [loginPending, setLoginPending] = useState(false);
   const updateMutation = useUpdateProviderConfig();
   const testMutation = useTestProvider();
   const defaultMutation = useSetDefaultProvider();
+  const startLogin = useStartChatGptLogin();
+  const logoutMutation = useLogoutChatGpt();
+  const loginStatus = useChatGptLoginStatus(loginPending);
 
   const openai = data?.providers['openai_api'];
+  const subscription = data?.providers['chatgpt_sub'];
   const providerDefault = (data?.provider_default ?? 'openai_api') as AgentProviderName;
+  const loginState = loginStatus.data?.status;
+  const loginDetail = loginStatus.data?.detail;
 
   // 服务端数据到达后回灌表单(api_key 除外:只写不读)。
   useEffect(() => {
@@ -100,6 +119,37 @@ export function AgentProviderSettings() {
   const setDefault = (name: AgentProviderName) => {
     defaultMutation.mutate(name, {
       onSuccess: () => toast.success(t('默认通道已更新')),
+      onError: (err) => toast.error(err.message),
+    });
+  };
+
+  // 登录结果由轮询驱动:完成/失败各提示一次,并停止轮询。
+  useEffect(() => {
+    if (!loginPending) return;
+    if (loginState === 'completed') {
+      setLoginPending(false);
+      toast.success(t('ChatGPT 订阅登录成功'));
+    } else if (loginState === 'failed') {
+      setLoginPending(false);
+      toast.error(loginDetail ?? t('登录失败，请重试'));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loginPending, loginState, loginDetail]);
+
+  const startChatGptLogin = () => {
+    startLogin.mutate(undefined, {
+      onSuccess: (result) => {
+        window.open(result.authorize_url, '_blank', 'noopener,noreferrer');
+        setLoginPending(true);
+        toast.info(t('已打开浏览器，请完成 ChatGPT 登录'));
+      },
+      onError: (err) => toast.error(err.message),
+    });
+  };
+
+  const logoutChatGpt = () => {
+    logoutMutation.mutate(undefined, {
+      onSuccess: () => toast.success(t('已退出 ChatGPT 订阅')),
       onError: (err) => toast.error(err.message),
     });
   };
@@ -205,7 +255,7 @@ export function AgentProviderSettings() {
         </CardContent>
       </Card>
 
-      {/* ChatGPT 订阅(未开放占位) */}
+      {/* ChatGPT 订阅登录 */}
       <Card className="elevated-card animate-fade-in-up motion-reduce:animate-none overflow-hidden">
         <CardHeader className="pb-4">
           <div className="flex items-center gap-3">
@@ -215,15 +265,73 @@ export function AgentProviderSettings() {
             <div>
               <CardTitle className="text-lg">{t('ChatGPT 订阅通道')}</CardTitle>
               <CardDescription>
-                {t('使用 ChatGPT 订阅额度调用模型；该通道尚未开放，仅作占位。')}
+                {t('使用 ChatGPT 订阅额度调用模型；通过 ChatGPT OAuth 登录授权。')}
               </CardDescription>
             </div>
           </div>
         </CardHeader>
-        <CardContent className="pt-5">
+        <CardContent className="flex flex-col gap-4 pt-5">
+          {subscription?.available ? (
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3">
+              <p className="flex items-center gap-1.5 text-sm font-medium text-emerald-700">
+                <BadgeCheck className="size-4" />
+                {t('已登录')}
+                {subscription.plan ? ` · ${subscription.plan}` : ''}
+                {subscription.account_last4
+                  ? ` · ${t('账号')} ····${subscription.account_last4}`
+                  : ''}
+              </p>
+              {subscription.expires_at ? (
+                <p className="mt-1 text-xs text-emerald-800/70">
+                  {t('访问令牌有效至')}{' '}
+                  {new Date(subscription.expires_at).toLocaleString()} ·{' '}
+                  {t('到期自动刷新')}
+                </p>
+              ) : null}
+            </div>
+          ) : (
+            <p className="rounded-xl bg-muted/60 p-3 text-xs leading-relaxed text-muted-foreground">
+              {t('尚未登录。登录后可在评审页选择该通道，使用订阅额度批改。')}
+            </p>
+          )}
+
+          <div className="flex flex-wrap items-center gap-2">
+            {subscription?.available ? (
+              <Button
+                variant="outline"
+                disabled={logoutMutation.isPending}
+                onClick={logoutChatGpt}
+              >
+                {logoutMutation.isPending ? (
+                  <Loader2 className="animate-spin" />
+                ) : (
+                  <LogOut className="size-4" />
+                )}
+                {t('退出登录')}
+              </Button>
+            ) : (
+              <Button
+                disabled={startLogin.isPending || loginPending}
+                onClick={startChatGptLogin}
+              >
+                {startLogin.isPending || loginPending ? (
+                  <Loader2 className="animate-spin" />
+                ) : (
+                  <LogIn className="size-4" />
+                )}
+                {t('登录 ChatGPT')}
+              </Button>
+            )}
+            {loginPending ? (
+              <span className="text-xs text-muted-foreground">
+                {t('等待浏览器完成登录…')}
+              </span>
+            ) : null}
+          </div>
+
           <p className="rounded-xl bg-muted/60 p-3 text-xs leading-relaxed text-muted-foreground">
             {t(
-              '订阅通道依赖非公开接口，存在账号风控风险；开放前请使用官方 API 通道。',
+              '订阅通道依赖非公开接口，存在账号风控风险；如遇限流或接口变动，可随时切回官方 API 通道。',
             )}
           </p>
         </CardContent>
@@ -257,11 +365,20 @@ export function AgentProviderSettings() {
             <button
               type="button"
               aria-pressed={providerDefault === 'chatgpt_sub'}
-              disabled
-              className="cursor-not-allowed rounded-xl border border-slate-200 bg-white p-3 text-left opacity-60"
+              disabled={!subscription?.available}
+              onClick={() => setDefault('chatgpt_sub')}
+              className={`rounded-xl border p-3 text-left transition-colors ${
+                providerDefault === 'chatgpt_sub'
+                  ? 'border-primary bg-primary/5'
+                  : 'border-slate-200 bg-white hover:border-primary/40'
+              } ${subscription?.available ? '' : 'cursor-not-allowed opacity-60'}`}
             >
               <p className="text-sm font-medium">{t('ChatGPT 订阅')}</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">{t('未开放')}</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {subscription?.available
+                  ? subscription.plan || t('已登录')
+                  : t('未登录')}
+              </p>
             </button>
           </div>
         </CardContent>

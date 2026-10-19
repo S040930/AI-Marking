@@ -16,7 +16,9 @@ import { AgentRunProgress } from '@/components/review/AgentRunProgress';
 import { runStatusLabel } from '@/lib/agentRunStatus';
 import { useLanguage } from '@/i18n';
 
-const EFFORT_OPTIONS = ['', 'minimal', 'low', 'medium', 'high'] as const;
+const OPENAI_EFFORT_OPTIONS = ['', 'minimal', 'low', 'medium', 'high'] as const;
+// 订阅端实测只认 low..max(目录里的 ultra 会被 400 拒绝)
+const SUBSCRIPTION_EFFORT_OPTIONS = ['', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
 
 /**
  * awaiting_grading 状态下的批改入口与运行视图。
@@ -113,7 +115,13 @@ function AgentStartPanel({
   const defaultProvider = (providersData?.provider_default ?? 'openai_api') as AgentProviderName;
   const activeProvider = provider ?? defaultProvider;
   const status = providersData?.providers[activeProvider];
-  const ready = status?.configured ?? false;
+  const subscription = providersData?.providers['chatgpt_sub'];
+  const subscriptionReady = Boolean(subscription?.available);
+  const ready = Boolean(status?.available && status?.configured);
+  const effortOptions =
+    activeProvider === 'chatgpt_sub'
+      ? SUBSCRIPTION_EFFORT_OPTIONS
+      : OPENAI_EFFORT_OPTIONS;
 
   const start = () => {
     createMutation.mutate(
@@ -158,14 +166,24 @@ function AgentStartPanel({
               }
               selected={activeProvider === 'openai_api'}
               disabled={false}
-              onSelect={() => setProvider('openai_api')}
+              onSelect={() => {
+                setProvider('openai_api');
+                setEffort('');
+              }}
             />
             <ChannelOption
               label={t('ChatGPT 订阅')}
-              detail={t('未开放')}
+              detail={
+                subscriptionReady
+                  ? `${t('已登录')}${subscription?.plan ? ` · ${subscription.plan}` : ''}`
+                  : t('未登录')
+              }
               selected={activeProvider === 'chatgpt_sub'}
-              disabled
-              onSelect={() => undefined}
+              disabled={!subscriptionReady}
+              onSelect={() => {
+                setProvider('chatgpt_sub');
+                setEffort('');
+              }}
             />
           </div>
 
@@ -189,7 +207,7 @@ function AgentStartPanel({
                 aria-label={t('思考强度')}
                 onChange={(e) => setEffort(e.target.value)}
               >
-                {EFFORT_OPTIONS.map((option) => (
+                {effortOptions.map((option) => (
                   <option key={option} value={option}>
                     {option || status?.reasoning_effort || t('默认思考强度')}
                   </option>
@@ -205,7 +223,9 @@ function AgentStartPanel({
             </Button>
           ) : (
             <div className="mt-5 flex flex-wrap items-center gap-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-700">
-              {t('请先在设置页配置官方 OpenAI API key。')}
+              {activeProvider === 'chatgpt_sub' && !subscriptionReady
+                ? t('请先在设置页登录 ChatGPT 订阅。')
+                : t('请先在设置页配置官方 OpenAI API key。')}
               <Button asChild variant="outline" size="sm">
                 <Link to="/settings">
                   <Settings className="size-4" />

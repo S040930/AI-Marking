@@ -14,6 +14,11 @@ import uuid
 from contextlib import suppress
 
 from app.agent import run_store as run_repo
+from app.agent.graph.checkpointer import (
+    create_postgres_checkpointer,
+    thread_id_for_run,
+)
+from app.agent.run_store import ARTIFACT_RETENTION_DAYS
 from app.agent.runner import LEASE_SECONDS, execute_run
 from app.agent.workspace import cleanup_expired_workspaces, materialize_workspace
 from app.db.session import SessionLocal, engine
@@ -21,6 +26,31 @@ from app.domain.grading_run import GradingRunStatus
 from app.models.grading_run import GradingRun
 
 logger = logging.getLogger(__name__)
+
+
+async def purge_expired_runs(
+    checkpointer,
+    *,
+    retention_days: int = ARTIFACT_RETENTION_DAYS,
+    session_factory=SessionLocal,
+) -> int:
+    """清理超过保留期的终态 run:删 artifacts 行 + 删 checkpointer thread。
+
+    thread 删除失败只记日志(例如 saver 暂不可用),不阻断其余 run 的清理。
+    """
+    with session_factory() as db:
+        run_ids = run_repo.expired_terminal_run_ids(db, retention_days=retention_days)
+    if not run_ids:
+        return 0
+    for run_id in run_ids:
+        try:
+            await checkpointer.adelete_thread(thread_id_for_run(run_id))
+        except Exception:  # noqa: BLE001 - 单个 thread 失败不应中断整批
+            logger.warning("删除 checkpointer thread 失败 [run=%s]", run_id, exc_info=True)
+    with session_factory() as db:
+        artifacts = run_repo.delete_run_artifacts(db, run_ids)
+    logger.info("已清理 %s 个过期 run 的工件(共 %s 条)", len(run_ids), artifacts)
+    return len(run_ids)
 
 
 async def _heartbeat(run_id: int, claim_token: str, stopped: asyncio.Event) -> None:
@@ -38,7 +68,7 @@ async def _heartbeat(run_id: int, claim_token: str, stopped: asyncio.Event) -> N
                 break
 
 
-async def _run_one(run_id: int) -> None:
+async def _run_one(run_id: int, checkpointer=None) -> None:
     claim_token = ""
     with SessionLocal() as db:
         run = db.get(GradingRun, run_id)
@@ -70,6 +100,7 @@ async def _run_one(run_id: int) -> None:
             submission_id=submission_id,
             question_name=sub.question_name or sub.original_filename,
             claim_token=claim_token,
+            checkpointer=checkpointer,
         )
         if final == GradingRunStatus.waiting_for_teacher:
             with SessionLocal() as db:
@@ -96,6 +127,7 @@ async def run_worker() -> None:
     worker_id = f"grading-{socket.gethostname()}-{uuid.uuid4().hex[:12]}"
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
+    checkpointer = await create_postgres_checkpointer()
     for sig in (signal.SIGINT, signal.SIGTERM):
         with suppress(NotImplementedError):
             loop.add_signal_handler(sig, stop.set)
@@ -120,6 +152,8 @@ async def run_worker() -> None:
                 deleted = cleanup_expired_workspaces()
                 if deleted:
                     logger.info("已清理 %s 个过期批改工作区", deleted)
+                with suppress(Exception):
+                    await purge_expired_runs(checkpointer.saver)
                 next_cleanup = loop.time() + 3600.0
 
             if not active:
@@ -132,7 +166,8 @@ async def run_worker() -> None:
                     )
                 if run is not None:
                     task = asyncio.create_task(
-                        _run_one(run.id), name=f"grading-run-{run.id}"
+                        _run_one(run.id, checkpointer.saver),
+                        name=f"grading-run-{run.id}",
                     )
                     active.add(task)
 
@@ -161,6 +196,7 @@ async def run_worker() -> None:
             count = run_repo.requeue_worker_runs(db, worker_id)
         if count:
             logger.info("已重新排队 %s 个未完成 run", count)
+        await checkpointer.aclose()
         engine.dispose()
 
 

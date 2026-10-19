@@ -4,7 +4,7 @@
 - ``execute()`` 直调 handler,把业务错误(ConflictError/ValidationError/
   NotFoundError/ValueError)转成可修正的 ``ToolResult(ok=False)`` 回给模型
   (沿用原协议 422 证据回环语义);
-- ``CheckpointRequested`` 由 handler 主动抛出,逐层穿透由 engine 捕获。
+- ``CheckpointRequested`` 由 handler 主动抛出,逐层穿透由 model_gateway 捕获。
 """
 
 from __future__ import annotations
@@ -48,6 +48,14 @@ class ToolRegistry:
 
     def tool_names(self) -> set[str]:
         return set(self._tools)
+
+    def subset(self, predicate: Callable[[ToolSpec], bool]) -> "ToolRegistry":
+        """按 spec 过滤出子集；用于图节点的工具白名单。"""
+        registry = ToolRegistry()
+        for tool in self._tools.values():
+            if predicate(tool.spec):
+                registry.register(tool.spec, tool.handler)
+        return registry
 
     def execute(self, name: str, arguments: dict[str, Any]) -> ToolResult:
         tool = self._tools.get(name)

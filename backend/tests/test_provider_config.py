@@ -82,3 +82,61 @@ def test_provider_default_falls_back(db_session):
     assert provider_default(db_session) == PROVIDER_OPENAI_API
     set_provider_config(db_session, {PROVIDER_DEFAULT_KEY: PROVIDER_CHATGPT_SUB})
     assert provider_default(db_session) == PROVIDER_CHATGPT_SUB
+
+
+def test_subscription_tokens_round_trip_and_hide_secrets(db_session):
+    from app.services.provider_config import save_chatgpt_tokens
+
+    save_chatgpt_tokens(
+        db_session,
+        {
+            "access_token": "access-secret",
+            "refresh_token": "refresh-secret",
+            "account_id": "acct-22223333",
+            "plan": "plus",
+            "expires_at": int(__import__("time").time()) + 3600,
+        },
+    )
+    summary = provider_summary(db_session)
+    text = json.dumps(summary, ensure_ascii=False)
+    assert "access-secret" not in text
+    assert "refresh-secret" not in text
+    sub = summary["providers"][PROVIDER_CHATGPT_SUB]
+    assert sub["configured"] is True
+    assert sub["available"] is True
+    assert sub["plan"] == "plus"
+    assert sub["account_last4"] == "3333"
+    assert sub["expires_at"].endswith("+00:00")
+
+
+def test_subscription_expired_without_refresh_is_unavailable(db_session):
+    from app.services.provider_config import save_chatgpt_tokens
+
+    save_chatgpt_tokens(
+        db_session,
+        {"access_token": "old", "refresh_token": "", "expires_at": 1},
+    )
+    assert provider_summary(db_session)["providers"][PROVIDER_CHATGPT_SUB]["available"] is False
+
+
+def test_subscription_expired_with_refresh_stays_available(db_session):
+    from app.services.provider_config import save_chatgpt_tokens
+
+    save_chatgpt_tokens(
+        db_session,
+        {"access_token": "old", "refresh_token": "rt", "expires_at": 1},
+    )
+    assert provider_summary(db_session)["providers"][PROVIDER_CHATGPT_SUB]["available"] is True
+
+
+def test_clear_subscription_tokens(db_session):
+    from app.services.provider_config import (
+        clear_chatgpt_tokens,
+        load_chatgpt_tokens,
+        save_chatgpt_tokens,
+    )
+
+    save_chatgpt_tokens(db_session, {"access_token": "a", "refresh_token": "r"})
+    assert load_chatgpt_tokens(db_session)["access_token"] == "a"
+    clear_chatgpt_tokens(db_session)
+    assert load_chatgpt_tokens(db_session) is None

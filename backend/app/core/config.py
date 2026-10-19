@@ -45,6 +45,14 @@ class Settings(BaseSettings):
     # 批改 agent 评分上下文总长度上限。
     GRADING_MAX_CONTEXT_CHARS: int = 200_000
 
+    # 访问模型服务所用的 HTTP 代理。为空时沿用进程环境变量(httpx trust_env);
+    # 在需要代理才能访问 chatgpt.com / api.openai.com 的网络里显式填写,
+    # 例如 ``http://127.0.0.1:7890``。
+    MODEL_PROXY_URL: str = ""
+
+    # ChatGPT 订阅端模型目录要求的客户端版本号(随 codex CLI 升级调整)。
+    CODEX_CLIENT_VERSION: str = "0.162.0"
+
     # 全站访问令牌。为空表示鉴权关闭，保持向后兼容；设置后所有 /api 路由
     # （除 /api/health、/api/auth/login、/api/auth/logout 外）
     # 必须携带令牌。来源：浏览器会话 Cookie（登录页提交一次后自动携带）、

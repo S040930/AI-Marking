@@ -9,7 +9,7 @@
   （`AgentRunPanel`，选通道/模型/强度后直接「开始批改」）；批改完成后显示
   评分来源审计、建议评分与表单式人工改分（`ManualReviewPanel`）。
 - 评分由**后端内嵌 agent** 在进程内完成（见
-  [agent-grading.md](../architecture/agent-grading.md)），教师在此确认最终成绩。
+  [langgraph-grading.md](../architecture/langgraph-grading.md)），教师在此确认最终成绩。
 
 ## 布局
 
@@ -49,11 +49,14 @@
 
 三类分支（同页切换，无需跳转）：
 
-- **无活跃 run**：显示开始面板——通道单选（官方 OpenAI API / ChatGPT 订阅
-  未开放）、模型 ID 输入（占位为通道默认模型）、思考强度下拉；未配置 API key
-  时引导「前往设置」；点击「开始批改」创建 run（`POST /api/agent/runs`）。
+- **无活跃 run**：显示开始面板——通道单选（官方 OpenAI API / ChatGPT 订阅，
+  后者需先在设置页登录，未登录时置灰）、模型 ID 输入（占位为通道默认模型）、
+  思考强度下拉（订阅通道只列 `low..max`）；通道未就绪时引导「前往设置」；
+  点击「开始批改」创建 run（`POST /api/agent/runs`）。
 - **运行中**（含 `waiting_for_teacher`）：`AgentRunProgress` 展示状态头、
-  运行配置热切换（model/effort，下一回合生效）、执行转录；`waiting_for_teacher`
+  运行配置热切换（model/effort，下一回合生效）、执行转录（按事件 `agent` 标签
+  分组并显示徽标：主管分支为「主管」，评分项分支为「评分项 <rubric_item_id>」；
+  UI 侧最多保留最近 300 条事件）；`waiting_for_teacher`
   时替换为检查点表单（自愿确认：可先在本地运行学生代码后核对，或直接确认；
   "不一致"必填说明），否则显示「取消批改」。
 - **终态**：`completed` 提示自动进入复核；`failed`/`cancelled` 展示错误与

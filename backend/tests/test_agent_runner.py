@@ -158,6 +158,22 @@ def _prepare_save_arguments(db_session, submission) -> dict:
     }
 
 
+def _prepare_item_arguments(db_session, submission) -> dict:
+    """通过真实 workflow 打开评分包,构造逐项提交参数。"""
+    from app.application import grading_workflow as workflow
+
+    package = workflow.open_grading_package(db_session, submission, None)
+    header = json.loads(package.content.split("\n", 1)[1].split("\n\n", 1)[0])
+    item = header["grading_policy"]["resolved_rubric"]["items"][0]
+    return {
+        "rubric_item_id": item["rubric_item_id"],
+        "score": item["max_score"],
+        "comment": "完成。",
+        "evidence_refs": [{"type": "report_quote", "quote": "Report evidence"}],
+        "evidence_status": "supported",
+    }
+
+
 def _patch_provider(monkeypatch, provider: ScriptedProvider) -> None:
     monkeypatch.setattr(
         runner, "_build_provider", lambda *args, **kwargs: provider
@@ -166,11 +182,20 @@ def _patch_provider(monkeypatch, provider: ScriptedProvider) -> None:
 
 async def test_runner_completes_after_open_and_save(db_session, monkeypatch):
     env = _make_env(db_session)
-    save_args = _prepare_save_arguments(db_session, env.submission)
+    item_args = _prepare_item_arguments(db_session, env.submission)
     provider = ScriptedProvider(
         [
-            [_turn(_function_call("c1", "open_grading_package", {}))],
-            [_turn(_function_call("c2", "save_assessment", save_args))],
+            [_turn(_function_call("c1", "submit_item_score", item_args))],
+            [_turn()],
+            [
+                _turn(
+                    _function_call(
+                        "c2",
+                        "save_assessment",
+                        {"feedback": "完成主要要求。", "confidence": 0.9},
+                    )
+                )
+            ],
         ]
     )
     _patch_provider(monkeypatch, provider)
@@ -194,43 +219,27 @@ async def test_runner_completes_after_open_and_save(db_session, monkeypatch):
         assert "tool_finished" in kinds
         sub = db.get(Submission, env.submission.id)
         assert sub.status == SubmissionStatus.ready_for_review
-    # 两个回合:打开评分包 + 保存
-    assert len(provider.requests) == 2
+    # 评分分支两回合（提交 + 结束）+ 主管一回合（保存）
+    assert len(provider.requests) == 3
 
 
 async def test_runner_checkpoint_then_resume(db_session, monkeypatch):
-    """含代码作业:请求教师确认 → waiting_for_teacher → 答复续跑 → 保存完成。"""
+    """含代码作业：图结构教师门 → waiting → 答复续跑 → 保存完成。"""
     env = _make_env(db_session, with_code=True)
-    save_args = _prepare_save_arguments(db_session, env.submission)
+    item_args = _prepare_item_arguments(db_session, env.submission)
     provider = ScriptedProvider(
         [
-            [
-                _turn(
-                    _function_call(
-                        "c1",
-                        "open_grading_package",
-                        {},
-                    )
-                )
-            ],
+            [_turn(_function_call("c1", "submit_item_score", item_args))],
+            [_turn()],
             [
                 _turn(
                     _function_call(
                         "c2",
-                        "request_teacher_confirmation",
-                        {"message": "请确认本地运行表现与报告描述是否一致"},
+                        "save_assessment",
+                        {"feedback": "完成主要要求。", "confidence": 0.9},
                     )
                 )
             ],
-            # 续跑:确认一致 + 保存
-            [
-                _turn(
-                    _function_call(
-                        "c3", "confirm_visual_review", {"verdict": "consistent"}
-                    )
-                )
-            ],
-            [_turn(_function_call("c4", "save_assessment", save_args))],
         ]
     )
     _patch_provider(monkeypatch, provider)
@@ -244,14 +253,16 @@ async def test_runner_checkpoint_then_resume(db_session, monkeypatch):
         claim_token=token,
     )
     assert status == GradingRunStatus.waiting_for_teacher
+    # 教师门在模型之前：第一轮不应调用 provider。
+    assert provider.requests == []
     with env.factory() as db:
         run = db.get(GradingRun, run_id)
         assert run.status == GradingRunStatus.waiting_for_teacher
         assert run.checkpoint is not None
         assert "一致" in run.checkpoint["message"]
-        assert run.agent_state and run.agent_state["items"]
-        # worker 关闭常驻回合后释放所有权(模拟 worker 行为)
-        assert run_repo.release_waiting_run(db, run_id, token)
+        assert run.checkpoint_request_id
+        # 图驱动已在返回前释放所有权，worker 无需再次释放。
+        assert run.worker_id is None
 
     # 教师答复(worker_id 已释放 → 恢复为 queued 等待续跑)
     with env.factory() as db:
@@ -275,7 +286,8 @@ async def test_runner_checkpoint_then_resume(db_session, monkeypatch):
         question_name="Runner 题",
         claim_token=token2,
     )
-    assert status == GradingRunStatus.completed
+    assert status == GradingRunStatus.completed, "评分或最终提交未完成"
+    assert len(provider.requests) == 3
     with env.factory() as db:
         run = db.get(GradingRun, run_id)
         assert run.status == GradingRunStatus.completed
@@ -285,13 +297,8 @@ async def test_runner_checkpoint_then_resume(db_session, monkeypatch):
 
 async def test_runner_incomplete_marks_failed(db_session, monkeypatch):
     env = _make_env(db_session)
-    # 第一回合打开评分包;第二回合直接 end_turn(未保存)
-    provider = ScriptedProvider(
-        [
-            [_turn(_function_call("c1", "open_grading_package", {}))],
-            [_turn()],
-        ]
-    )
+    # 评分分支两轮都不提交；rescore 一轮后仍缺项，给出可读错误。
+    provider = ScriptedProvider([[_turn()], [_turn()]])
     _patch_provider(monkeypatch, provider)
     run_id, token = _claim_run(env.factory, env.submission.id)
 
@@ -306,7 +313,7 @@ async def test_runner_incomplete_marks_failed(db_session, monkeypatch):
     with env.factory() as db:
         run = db.get(GradingRun, run_id)
         assert run.status == GradingRunStatus.failed
-        assert "未在回合内保存" in (run.error_message or "")
+        assert "缺少评分项" in (run.error_message or "")
 
 
 async def test_runner_cancel_marks_cancelled(db_session, monkeypatch):
@@ -358,16 +365,3 @@ async def test_runner_provider_missing_key_fails(db_session, monkeypatch):
         assert "API key" in (run.error_message or "") or "未配置" in (
             run.error_message or ""
         )
-
-
-def test_resume_prompt_mentions_reopen():
-    run = GradingRun(
-        submission_id=1,
-        provider="openai_api",
-        teacher_verdict="mismatch",
-        teacher_note="第 2 题输出与报告不一致",
-    )
-    prompt = checkpoint_repo.build_resume_prompt(run)
-    assert "mismatch" in prompt
-    assert "第 2 题" in prompt
-    assert "open_grading_package" in prompt

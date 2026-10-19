@@ -1,7 +1,15 @@
 # 自研批改 Agent 改造：去除 ACP/MCP，内置 agent + 双模型通道
 
-> 状态：**阶段 0-4 已完成**（分支 `feat/agent-refactor`）；阶段 5（真实 key 端到端
-> 验收与文档重写，文档部分已完成）与阶段 6/7（订阅 spike 门控）待做。
+> 状态：**阶段 0-7 已完成**（分支 `feat/agent-refactor`）。订阅通道适配器与
+> OAuth 登录已实装并通过真实验收（登录 + 作业 #12 批改 run 7 完成，spike 报告见
+> `docs/architecture/chatgpt-sub-spike.md`）。
+>
+> **后续架构升级（2026-10-17）**：LangGraph P0–P4 已完成，运行时改为
+> `plan → package_ingest → teacher interrupt → Send fan-out → assemble →
+> verify → supervisor_finalize`；评分包正文存 `grading_run_artifacts`，
+> checkpoint 只留摘要；每个评分分支独立 provider，订阅并发默认 2。
+> 迁移见 `alembic/versions/c177625dbb36_langgraph_grading_artifacts.py`。
+> `app/agent/engine.py` 仍作为 `ModelGateway` 的内部循环保留（P5 清理项）。
 > 基线：`a092830`（v12 契约 + 并发修复已冻结，见文末「基线记录」）
 
 ## Context
@@ -148,6 +156,12 @@ backend/app/schemas/agent.py / api/agent.py / grading_worker.py(替代 acp_worke
 - B 段：OAuth PKCE 全流程（:1455 回调、token 交换与刷新轮换）+ 连续 3-5 次调用风控观察；
 - 产出 `docs/architecture/chatgpt-sub-spike.md`（脱敏证据 + 实装/放弃结论）；全过才进阶段 7。
 
+**执行结果（2026-10-17）**：A 段 38 次调用全过（1,713 tokens）。关键实测：模型目录必须带
+`client_version` 且订阅侧模型为 `gpt-6.*` 系列；除 `Authorization` 外请求头均可省；`store`
+必须显式 `false`；**端点不返回 reasoning item**（encrypted reasoning 回传不可用，续会话改用
+`x-codex-turn-state`）；目录声明的 `ultra` 被拒，实测 effort 白名单为
+`low/medium/high/xhigh/max`；无 `x-request-id`。B 段待人工登录补跑。
+
 ## 实施阶段
 
 基线检查（每阶段尾）：`ruff check backend`；`cd backend && pytest -q`；前端 `npm run lint && npm run test:run && npm run build`；契约变更加 `api:check`；迁移变更加 `alembic upgrade head && alembic current`。
@@ -157,9 +171,9 @@ backend/app/schemas/agent.py / api/agent.py / grading_worker.py(替代 acp_worke
 2. **运行骨架迁移与后端切换（最大）**：Migration A；domain/models/run_store/checkpoints/events/workspace/runner/grading_worker/api·schemas；挂新路由；删 acp 全包、acp_worker、api acp/acp_chat/mcp、app/mcp、启动脚本；events 频道改名；测试迁移（`test_acp_runs` 原样→`test_grading_runs`；删 orchestrator/session/registry/chat/fake_agent；新增 `test_agent_runner` 含 agent_state 恢复；`test_queue_postgres` 改写）。✅ 已完成（`b0323d9`，62 文件 +3434/−12448；Migration A 临时库全链验证；398 passed）
 3. **契约改名与 MCP 残留清理**：Migration B；`mcp_workflow→grading_workflow`；schemas/models 改名；submission 元数据改名+兼容读；删 skills、`test_mcp_server`、`test_skill_materialization`；`test_marking/evidence/concurrency/cleanup` 改断言；pyproject 删依赖。✅ 已完成（`c0d0706`，63 文件；Migration B 临时库验证；402 passed）
 4. **前端改造**（见前端节）：再生成契约；手工冒烟（三进程启动、404/500 归零）。✅ 已完成（`d393f64`，55 文件 +1469/−5942；130 tests；另删 grading-prompt 端点与"批改提示词"链）
-5. **官方通道端到端验收**：真实 API key 跑验收清单——无代码作业全链路；含代码：检查点→答复（mismatch+note 分支）→续跑→confirm→save；证据 422 回环；取消/租约恢复（kill worker 重启）；运行中切 model；usage 显示。重写 docs（`acp-grading.md`→`agent-grading.md`，删 `mcp-grading.md`，更新 schema/review-page/PROJECT/README）。📝 文档重写已完成；**真实 key 验收待用户执行**（清单见下文）
-6. **订阅 spike**（离线，见上）。
-7. **订阅适配器实装（仅 spike 通过）**：`chatgpt_oauth`+`chatgpt_sub`+OAuth 端点+设置页订阅卡+httpx mock 测试；真实登录一次+一份作业批改；限流退避由 engine 已覆盖。
+5. **官方通道端到端验收**：真实 API key 跑验收清单——无代码作业全链路；含代码：检查点→答复（mismatch+note 分支）→续跑→confirm→save；证据 422 回环；取消/租约恢复（kill worker 重启）；运行中切 model；usage 显示。重写 docs（`acp-grading.md`→`langgraph-grading.md`，删 `mcp-grading.md`，更新 schema/review-page/PROJECT/README）。📝 文档重写已完成；**真实 key 验收待用户执行**（清单见下文）
+6. **订阅 spike**（离线，见上）。✅ A 段已通过（报告见 `chatgpt-sub-spike.md`）；B 段待人工登录
+7. **订阅适配器实装（仅 spike 通过）**：`chatgpt_oauth`+`chatgpt_sub`+OAuth 端点+设置页订阅卡+httpx mock 测试；真实登录一次+一份作业批改；限流退避由 engine 已覆盖。✅ 实装完成并通过真实验收（OAuth 登录、令牌轮换、run 7 检查点续跑、95/100 落库）
 
 ## 验证
 
@@ -169,7 +183,7 @@ backend/app/schemas/agent.py / api/agent.py / grading_worker.py(替代 acp_worke
 
 1. 订阅通道灰色性质（端点/风控可变）——官方主线 + spike 门控 + 失败回退占位；
 2. 检查点与句柄 TTL 错位——默认决策 2 覆盖，验收含隔日答复场景；
-3. `store=false` 的 encrypted reasoning 回传在订阅端点的兼容性——spike A2 覆盖，不兼容则订阅轨降级；
+3. `store=false` 的 encrypted reasoning 回传在订阅端点的兼容性——**实测不兼容**（端点不返回 reasoning item），已改为保存并回传 `x-codex-turn-state`；
 4. token 成本与 5 小时窗吞吐——usage 落库/展示已预留，单作业数十万 input 量级需产品提示；
 5. 迁移窗口期前端不可用——阶段 2-4 连续推进、同批次发布。
 
@@ -195,7 +209,9 @@ backend/app/schemas/agent.py / api/agent.py / grading_worker.py(替代 acp_worke
 | 2 | `b0323d9` | 骨架迁移+后端切换（Migration A `e5f7a9b1c3d4` 临时库全链验证；旧 ACP/MCP 全删；398 passed） |
 | 3 | `c0d0706` | 契约改名（Migration B `f7a9b1c3d5e7`：表/约束/索引/序列/枚举值 RENAME；句柄 TTL 24h；`agent_metadata` 键+兼容读；删 skills/依赖；402 passed） |
 | 4 | `d393f64` | 前端切换（AgentRunPanel/AgentProviderSettings/api/agent.ts；acp-chat/助手/prefill/grading-prompt 全链删除；130 tests；oxlint/tsc/build/api:check 通过） |
-| 5 | （本文档更新） | 文档重写（agent-grading.md 新增、acp/mcp-grading.md 删除、schema/review-page/PROJECT/README/env/启动脚本/bootstrap 同步）+ 验收清单移交用户 |
+| 5 | （本文档更新） | 文档重写（langgraph-grading.md 新增、acp/mcp-grading.md 删除、schema/review-page/PROJECT/README/env/启动脚本/bootstrap 同步）+ 验收清单移交用户 |
+| 6 | （spike 脚本 + 报告） | A 段 38 次调用全过：模型目录需 `client_version`、头可极简、`store` 必须 false、reasoning 不回传（改 `x-codex-turn-state`）、effort 白名单 `low..max`；B 段待人工登录 |
+| 7 | （订阅通道实装） | `providers/chatgpt_sub.py` + `chatgpt_oauth.py` + OAuth 三端点 + token 落库/刷新轮换 + turn-state 进 `agent_state` + 设置页登录卡 + 前端通道可选；真实登录与作业 run 7 验收通过；修掉检查点缺 `function_call_output` 导致续跑被订阅端拒绝的问题；新增 23 个后端测试 |
 
 ### 阶段 5 真实 key 验收清单（需用户执行）
 

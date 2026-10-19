@@ -41,11 +41,27 @@ const englishMessages: Record<string, string> = {
   '官方 OpenAI API': 'OpenAI API',
   'ChatGPT 订阅': 'ChatGPT Subscription',
   'ChatGPT 订阅通道': 'ChatGPT Subscription channel',
-  '使用 ChatGPT 订阅额度调用模型；该通道尚未开放，仅作占位。':
-    'Use ChatGPT subscription quota to call models. This channel is not open yet; placeholder only.',
-  '订阅通道依赖非公开接口，存在账号风控风险；开放前请使用官方 API 通道。':
-    'The subscription channel relies on non-public endpoints and carries account-risk concerns. Use the official API channel until it opens.',
-  '未开放': 'Not open yet',
+  '使用 ChatGPT 订阅额度调用模型；通过 ChatGPT OAuth 登录授权。':
+    'Use your ChatGPT subscription quota. Sign in via ChatGPT OAuth.',
+  '订阅通道依赖非公开接口，存在账号风控风险；如遇限流或接口变动，可随时切回官方 API 通道。':
+    'The subscription channel relies on non-public endpoints and carries account-risk concerns. If rate limited or the endpoint changes, switch back to the official API channel.',
+  '已登录': 'Signed in',
+  '未登录': 'Not signed in',
+  '账号': 'Account',
+  '访问令牌有效至': 'Access token valid until',
+  '到期自动刷新': 'refreshes automatically',
+  '尚未登录。登录后可在评审页选择该通道，使用订阅额度批改。':
+    'Not signed in. After signing in you can pick this channel on the review page and grade with your subscription quota.',
+  '退出登录': 'Sign out',
+  '登录 ChatGPT': 'Sign in to ChatGPT',
+  '等待浏览器完成登录…': 'Waiting for the browser to finish signing in…',
+  'ChatGPT 订阅登录成功': 'Signed in to ChatGPT Subscription',
+  '登录失败，请重试': 'Sign-in failed. Please try again.',
+  '已打开浏览器，请完成 ChatGPT 登录':
+    'Browser opened — finish signing in to ChatGPT.',
+  '已退出 ChatGPT 订阅': 'Signed out of ChatGPT Subscription',
+  '请先在设置页登录 ChatGPT 订阅。':
+    'Sign in to ChatGPT Subscription on the Settings page first.',
   '已配置': 'Configured',
   '未配置': 'Not configured',
   '当前已配置': 'Currently configured',
@@ -413,6 +429,9 @@ const englishMessages: Record<string, string> = {
   '不一致,要求修正': 'Mismatch — request correction',
   '答复已保存,批改将继续': 'Reply saved. Marking will continue.',
   执行转录: 'Execution transcript',
+  '仅显示最近 300 条事件': 'Showing only the latest 300 events',
+  主管: 'Supervisor',
+  评分项: 'Rubric item',
   '评分建议已保存,页面将自动进入复核。':
     'Grading suggestion saved. The page will switch to review automatically.',
   '批改运行失败,可重新发起。': 'The marking run failed. You can start a new one.',

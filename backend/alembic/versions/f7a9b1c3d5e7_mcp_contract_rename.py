@@ -8,6 +8,13 @@
 - ``submission_status`` 枚举值 ``awaiting_mcp``→``awaiting_grading``;
 - ``submission_grading_mode`` 枚举值 ``external_agent``→``agent``。
 
+约束名不按字面改:同一张表在不同历史库里可能有两套命名——由
+``sa.UniqueConstraint('token_hash')`` 建出的库拿到 PG 自动名
+``mcp_workflow_handles_token_hash_key``,而早期显式命名的库是
+``uq_mcp_workflow_handles_token_hash``。因此这里按
+(表, 约束类型, 列集合) 反查 ``pg_constraint`` 再改名,两种库都能升级。
+``rename_table`` 不会重命名约束/索引/序列,故仍需显式处理。
+
 迁移前必须停止 API 与 worker;SQLite 测试库走 create_all,不受本迁移影响。
 
 Revision ID: f7a9b1c3d5e7
@@ -16,6 +23,8 @@ Revises: e5f7a9b1c3d4
 
 from typing import Sequence, Union
 
+from sqlalchemy import text
+
 from alembic import op
 
 revision: str = "f7a9b1c3d5e7"
@@ -23,36 +32,55 @@ down_revision: Union[str, None] = "e5f7a9b1c3d4"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
-# (表, 旧约束名, 新约束名);rename_table 不会重命名约束
-_CONSTRAINT_RENAMES = (
-    ("grading_handles", "mcp_workflow_handles_pkey", "grading_handles_pkey"),
+# (表, 约束类型, 列集合, 规范旧名, 新名)
+# 旧名只用于 downgrade 回写;upgrade 时按结构反查,不依赖旧名命中。
+_CONSTRAINTS = (
     (
         "grading_handles",
+        "p",
+        ("id",),
+        "mcp_workflow_handles_pkey",
+        "grading_handles_pkey",
+    ),
+    (
+        "grading_handles",
+        "u",
+        ("token_hash",),
         "mcp_workflow_handles_token_hash_key",
         "grading_handles_token_hash_key",
     ),
     (
         "grading_handles",
+        "f",
+        ("submission_id",),
         "mcp_workflow_handles_submission_id_fkey",
         "grading_handles_submission_id_fkey",
     ),
     (
         "grading_handles",
+        "f",
+        ("question_id",),
         "mcp_workflow_handles_question_id_fkey",
         "grading_handles_question_id_fkey",
     ),
     (
         "grading_assessment_receipts",
+        "p",
+        ("id",),
         "mcp_assessment_receipts_pkey",
         "grading_assessment_receipts_pkey",
     ),
     (
         "grading_assessment_receipts",
+        "f",
+        ("submission_id",),
         "mcp_assessment_receipts_submission_id_fkey",
         "grading_assessment_receipts_submission_id_fkey",
     ),
     (
         "grading_assessment_receipts",
+        "u",
+        ("submission_id", "request_id"),
         "uq_mcp_receipt_submission_request",
         "uq_grading_receipt_submission_request",
     ),
@@ -72,6 +100,46 @@ _INDEX_RENAMES = (
 )
 
 
+def _constraint_name(table: str, contype: str, columns: tuple[str, ...]) -> str | None:
+    """按 (表, 类型, 列集合) 反查约束真实名;找不到返回 None。"""
+    row = op.get_bind().execute(
+        text(
+            """
+            SELECT c.conname
+            FROM pg_constraint AS c
+            JOIN pg_class AS t ON t.oid = c.conrelid
+            WHERE t.relname = :table
+              AND c.contype = :contype
+              AND (
+                    SELECT string_agg(a.attname, ',' ORDER BY a.attname)
+                    FROM unnest(c.conkey) AS k(attnum)
+                    JOIN pg_attribute AS a
+                      ON a.attrelid = c.conrelid AND a.attnum = k.attnum
+                  ) = :columns
+            ORDER BY c.conname
+            LIMIT 1
+            """
+        ),
+        {
+            "table": table,
+            "contype": contype,
+            "columns": ",".join(sorted(columns)),
+        },
+    ).scalar()
+    return str(row) if row is not None else None
+
+
+def _rename_constraint(table: str, contype: str, columns: tuple[str, ...], target: str) -> None:
+    current = _constraint_name(table, contype, columns)
+    if current is None:
+        raise RuntimeError(
+            f"{table} 缺少 {contype} 约束({', '.join(columns)}),无法改名为 {target}"
+        )
+    if current == target:
+        return
+    op.execute(f'ALTER TABLE "{table}" RENAME CONSTRAINT "{current}" TO "{target}"')
+
+
 def upgrade() -> None:
     # 1. 表改名
     op.rename_table("mcp_workflow_handles", "grading_handles")
@@ -87,15 +155,13 @@ def upgrade() -> None:
         "RENAME TO grading_assessment_receipts_id_seq"
     )
 
-    # 3. 约束改名
-    for table, old_name, new_name in _CONSTRAINT_RENAMES:
-        op.execute(
-            f"ALTER TABLE {table} RENAME CONSTRAINT {old_name} TO {new_name}"
-        )
+    # 3. 约束改名(按结构反查,兼容自动名与显式名两种历史库)
+    for table, contype, columns, _old_name, new_name in _CONSTRAINTS:
+        _rename_constraint(table, contype, columns, new_name)
 
     # 4. 索引改名
     for old_name, new_name in _INDEX_RENAMES:
-        op.execute(f"ALTER INDEX {old_name} RENAME TO {new_name}")
+        op.execute(f'ALTER INDEX IF EXISTS "{old_name}" RENAME TO "{new_name}"')
 
     # 5. 枚举值改名(PG 10+ 支持 RENAME VALUE,原地生效,无数据重写)
     op.execute(
@@ -120,12 +186,10 @@ def downgrade() -> None:
     )
 
     for old_name, new_name in reversed(_INDEX_RENAMES):
-        op.execute(f"ALTER INDEX {new_name} RENAME TO {old_name}")
+        op.execute(f'ALTER INDEX IF EXISTS "{new_name}" RENAME TO "{old_name}"')
 
-    for table, old_name, new_name in reversed(_CONSTRAINT_RENAMES):
-        op.execute(
-            f"ALTER TABLE {table} RENAME CONSTRAINT {new_name} TO {old_name}"
-        )
+    for table, contype, columns, old_name, _new_name in reversed(_CONSTRAINTS):
+        _rename_constraint(table, contype, columns, old_name)
 
     op.execute(
         "ALTER SEQUENCE IF EXISTS grading_assessment_receipts_id_seq "

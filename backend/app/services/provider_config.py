@@ -10,6 +10,9 @@
 from __future__ import annotations
 
 import json
+import time
+from datetime import datetime, timezone
+from typing import Any
 
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
@@ -90,11 +93,65 @@ def provider_default(db: Session) -> str:
     return get_provider_config(db).get(PROVIDER_DEFAULT_KEY) or PROVIDER_OPENAI_API
 
 
+def load_chatgpt_tokens(db: Session) -> dict[str, Any] | None:
+    """读取订阅 token(含 refresh_token);仅供进程内构造 provider。"""
+    raw = get_provider_config(db).get(CHATGPT_TOKENS_KEY) or ""
+    if not raw:
+        return None
+    try:
+        tokens = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    return tokens if isinstance(tokens, dict) else None
+
+
+def save_chatgpt_tokens(db: Session, tokens: dict[str, Any]) -> None:
+    """写入订阅 token(登录完成或刷新轮换后)。"""
+    set_provider_config(db, {CHATGPT_TOKENS_KEY: tokens})
+
+
+def clear_chatgpt_tokens(db: Session) -> None:
+    set_provider_config(db, {CHATGPT_TOKENS_KEY: ""})
+
+
+def chatgpt_tokens_usable(tokens: dict[str, Any] | None) -> bool:
+    """access_token 存在且未过期(允许在过期前 60s 内靠 refresh 续期)。"""
+    if not tokens or not tokens.get("access_token"):
+        return False
+    try:
+        expires_at = int(tokens.get("expires_at") or 0)
+    except (TypeError, ValueError):
+        return True
+    if not expires_at:
+        return True
+    if expires_at - time.time() > 60:
+        return True
+    return bool(tokens.get("refresh_token"))
+
+
+def provider_available(db: Session, name: str) -> bool:
+    """通道当前是否可直接发起 run;凭证缺失或过期返回 False。"""
+    if name == PROVIDER_CHATGPT_SUB:
+        return chatgpt_tokens_usable(load_chatgpt_tokens(db))
+    return bool(get_provider_config(db).get(OPENAI_API_KEY_KEY) or "")
+
+
 def provider_summary(db: Session) -> dict:
     """对外可安全展示的通道状态:configured/last4,绝不回显密钥。"""
     config = get_provider_config(db)
     openai_key = config.get(OPENAI_API_KEY_KEY) or ""
-    chatgpt_raw = config.get(CHATGPT_TOKENS_KEY) or ""
+    tokens = load_chatgpt_tokens(db)
+    expires_at = ""
+    if tokens:
+        try:
+            epoch = int(tokens.get("expires_at") or 0)
+        except (TypeError, ValueError):
+            epoch = 0
+        if epoch:
+            expires_at = datetime.fromtimestamp(epoch, tz=timezone.utc).isoformat(
+                timespec="seconds"
+            )
+    account_id = str((tokens or {}).get("account_id") or "")
     return {
         "provider_default": config.get(PROVIDER_DEFAULT_KEY) or PROVIDER_OPENAI_API,
         "providers": {
@@ -104,12 +161,16 @@ def provider_summary(db: Session) -> dict:
                 "base_url": config.get(OPENAI_BASE_URL_KEY) or "",
                 "default_model": config.get(OPENAI_DEFAULT_MODEL_KEY) or "",
                 "reasoning_effort": config.get(OPENAI_REASONING_EFFORT_KEY) or "",
+                "available": bool(openai_key),
             },
             PROVIDER_CHATGPT_SUB: {
-                "configured": bool(chatgpt_raw),
+                "configured": bool((tokens or {}).get("access_token")),
                 "key_last4": None,
                 "default_model": config.get(CHATGPT_DEFAULT_MODEL_KEY) or "",
-                "available": False,
+                "available": chatgpt_tokens_usable(tokens),
+                "plan": str((tokens or {}).get("plan") or ""),
+                "account_last4": account_id[-4:] if account_id else None,
+                "expires_at": expires_at,
             },
         },
     }

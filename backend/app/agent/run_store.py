@@ -12,13 +12,17 @@ import uuid
 from datetime import timedelta
 from typing import Any
 
-from sqlalchemy import and_, or_, select, text, update
+from sqlalchemy import and_, delete, or_, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.time import utc_now_naive
 from app.domain.grading_run import TERMINAL_RUN_STATUSES, GradingRunStatus
 from app.models.grading_run import GradingRun, GradingRunEvent
+from app.models.grading_run_artifact import GradingRunArtifact
+
+# 终态 run 的工件与 checkpointer thread 保留期(天)
+ARTIFACT_RETENTION_DAYS = 7
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +46,7 @@ def create_run(
     run = GradingRun(
         submission_id=submission_id,
         provider=provider,
+        graph_version=1,
         model=model,
         reasoning_effort=reasoning_effort,
         status=GradingRunStatus.queued,
@@ -203,6 +208,7 @@ def transition_run(
         run.finished_at = utc_now_naive()
         run.checkpoint = None
         run.checkpoint_expires_at = None
+        run.checkpoint_request_id = None
         _clear_owner(run)
     db.commit()
     return True
@@ -304,6 +310,7 @@ def _recover_run(db: Session, run: GradingRun) -> None:
         run.finished_at = utc_now_naive()
         run.checkpoint = None
         run.checkpoint_expires_at = None
+        run.checkpoint_request_id = None
         run.error_message = (
             "批改 worker 多次中断，已达到重试上限"
             if target == GradingRunStatus.failed
@@ -398,8 +405,14 @@ def save_checkpoint(
     confirmation_context_hash: str,
     agent_state: dict[str, Any] | None = None,
     claim_token: str | None = None,
+    checkpoint_request_id: str | None = None,
 ) -> None:
-    """进入教师检查点驻留,并持久化续跑所需的 agent_state。"""
+    """进入教师检查点驻留。
+
+    续跑状态不再写 ``agent_state``:对话与句柄由 LangGraph checkpointer
+    按 thread 持久化(见 ``graph/checkpointer.py``)。``agent_state`` 参数仅为
+    过渡期接口保留,图中调用一律不传。
+    """
     from app.domain.grading_run import ensure_run_transition
 
     run = _worker_run(db, run, claim_token)
@@ -414,6 +427,8 @@ def save_checkpoint(
     run.checkpoint_expires_at = now + timedelta(seconds=dwell_seconds)
     run.confirmation_revision = confirmation_revision
     run.confirmation_context_hash = confirmation_context_hash
+    if checkpoint_request_id is not None:
+        run.checkpoint_request_id = checkpoint_request_id
     if agent_state is not None:
         run.agent_state = agent_state
     db.commit()
@@ -508,3 +523,34 @@ def release_waiting_run(db: Session, run_id: int, claim_token: str) -> bool:
     _recover_run(db, run)
     db.commit()
     return True
+
+
+def expired_terminal_run_ids(
+    db: Session,
+    *,
+    retention_days: int = ARTIFACT_RETENTION_DAYS,
+    limit: int = 200,
+) -> list[int]:
+    """返回超过保留期的终态 run(按 ``updated_at`` 最早优先,分批处理)。"""
+    cutoff = utc_now_naive() - timedelta(days=retention_days)
+    rows = db.execute(
+        select(GradingRun.id)
+        .where(
+            GradingRun.status.in_([s.value for s in TERMINAL_RUN_STATUSES]),
+            GradingRun.updated_at <= cutoff,
+        )
+        .order_by(GradingRun.updated_at)
+        .limit(limit)
+    ).scalars()
+    return list(rows)
+
+
+def delete_run_artifacts(db: Session, run_ids: list[int]) -> int:
+    """删除指定 run 的 ``grading_run_artifacts`` 行,返回删除条数。"""
+    if not run_ids:
+        return 0
+    result = db.execute(
+        delete(GradingRunArtifact).where(GradingRunArtifact.run_id.in_(run_ids))
+    )
+    db.commit()
+    return int(result.rowcount or 0)

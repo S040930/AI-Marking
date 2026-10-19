@@ -4,7 +4,7 @@
 >
 > **后续：本评估已落地**——阶段 0-4 于 2026-10-13 完成（实施计划与记录见
 > [agent-refactor.md](agent-refactor.md)、现架构见
-> [agent-grading.md](agent-grading.md)）。本文保留为决策时的原始评估。
+> [langgraph-grading.md](langgraph-grading.md)）。本文保留为决策时的原始评估。
 
 ---
 

@@ -14,6 +14,7 @@ from app.models import (  # noqa: E402, F401
     background_job,
     grading_assessment_receipt,
     grading_run,
+    grading_run_artifact,
     question,
     submission,
     submission_code_file,

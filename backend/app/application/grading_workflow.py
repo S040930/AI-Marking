@@ -315,12 +315,33 @@ def build_context_parts(
     )
 
 
+def iter_code_files(sub: Submission) -> list[dict[str, Any]]:
+    """把代码文件投影为结构化条目；artifact 与文本共用同一来源。
+
+    行号语义：``lines`` 是单个文件内容按行切分的结果，与证据校验的
+    ``source_line.line`` 完全一致，避免从拼接文本反推行号。
+    """
+    files: list[dict[str, Any]] = []
+    for code_file in sub.code_files:
+        text = code_file.source_text or ""
+        files.append(
+            {
+                "filename": code_file.original_filename,
+                "question_number": code_file.question_number,
+                "source_text": text,
+                "sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+                "lines": text.splitlines(),
+            }
+        )
+    return files
+
+
 def build_code_context(sub: Submission) -> str:
     source_parts: list[str] = []
-    for code_file in sub.code_files:
+    for code_file in iter_code_files(sub):
         source_parts.append(
-            f"[Q{code_file.question_number} {code_file.original_filename}]\n"
-            f"{code_file.source_text or ''}"
+            f"[Q{code_file['question_number']} {code_file['filename']}]\n"
+            f"{code_file['source_text']}"
         )
     return "\n\n".join(source_parts)
 
@@ -451,6 +472,32 @@ def validate_evidence_refs(sub: Submission, payload: GradingAssessmentRequest) -
         )
 
 
+def validate_assessment_payload(
+    sub: Submission,
+    payload: GradingAssessmentRequest,
+    resolved: ResolvedRubric,
+) -> None:
+    """纯预检：rubric 覆盖、单项满分、证据可定位；不写库。
+
+    ``save_agent_assessment`` 与图的 ``verify_prepare`` 共用本函数，
+    避免“预检通过、保存 422”的规则漂移。错误形态与保存路径一致
+    （``ValidationError.detail`` 可直接回给模型修正）。
+    """
+    items_by_id = {item["rubric_item_id"]: item for item in resolved.items}
+    seen: set[str] = set()
+    for detail in payload.details:
+        if detail.rubric_item_id not in items_by_id or detail.rubric_item_id in seen:
+            raise ValidationError("评分项必须逐项引用当前 rubric 且不能重复")
+        seen.add(detail.rubric_item_id)
+    if seen != set(items_by_id):
+        raise ValidationError("评分项未完整覆盖当前 rubric")
+    for detail in payload.details:
+        item = items_by_id[detail.rubric_item_id]
+        if detail.score > item["max_score"] + 1e-9:
+            raise ValidationError(f"{detail.rubric_item_id}: 单项得分不能超过该项满分")
+    validate_evidence_refs(sub, payload)
+
+
 def build_assessment_summary(sub: Submission) -> dict | None:
     if not sub.assessment_suggestion:
         return None
@@ -542,6 +589,9 @@ def save_agent_assessment(
         )
     if handle.context_hash != current_hash:
         raise ConflictError("评分上下文已变化，请重新读取 manifest")
+
+    # 与图预检共用同一套规则；随后保留原有写库前循环作为双保险。
+    validate_assessment_payload(sub, payload, resolved)
 
     # v12:rubric 来源/快照 ID/单项 criterion/max_score/总分全部由服务端推导,
     # agent 只提交逐项 rubric_item_id/score/comment/evidence,消灭抄写类错误。

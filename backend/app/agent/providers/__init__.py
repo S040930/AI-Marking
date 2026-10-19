@@ -11,6 +11,7 @@ from typing import Any
 import httpx
 
 from app.agent.provider import AgentProvider, AgentProviderError
+from app.agent.providers.chatgpt_sub import ChatGptSubProvider
 from app.agent.providers.openai_api import OpenAiApiProvider
 
 PROVIDER_OPENAI_API = "openai_api"
@@ -26,9 +27,12 @@ def create_provider(
     default_model: str | None = None,
     reasoning_effort: str | None = None,
     tokens: dict[str, Any] | None = None,
+    token_sink: Any | None = None,
+    token_loader: Any | None = None,
     http_client: httpx.AsyncClient | None = None,
+    session_id: str | None = None,
 ) -> AgentProvider:
-    """构造 provider;未知或未开放的通道抛 AgentProviderError。"""
+    """构造 provider;未知或未登录的通道抛 AgentProviderError。"""
     if name == PROVIDER_OPENAI_API:
         if not api_key:
             raise AgentProviderError(
@@ -42,10 +46,18 @@ def create_provider(
             http_client=http_client,
         )
     if name == PROVIDER_CHATGPT_SUB:
-        # 订阅轨由 spike(阶段 6)门控,通过后于阶段 7 实装
-        raise AgentProviderError(
-            kind="auth_required",
-            message="ChatGPT 订阅通道尚未开放",
+        if not tokens or not tokens.get("access_token"):
+            raise AgentProviderError(
+                kind="auth_required", message="尚未登录 ChatGPT 订阅"
+            )
+        return ChatGptSubProvider(
+            tokens=tokens,
+            default_model=default_model,
+            reasoning_effort=reasoning_effort,
+            http_client=http_client,
+            on_tokens_refreshed=token_sink,
+            load_tokens=token_loader,
+            session_id=session_id,
         )
     raise AgentProviderError(
         kind="invalid_request",

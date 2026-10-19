@@ -4,7 +4,7 @@
 - 通过部分唯一索引保证每份 submission 至多一个非终态 run;
 - 事件表按 (run_id, seq) 自增,SSE 以 seq 续读;回放后再由
   PostgreSQL NOTIFY 推送增量;
-- ``agent_state`` 持久化检查点续跑所需的完整对话与句柄。
+- 续跑状态由 LangGraph checkpointer 按 thread 承载,``agent_state`` 为遗留列。
 """
 
 from datetime import datetime
@@ -51,11 +51,16 @@ class GradingRun(Base):
     )
     # 模型通道与配置(desired;applied/pending 记录实际生效与排队)
     provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    # 架构版本：1 = LangGraph 图执行；迁移会把旧 run 终止，plan 拒绝非 1。
+    graph_version: Mapped[int] = mapped_column(
+        Integer, default=1, server_default="1", nullable=False
+    )
     model: Mapped[str | None] = mapped_column(String(128), nullable=True)
     reasoning_effort: Mapped[str | None] = mapped_column(String(64), nullable=True)
     applied_config: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     pending_config: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    # 检查点续跑状态:{items: [...], grading_handle, rubric_handle, round}
+    # 遗留列:图架构下续跑状态由 LangGraph checkpointer 承载,本列已不再写入
+    # (仅保留供旧数据读取,下一版迁移删除)
     agent_state: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     # 跨回合累计 usage
     usage: Mapped[dict | None] = mapped_column(JSON, nullable=True)
@@ -77,6 +82,11 @@ class GradingRun(Base):
     )
     checkpoint_expires_at: Mapped[datetime | None] = mapped_column(
         DateTime, nullable=True
+    )
+    # 检查点请求标识：教师答复会清空 checkpoint，但续跑仍需校验答复属于
+    # 哪一次提问；与 checkpoint 的生命周期分离。
+    checkpoint_request_id: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
     )
     # 教师答复:绑定 submission 的持久执行一致性确认
     teacher_verdict: Mapped[str | None] = mapped_column(String(16), nullable=True)

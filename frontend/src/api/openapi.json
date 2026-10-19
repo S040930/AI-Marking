@@ -1327,8 +1327,95 @@
         "title": "ProviderListResponse",
         "type": "object"
       },
+      "ProviderOAuthStartResponse": {
+        "properties": {
+          "authorize_url": {
+            "title": "Authorize Url",
+            "type": "string"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          }
+        },
+        "required": [
+          "authorize_url"
+        ],
+        "title": "ProviderOAuthStartResponse",
+        "type": "object"
+      },
+      "ProviderOAuthStatusResponse": {
+        "properties": {
+          "authorize_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authorize Url"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "status": {
+            "enum": [
+              "idle",
+              "pending",
+              "completed",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "ProviderOAuthStatusResponse",
+        "type": "object"
+      },
       "ProviderStatusOut": {
         "properties": {
+          "account_last4": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Last4"
+          },
           "available": {
             "default": true,
             "title": "Available",
@@ -1349,6 +1436,11 @@
             "title": "Default Model",
             "type": "string"
           },
+          "expires_at": {
+            "default": "",
+            "title": "Expires At",
+            "type": "string"
+          },
           "key_last4": {
             "anyOf": [
               {
@@ -1359,6 +1451,11 @@
               }
             ],
             "title": "Key Last4"
+          },
+          "plan": {
+            "default": "",
+            "title": "Plan",
+            "type": "string"
           },
           "reasoning_effort": {
             "default": "",
@@ -2792,6 +2889,74 @@
           }
         },
         "summary": "List Providers",
+        "tags": [
+          "agent",
+          "agent"
+        ]
+      }
+    },
+    "/api/agent/providers/chatgpt_sub/oauth/logout": {
+      "post": {
+        "operationId": "logout_chatgpt_api_agent_providers_chatgpt_sub_oauth_logout_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Logout Chatgpt",
+        "tags": [
+          "agent",
+          "agent"
+        ]
+      }
+    },
+    "/api/agent/providers/chatgpt_sub/oauth/start": {
+      "post": {
+        "description": "发起 PKCE 登录;返回需要浏览器打开的授权地址。",
+        "operationId": "start_chatgpt_login_api_agent_providers_chatgpt_sub_oauth_start_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderOAuthStartResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Start Chatgpt Login",
+        "tags": [
+          "agent",
+          "agent"
+        ]
+      }
+    },
+    "/api/agent/providers/chatgpt_sub/oauth/status": {
+      "get": {
+        "description": "轮询登录结果;完成时把令牌落库(只落一次)。",
+        "operationId": "chatgpt_login_status_api_agent_providers_chatgpt_sub_oauth_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderOAuthStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Chatgpt Login Status",
         "tags": [
           "agent",
           "agent"

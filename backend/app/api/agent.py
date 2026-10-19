@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from datetime import datetime, timezone
 
 import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
@@ -13,7 +14,8 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.agent import checkpoints as checkpoint_service
 from app.agent import run_store as run_repo
-from app.agent.providers import PROVIDER_NAMES
+from app.agent.provider import AgentProviderError
+from app.agent.providers import PROVIDER_NAMES, chatgpt_oauth, create_provider
 from app.agent.providers.openai_api import DEFAULT_BASE_URL
 from app.core.config import settings
 from app.db.session import get_db, get_session_factory
@@ -30,6 +32,8 @@ from app.schemas.agent import (
     ProviderConfigUpdateRequest,
     ProviderDefaultUpdateRequest,
     ProviderListResponse,
+    ProviderOAuthStartResponse,
+    ProviderOAuthStatusResponse,
     ProviderTestResponse,
 )
 from app.services.events import acquire_sse_slot
@@ -42,9 +46,13 @@ from app.services.provider_config import (
     PROVIDER_CHATGPT_SUB,
     PROVIDER_DEFAULT_KEY,
     PROVIDER_OPENAI_API,
+    chatgpt_tokens_usable,
+    clear_chatgpt_tokens,
     get_provider_config,
+    load_chatgpt_tokens,
     provider_default,
     provider_summary,
+    save_chatgpt_tokens,
     set_provider_config,
 )
 
@@ -98,10 +106,15 @@ def create_run(body: AgentRunCreateRequest, db: Session = Depends(get_db)) -> Ag
 
 
 def _require_provider_ready(db: Session, provider_name: str) -> None:
-    if provider_name == PROVIDER_CHATGPT_SUB:
-        raise HTTPException(status_code=409, detail="ChatGPT 订阅通道尚未开放")
     if provider_name not in PROVIDER_NAMES:
         raise HTTPException(status_code=422, detail=f"未知通道 {provider_name}")
+    if provider_name == PROVIDER_CHATGPT_SUB:
+        tokens = load_chatgpt_tokens(db)
+        if not tokens or not tokens.get("access_token"):
+            raise HTTPException(status_code=409, detail="尚未登录 ChatGPT 订阅")
+        if not chatgpt_tokens_usable(tokens):
+            raise HTTPException(status_code=409, detail="订阅登录已过期，请重新登录")
+        return
     config = get_provider_config(db)
     if not (config.get(OPENAI_API_KEY_KEY) or ""):
         raise HTTPException(status_code=409, detail="官方通道尚未配置 API key")
@@ -466,8 +479,32 @@ async def test_provider(
     if name not in PROVIDER_NAMES:
         raise HTTPException(status_code=404, detail=f"未知通道 {name}")
     if name == PROVIDER_CHATGPT_SUB:
+        tokens = load_chatgpt_tokens(db)
+        if not tokens or not tokens.get("access_token"):
+            return ProviderTestResponse(
+                name=name, status="needs_auth", detail="尚未登录 ChatGPT 订阅"
+            )
+        default_model = (
+            provider_summary(db)["providers"][name].get("default_model") or None
+        )
+        provider = create_provider(
+            PROVIDER_CHATGPT_SUB,
+            tokens=tokens,
+            default_model=default_model,
+            token_sink=lambda updated: save_chatgpt_tokens(db, updated),
+            token_loader=lambda: load_chatgpt_tokens(db),
+        )
+        try:
+            models = await provider.list_models()
+        except AgentProviderError as exc:
+            status = "needs_auth" if exc.kind == "auth_required" else "failed"
+            return ProviderTestResponse(
+                name=name, status=status, detail=exc.message[:300]
+            )
+        finally:
+            await provider.aclose()
         return ProviderTestResponse(
-            name=name, status="unsupported", detail="订阅通道尚未开放"
+            name=name, status="ready", models=[model.id for model in models][:50]
         )
     config = get_provider_config(db)
     api_key = config.get(OPENAI_API_KEY_KEY) or ""
@@ -508,3 +545,61 @@ async def test_provider(
     except (ValueError, AttributeError):
         models = []
     return ProviderTestResponse(name=name, status="ready", models=models)
+
+
+# ---------------------------------------------------------------------------
+# 订阅 OAuth 登录
+# ---------------------------------------------------------------------------
+
+
+def _iso_timestamp(epoch: float | None) -> str | None:
+    if not epoch:
+        return None
+    return datetime.fromtimestamp(epoch, tz=timezone.utc).isoformat(timespec="seconds")
+
+
+@router.post(
+    "/providers/chatgpt_sub/oauth/start",
+    response_model=ProviderOAuthStartResponse,
+)
+def start_chatgpt_login() -> ProviderOAuthStartResponse:
+    """发起 PKCE 登录;返回需要浏览器打开的授权地址。"""
+    try:
+        state = chatgpt_oauth.start_login()
+    except chatgpt_oauth.OAuthError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return ProviderOAuthStartResponse(
+        authorize_url=state.authorize_url or "",
+        expires_at=_iso_timestamp(state.expires_at),
+    )
+
+
+@router.get(
+    "/providers/chatgpt_sub/oauth/status",
+    response_model=ProviderOAuthStatusResponse,
+)
+def chatgpt_login_status(db: Session = Depends(get_db)) -> ProviderOAuthStatusResponse:
+    """轮询登录结果;完成时把令牌落库(只落一次)。"""
+    state = chatgpt_oauth.get_status()
+    tokens = chatgpt_oauth.consume_tokens()
+    if tokens is not None:
+        save_chatgpt_tokens(db, tokens)
+        logger.info("ChatGPT 订阅登录完成，令牌已保存")
+    return ProviderOAuthStatusResponse(
+        status=state.status,
+        detail=state.detail,
+        authorize_url=state.authorize_url,
+        expires_at=_iso_timestamp(state.expires_at),
+    )
+
+
+@router.post(
+    "/providers/chatgpt_sub/oauth/logout",
+    response_model=ProviderListResponse,
+)
+def logout_chatgpt(db: Session = Depends(get_db)) -> ProviderListResponse:
+    clear_chatgpt_tokens(db)
+    chatgpt_oauth.reset()
+    if provider_default(db) == PROVIDER_CHATGPT_SUB:
+        set_provider_config(db, {PROVIDER_DEFAULT_KEY: PROVIDER_OPENAI_API})
+    return ProviderListResponse(**provider_summary(db))

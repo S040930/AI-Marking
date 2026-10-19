@@ -101,6 +101,63 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agent/providers/chatgpt_sub/oauth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Logout Chatgpt */
+        post: operations["logout_chatgpt_api_agent_providers_chatgpt_sub_oauth_logout_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent/providers/chatgpt_sub/oauth/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Chatgpt Login
+         * @description 发起 PKCE 登录;返回需要浏览器打开的授权地址。
+         */
+        post: operations["start_chatgpt_login_api_agent_providers_chatgpt_sub_oauth_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent/providers/chatgpt_sub/oauth/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Chatgpt Login Status
+         * @description 轮询登录结果;完成时把令牌落库(只落一次)。
+         */
+        get: operations["chatgpt_login_status_api_agent_providers_chatgpt_sub_oauth_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agent/providers/default": {
         parameters: {
             query?: never;
@@ -1258,8 +1315,31 @@ export interface components {
                 [key: string]: components["schemas"]["ProviderStatusOut"];
             };
         };
+        /** ProviderOAuthStartResponse */
+        ProviderOAuthStartResponse: {
+            /** Authorize Url */
+            authorize_url: string;
+            /** Expires At */
+            expires_at?: string | null;
+        };
+        /** ProviderOAuthStatusResponse */
+        ProviderOAuthStatusResponse: {
+            /** Authorize Url */
+            authorize_url?: string | null;
+            /** Detail */
+            detail?: string | null;
+            /** Expires At */
+            expires_at?: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "idle" | "pending" | "completed" | "failed";
+        };
         /** ProviderStatusOut */
         ProviderStatusOut: {
+            /** Account Last4 */
+            account_last4?: string | null;
             /**
              * Available
              * @default true
@@ -1280,8 +1360,18 @@ export interface components {
              * @default
              */
             default_model: string;
+            /**
+             * Expires At
+             * @default
+             */
+            expires_at: string;
             /** Key Last4 */
             key_last4?: string | null;
+            /**
+             * Plan
+             * @default
+             */
+            plan: string;
             /**
              * Reasoning Effort
              * @default
@@ -1852,6 +1942,66 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProviderListResponse"];
+                };
+            };
+        };
+    };
+    logout_chatgpt_api_agent_providers_chatgpt_sub_oauth_logout_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderListResponse"];
+                };
+            };
+        };
+    };
+    start_chatgpt_login_api_agent_providers_chatgpt_sub_oauth_start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderOAuthStartResponse"];
+                };
+            };
+        };
+    };
+    chatgpt_login_status_api_agent_providers_chatgpt_sub_oauth_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderOAuthStatusResponse"];
                 };
             };
         };

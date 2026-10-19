@@ -144,6 +144,15 @@ if ! (
   exit 1
 fi
 
+info "正在初始化 LangGraph checkpointer..."
+if ! (
+  cd "$BACKEND_DIR"
+  "$PYTHON_BIN" scripts/setup_checkpointer.py
+); then
+  error "LangGraph checkpointer 初始化失败，请检查数据库连接与权限。"
+  exit 1
+fi
+
 info "正在启动后端：http://localhost:8000"
 (
   cd "$BACKEND_DIR"

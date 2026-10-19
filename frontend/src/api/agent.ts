@@ -53,7 +53,14 @@ export interface AgentRunDetail {
 export interface AgentRunEvent {
   seq: number;
   kind: string;
-  payload: { text?: string; title?: string; status?: string; [k: string]: unknown };
+  payload: {
+    text?: string;
+    title?: string;
+    status?: string;
+    /** 产出该事件的 agent:`supervisor` 或 `item:<rubric_item_id>` */
+    agent?: string;
+    [k: string]: unknown;
+  };
   created_at: string;
 }
 
@@ -64,11 +71,31 @@ export interface AgentProviderStatus {
   default_model: string;
   reasoning_effort: string;
   available: boolean;
+  /** 订阅通道:套餐类型(plus/pro/…) */
+  plan?: string;
+  /** 订阅通道:ChatGPT 账号后四位 */
+  account_last4?: string | null;
+  /** 订阅通道:access_token 过期时间(UTC ISO) */
+  expires_at?: string;
 }
 
 export interface AgentProviderList {
   provider_default: string;
   providers: Record<string, AgentProviderStatus>;
+}
+
+export type AgentOAuthStatus = 'idle' | 'pending' | 'completed' | 'failed';
+
+export interface AgentOAuthStartResult {
+  authorize_url: string;
+  expires_at: string | null;
+}
+
+export interface AgentOAuthStatusResult {
+  status: AgentOAuthStatus;
+  detail: string | null;
+  authorize_url: string | null;
+  expires_at: string | null;
 }
 
 export interface AgentProviderTestResult {
@@ -132,6 +159,79 @@ export function useTestProvider() {
       apiClient
         .post<AgentProviderTestResult>(`/agent/providers/${name}/test`)
         .then((r) => r.data),
+  });
+}
+
+/** 发起 ChatGPT 订阅登录(PKCE);成功后把返回的地址交给浏览器打开。 */
+export function useStartChatGptLogin() {
+  const queryClient = useQueryClient();
+  return useMutation<AgentOAuthStartResult, Error, void>({
+    mutationFn: () =>
+      apiClient
+        .post<AgentOAuthStartResult>('/agent/providers/chatgpt_sub/oauth/start')
+        .then((r) => r.data),
+    onSuccess: () => {
+      // 清掉上一次登录留下的 completed 缓存,否则轮询会立即误报成功
+      queryClient.setQueryData<AgentOAuthStatusResult>(
+        queryKeys.agent.chatgptOauth,
+        {
+          status: 'pending',
+          detail: null,
+          authorize_url: null,
+          expires_at: null,
+        },
+      );
+    },
+  });
+}
+
+/**
+ * 轮询订阅登录结果;pending 时每 1.5s 拉一次,完成/失败后停止。
+ * 完成时后端已把令牌落库,这里顺便刷新通道列表。
+ */
+export function useChatGptLoginStatus(enabled: boolean) {
+  const queryClient = useQueryClient();
+  const query = useQuery<AgentOAuthStatusResult>({
+    queryKey: queryKeys.agent.chatgptOauth,
+    queryFn: () =>
+      apiClient
+        .get<AgentOAuthStatusResult>('/agent/providers/chatgpt_sub/oauth/status')
+        .then((r) => r.data),
+    enabled,
+    retry: 0,
+    refetchInterval: (q) =>
+      q.state.data?.status === 'pending' ? 1500 : false,
+  });
+  const status = query.data?.status;
+  useEffect(() => {
+    if (status === 'completed' || status === 'failed') {
+      queryClient.invalidateQueries({ queryKey: queryKeys.agent.providers });
+    }
+  }, [status, queryClient]);
+  return query;
+}
+
+/** 退出 ChatGPT 订阅:清除令牌并把默认通道回落到官方 API。 */
+export function useLogoutChatGpt() {
+  const queryClient = useQueryClient();
+  return useMutation<AgentProviderList, Error, void>({
+    mutationFn: () =>
+      apiClient
+        .post<AgentProviderList>('/agent/providers/chatgpt_sub/oauth/logout')
+        .then((r) => r.data),
+    onSuccess: (data) => {
+      queryClient.setQueryData(queryKeys.agent.providers, data);
+      queryClient.setQueryData<AgentOAuthStatusResult>(
+        queryKeys.agent.chatgptOauth,
+        {
+          status: 'idle',
+          detail: null,
+          authorize_url: null,
+          expires_at: null,
+        },
+      );
+      queryClient.invalidateQueries({ queryKey: queryKeys.agent.all });
+    },
   });
 }
 
@@ -229,8 +329,11 @@ export function useReplyAgentCheckpoint(runId: number | undefined) {
 
 const TERMINAL_RUN: AgentRunStatus[] = ['completed', 'failed', 'cancelled'];
 
+/** 转录在内存中保留的最大事件数(超出丢弃最早的)。 */
+export const MAX_AGENT_EVENTS = 300;
+
 /**
- * SSE 订阅 run 事件流;返回最近事件(至多 keep 100 条)。
+ * SSE 订阅 run 事件流;返回最近事件(至多 {@link MAX_AGENT_EVENTS} 条)。
  * EventSource 自带断线重连,页面刷新后由服务端回放历史事件恢复。
  */
 export function useAgentRunEvents(
@@ -251,7 +354,9 @@ export function useAgentRunEvents(
         setEvents((prev) => {
           if (prev.length > 0 && prev[prev.length - 1].seq >= data.seq) return prev;
           const next = [...prev, data];
-          return next.length > 100 ? next.slice(next.length - 100) : next;
+          return next.length > MAX_AGENT_EVENTS
+            ? next.slice(next.length - MAX_AGENT_EVENTS)
+            : next;
         });
         // 状态可能有变:轻量刷新 run 详情
         queryClient.invalidateQueries({

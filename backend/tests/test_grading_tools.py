@@ -5,7 +5,6 @@ from __future__ import annotations
 import pytest
 from sqlalchemy.orm import sessionmaker
 
-from app.agent.tools import CheckpointRequested
 from app.agent.tools.grading import GradingToolContext, build_grading_tools
 from app.models.question import Question, QuestionStatus
 from app.models.submission import Submission, SubmissionStatus
@@ -260,21 +259,11 @@ def test_save_assessment_requires_open_first(grading_env):
     assert "评分句柄" in (result.error or "")
 
 
-def test_request_confirmation_raises_checkpoint(grading_env):
+def test_request_confirmation_is_no_longer_exposed(grading_env):
+    """教师确认已改为图结构节点；工具层不再暴露该写入口。"""
     ctx, _sub, _item = grading_env
     registry = build_grading_tools(ctx)
-    with pytest.raises(CheckpointRequested) as excinfo:
-        registry.execute(
-            "request_teacher_confirmation", {"message": "请确认一致性"}
-        )
-    assert excinfo.value.message == "请确认一致性"
-
-
-def test_request_confirmation_requires_message(grading_env):
-    ctx, _sub, _item = grading_env
-    registry = build_grading_tools(ctx)
-    result = registry.execute("request_teacher_confirmation", {"message": ""})
-    assert not result.ok
+    assert "request_teacher_confirmation" not in registry.tool_names()
 
 
 def test_confirm_visual_requires_code_submission(grading_env):

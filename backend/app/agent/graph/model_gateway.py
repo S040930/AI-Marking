@@ -1,35 +1,32 @@
-"""AgentEngine:进程内 tool-calling 循环。
+"""模型网关：图节点可调用的 tool-calling 循环。
 
-职责(与 runner 的分工):
-- engine:驱动单个 run 的模型回合——流式消费 provider、合并文本、
-  提取工具调用、执行工具、把结果回注、循环直到终态;
-- runner:持久化(事件落库/状态机/租约)与恢复,不在本模块。
+本模块承载单个 agent 分支的完整回合循环（原 ``AgentEngine`` 的职责内联于此）：
+流式消费 provider、合并文本、执行工具、回注 ``function_call_output``，
+直到终态。对外契约是 ``ModelGateway.run_tool_loop`` 与 ``LoopResult``。
 
-生命周期保证:
-- 取消:每 ``cancel_poll_seconds`` 轮询一次 ``should_cancel()``,
-  命中即以 ``cancelled`` 结局返回(pump 任务被取消,HTTP 流关闭);
-- 单回合超时 ``turn_timeout_seconds``(默认 900s);
-- 仅传输类错误重试(默认 2 次,退避 + retry_after);
-- ``max_rounds``(默认 40)防止工具调用死循环。
+生命周期保证（原 engine 语义逐条保留）：
+- 取消：每 ``cancel_poll_seconds`` 轮询 ``should_cancel()``；
+- 单回合超时 ``turn_timeout_seconds``（默认 900s）；
+- 仅传输类错误重试（默认 2 次，退避 + retry_after）；
+- ``max_rounds`` 防止工具调用死循环；
+- 工具异常/非法 JSON 回注为 ``function_call_output``，保证配对完整。
 """
 
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import inspect
 import json
 import logging
 from contextlib import suppress
-from typing import Any, AsyncIterator, Callable
+from dataclasses import dataclass, field
+from typing import Any, AsyncIterator, Callable, Literal
 
-from app.agent.events import (
-    TextDeltaBuffer,
-    tool_output_summary,
-)
+from app.agent.events import TextDeltaBuffer, tool_output_summary
 from app.agent.models import (
     ChatItem,
     EngineEvent,
-    EngineOutcome,
-    EngineStatus,
     TurnRequest,
     function_call_output,
 )
@@ -51,20 +48,40 @@ DEFAULT_CANCEL_POLL_SECONDS = 2.0
 DEFAULT_MAX_TRANSPORT_RETRIES = 2
 _SENTINEL = object()
 
+GatewayStatus = Literal[
+    "completed", "checkpoint", "cancelled", "incomplete", "failed"
+]
+
+EventSink = Callable[[EngineEvent], Any]
+
+
+def prompt_cache_key(run_id: int, instructions: str) -> str:
+    """官方通道的稳定缓存键；同一 run 的系统指令不变。"""
+    digest = hashlib.sha256(instructions.encode("utf-8")).hexdigest()[:12]
+    return f"{run_id}:{digest}"
+
 
 class TurnTimeoutError(Exception):
     """单回合超时。"""
 
 
-class _EngineCancelledError(Exception):
+class _GatewayCancelledError(Exception):
     """内部取消信号。"""
 
 
-EventSink = Callable[[EngineEvent], Any]
+@dataclass
+class LoopResult:
+    status: GatewayStatus
+    items: list[dict[str, Any]] = field(default_factory=list)
+    usage: dict[str, Any] = field(default_factory=dict)
+    rounds: int = 0
+    provider_state: dict[str, Any] = field(default_factory=dict)
+    checkpoint_message: str | None = None
+    error: str | None = None
 
 
-class AgentEngine:
-    """执行一次批量批改的完整 tool-calling 循环。"""
+class ModelGateway:
+    """单个 agent 分支的模型循环；每个分支独立实例、独立 provider_state。"""
 
     def __init__(
         self,
@@ -72,35 +89,70 @@ class AgentEngine:
         tools,
         *,
         instructions: str,
+        agent: str = "supervisor",
+        model: str | None = None,
+        reasoning_effort: str | None = None,
         max_rounds: int = DEFAULT_MAX_ROUNDS,
         turn_timeout_seconds: float = DEFAULT_TURN_TIMEOUT_SECONDS,
         cancel_poll_seconds: float = DEFAULT_CANCEL_POLL_SECONDS,
         max_transport_retries: int = DEFAULT_MAX_TRANSPORT_RETRIES,
-        should_cancel: Callable[[], bool] | None = None,
-        model: str | None = None,
-        reasoning_effort: str | None = None,
         max_output_tokens: int | None = None,
+        should_cancel: Callable[[], bool] | None = None,
         config_getter: Callable[[], tuple[str | None, str | None]] | None = None,
+        cache_key: str | None = None,
         sleep: Callable[[float], Any] = asyncio.sleep,
     ) -> None:
+        self.agent = agent
         self._provider = provider
         self._tools = tools
         self._instructions = instructions
+        self._model = model
+        self._reasoning_effort = reasoning_effort
         self._max_rounds = max_rounds
         self._turn_timeout = turn_timeout_seconds
         self._cancel_poll = max(0.05, cancel_poll_seconds)
         self._max_retries = max(0, max_transport_retries)
-        self._should_cancel = should_cancel
-        self._model = model
-        self._reasoning_effort = reasoning_effort
         self._max_output_tokens = max_output_tokens
+        self._should_cancel = should_cancel
         self._config_getter = config_getter
+        self._prompt_cache_key = cache_key
         self._sleep = sleep
 
-    async def run(self, items: list[ChatItem], emit: EventSink) -> EngineOutcome:
-        """从 ``items`` 出发执行循环;``emit`` 可为同步或异步回调。"""
+    async def run_tool_loop(
+        self,
+        items: list[dict[str, Any]],
+        emit: EventSink,
+        *,
+        provider_state: dict[str, Any] | None = None,
+    ) -> LoopResult:
+        """从 ``items`` 出发执行循环；事件自动带上 ``agent`` 标签。
+
+        ``provider_state`` 是通道私有的续会话状态（如订阅端 turn-state），
+        首回合原样下发，每回合由 ``ProviderTurnCompleted`` 覆盖。
+        """
+        tagged = self._tagged_emit(emit)
+        self._provider_state: dict[str, Any] = dict(provider_state or {})
+        result = await self._run_impl(list(items), tagged)
+        result.provider_state = dict(self._provider_state)
+        return result
+
+    def _tagged_emit(self, emit: EventSink) -> EventSink:
+        agent = self.agent
+
+        async def emit_with_agent(event: EngineEvent) -> None:
+            payload = dict(event.payload)
+            payload.setdefault("agent", agent)
+            result = emit(EngineEvent(kind=event.kind, payload=payload))
+            if inspect.isawaitable(result):
+                await result
+
+        return emit_with_agent
+
+    async def _run_impl(
+        self, items: list[ChatItem], emit: EventSink
+    ) -> LoopResult:
         self._buffer = TextDeltaBuffer()
-        # 已在流式阶段发过 tool_started 的 call_id;执行阶段据此补发缺省事件
+        # 已在流式阶段发过 tool_started 的 call_id；执行阶段据此补发缺省事件
         self._emitted_starts: set[str] = set()
         total_usage: dict[str, Any] = {}
         history: list[ChatItem] = list(items)
@@ -117,15 +169,17 @@ class AgentEngine:
             if merged:
                 await _emit("message_delta", {"text": merged})
 
-        outcome: EngineOutcome | None = None
+        outcome: LoopResult | None = None
         try:
             for round_index in range(1, self._max_rounds + 1):
                 rounds = round_index
                 if self._should_cancel and self._should_cancel():
-                    outcome = EngineOutcome(EngineStatus.cancelled)
+                    outcome = LoopResult("cancelled")
                     break
                 turn = await self._run_turn(history, _emit, _flush_text)
                 await _flush_text()
+                if turn.provider_state:
+                    self._provider_state = dict(turn.provider_state)
                 usage = turn.usage or {}
                 if usage:
                     _merge_usage(total_usage, usage)
@@ -145,8 +199,8 @@ class AgentEngine:
                         "turn_completed",
                         {"stop_reason": turn.stop_reason, "round": round_index},
                     )
-                    outcome = EngineOutcome(
-                        EngineStatus.incomplete,
+                    outcome = LoopResult(
+                        "incomplete",
                         items=history,
                         usage=total_usage,
                         rounds=rounds,
@@ -155,7 +209,7 @@ class AgentEngine:
                 terminal = await self._execute_tool_calls(
                     tool_calls, history, _emit, _flush_text
                 )
-                if isinstance(terminal, EngineOutcome):
+                if isinstance(terminal, LoopResult):
                     terminal.items = history
                     terminal.usage = total_usage
                     terminal.rounds = rounds
@@ -166,35 +220,35 @@ class AgentEngine:
                         "turn_completed",
                         {"stop_reason": "tool_terminal", "round": round_index},
                     )
-                    outcome = EngineOutcome(
-                        EngineStatus.completed,
+                    outcome = LoopResult(
+                        "completed",
                         items=history,
                         usage=total_usage,
                         rounds=rounds,
                     )
                     break
-                # 无终态工具:把结果回注后进入下一回合
+                # 无终态工具：把结果回注后进入下一回合
             if outcome is None:
                 await _emit(
                     "error", {"message": f"达到最大回合数 {self._max_rounds},批改未完成"}
                 )
-                outcome = EngineOutcome(
-                    EngineStatus.failed,
+                outcome = LoopResult(
+                    "failed",
                     error=f"达到最大回合数 {self._max_rounds},批改未完成",
                     items=history,
                     usage=total_usage,
                     rounds=rounds,
                 )
             return outcome
-        except _EngineCancelledError:
+        except _GatewayCancelledError:
             await _flush_text()
-            return EngineOutcome(
-                EngineStatus.cancelled, items=history, usage=total_usage, rounds=rounds
+            return LoopResult(
+                "cancelled", items=history, usage=total_usage, rounds=rounds
             )
         except TurnTimeoutError as exc:
-            await self._emit("error", {"message": str(exc)})
-            return EngineOutcome(
-                EngineStatus.failed,
+            await _emit("error", {"message": str(exc)})
+            return LoopResult(
+                "failed",
                 error=str(exc),
                 items=history,
                 usage=total_usage,
@@ -202,18 +256,18 @@ class AgentEngine:
             )
         except AgentProviderError as exc:
             await _emit("error", {"message": str(exc), "kind": exc.kind})
-            return EngineOutcome(
-                EngineStatus.failed,
+            return LoopResult(
+                "failed",
                 error=str(exc),
                 items=history,
                 usage=total_usage,
                 rounds=rounds,
             )
-        except Exception as exc:  # noqa: BLE001 - 引擎兜底,转 failed 结局
-            logger.exception("agent engine 未预期失败")
+        except Exception as exc:  # noqa: BLE001 - 网关兜底,转 failed 结局
+            logger.exception("model gateway 未预期失败")
             await _emit("error", {"message": f"{type(exc).__name__}: {exc}"})
-            return EngineOutcome(
-                EngineStatus.failed,
+            return LoopResult(
+                "failed",
                 error=f"{type(exc).__name__}: {exc}",
                 items=history,
                 usage=total_usage,
@@ -224,8 +278,10 @@ class AgentEngine:
     # 单个回合
     # ------------------------------------------------------------------
 
-    async def _run_turn(self, history, emit, flush_text) -> ProviderTurnCompleted:
-        """执行一次回合,含传输错误重试。"""
+    async def _run_turn(
+        self, history, emit, flush_text
+    ) -> ProviderTurnCompleted:
+        """执行一次回合，含传输错误重试。"""
         attempt = 0
         while True:
             turn_result: ProviderTurnCompleted | None = None
@@ -268,13 +324,13 @@ class AgentEngine:
                 )
                 await self._sleep(min(delay, 30.0))
                 if started:
-                    # 已向 UI 产出过工具事件:重试整回合,标注可能出现重复文本
+                    # 已向 UI 产出过工具事件：重试整回合，标注可能出现重复文本
                     await emit("notice", {"text": "该回合将完整重放"})
 
     async def _consume_turn(
         self, history: list[ChatItem]
     ) -> AsyncIterator[ProviderEvent]:
-        """把 provider 的流包装为可控队列,支持取消轮询与回合超时。"""
+        """把 provider 的流包装为可控队列，支持取消轮询与回合超时。"""
         model, effort = self._model, self._reasoning_effort
         if self._config_getter is not None:
             resolved = self._config_getter()
@@ -287,6 +343,8 @@ class AgentEngine:
             model=model,
             reasoning_effort=effort,
             max_output_tokens=self._max_output_tokens,
+            prompt_cache_key=self._prompt_cache_key,
+            provider_state=dict(self._provider_state) or None,
         )
         queue: asyncio.Queue[Any] = asyncio.Queue()
 
@@ -318,8 +376,8 @@ class AgentEngine:
                     item = await asyncio.wait_for(queue.get(), timeout=wait_for)
                 except asyncio.TimeoutError:
                     if self._should_cancel and self._should_cancel():
-                        raise _EngineCancelledError() from None
-                    # tick:窗口满则冲刷文本
+                        raise _GatewayCancelledError() from None
+                    # tick：窗口满则冲刷文本
                     if self._buffer.should_flush():
                         merged = self._buffer.flush()
                         if merged:
@@ -347,10 +405,10 @@ class AgentEngine:
     ):
         """执行本回合全部工具调用。
 
-        返回值:
-        - ``EngineOutcome``:终态(检查点/取消);
-        - ``"saved"``:save_assessment 成功,引擎应结束为 completed;
-        - ``None``:继续下一回合。
+        返回值：
+        - ``LoopResult``：终态（检查点/取消）；
+        - ``"saved"``：save_assessment 成功，循环应结束为 completed；
+        - ``None``：继续下一回合。
         """
         from app.agent.tools import CheckpointRequested
 
@@ -359,7 +417,7 @@ class AgentEngine:
             name = str(call.get("name") or "")
             call_id = str(call.get("call_id") or "")
             if call_id not in self._emitted_starts:
-                # provider 未在流式阶段上报时补发,保证 started/finished 成对
+                # provider 未在流式阶段上报时补发，保证 started/finished 成对
                 self._emitted_starts.add(call_id)
                 await emit("tool_started", {"call_id": call_id, "name": name})
             raw_arguments = call.get("arguments")
@@ -389,10 +447,19 @@ class AgentEngine:
                     "checkpoint_requested",
                     {"call_id": call_id, "name": name, "message": exc.message},
                 )
-                return EngineOutcome(
-                    EngineStatus.checkpoint, checkpoint_message=exc.message
+                # 必须给这次 function_call 配一条 output，否则续跑时历史不完整：
+                # 订阅端会以 "No tool output found for function call" 拒绝整段 input。
+                history.append(
+                    function_call_output(
+                        call_id,
+                        {
+                            "status": "pending_teacher_confirmation",
+                            "message": exc.message,
+                        },
+                    )
                 )
-            except _EngineCancelledError:
+                return LoopResult("checkpoint", checkpoint_message=exc.message)
+            except _GatewayCancelledError:
                 raise
             if not result.ok:
                 summary = (result.error or "工具执行失败")[:400]

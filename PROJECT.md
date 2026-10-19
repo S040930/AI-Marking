@@ -2,7 +2,7 @@
 
 ## 项目简介
 
-面向高校作业场景的智能批改平台。教师在网页题目库上传题目 PDF，在作业上传页提交学生报告 PDF 与代码文件（或含全部文件的 ZIP）；系统通过 OCR 提取文本，**后端内嵌自研 agent（进程内 tool-calling 循环）直接调用大模型完成评分**并保存可审计的建议，最终由教师在网页人工确认最终成绩。评分模型走官方 OpenAI API 通道（Responses API），ChatGPT 订阅通道为 spike 门控的占位能力。
+面向高校作业场景的智能批改平台。教师在网页题目库上传题目 PDF，在作业上传页提交学生报告 PDF 与代码文件（或含全部文件的 ZIP）；系统通过 OCR 提取文本，**后端内嵌自研 agent（进程内 tool-calling 循环）直接调用大模型完成评分**并保存可审计的建议，最终由教师在网页人工确认最终成绩。评分模型双通道：官方 OpenAI API（Responses API）与 ChatGPT 订阅（OAuth 登录，使用订阅额度）。
 
 ## 技术栈
 
@@ -64,7 +64,7 @@ PostgreSQL
 
 - **题目域**：题目 PDF 上传（专门的批量上传页）、题目 OCR、题目复用、替换与删除。
 - **批改域**：网页上传学生作业、失败原记录重试、作业 OCR、`awaiting_grading` 等待批改、教师发起 AI 批改、人工复核与最终确认。
-- **模型通道域**：官方 OpenAI API 通道配置（密钥只写不读）、连接测试与默认通道；ChatGPT 订阅通道占位未开放。
+- **模型通道域**：官方 OpenAI API 通道配置（密钥只写不读）、连接测试与默认通道；ChatGPT 订阅通道通过 OAuth 登录授权（令牌自动刷新，可退出）。
 - **配置域**：OCR 与 rubric 配置。
 - **运维域**：运行摘要（`/api/admin/runtime`）与死信任务管理（`/api/admin/dead-jobs`），均受访问令牌保护。
 - **文件生命周期**：题目和学生 PDF 按内容哈希共享；定期清理仅删除超过宽限期且无数据库引用的孤儿文件。PDF 预览接口同时支持 `GET` 与 `HEAD`。
@@ -140,7 +140,7 @@ OCR 在内部对超时 / 限流 / 5xx 进行最多 3 次短暂重试；网络重
 | 主题 | 路径 | 说明 |
 |---|---|---|
 | 模块化单体架构 | [docs/architecture/modular-monolith.md](docs/architecture/modular-monolith.md) | 分层边界、事务与锁、运行模型、SSE、契约及资源边界 |
-| 内嵌批改 agent | [docs/architecture/agent-grading.md](docs/architecture/agent-grading.md) | run 状态机、5 工具契约、检查点跨夜、通道配置、API 一览与恢复规则 |
+| 内嵌批改 agent | [docs/architecture/langgraph-grading.md](docs/architecture/langgraph-grading.md) | 图拓扑、工具契约、检查点跨夜、通道配置、API 一览与恢复规则 |
 | agent 改造计划与记录 | [docs/architecture/agent-refactor.md](docs/architecture/agent-refactor.md) | 阶段 0-7 计划、默认决策、迁移与验收记录 |
 | 历史架构升级 P0-P5 | [docs/architecture/upgrade-p0-p5.md](docs/architecture/upgrade-p0-p5.md) | 早期演进记录；当前决策以模块化单体文档为准 |
 | 协同评分页设计 | [docs/frontend/review-page.md](docs/frontend/review-page.md) | 两栏布局、AgentRunPanel、表单式人工改分、finalize 确认流程 |
@@ -163,7 +163,7 @@ OCR 在内部对超时 / 限流 / 5xx 进行最多 3 次短暂重试；网络重
 | 改动域 | 工作目录与现有入口 | 成功信号 | 停止边界 |
 |---|---|---|---|
 | 后端 `backend/` | `ruff check backend`；后端跨模块改动运行 `cd backend && pytest -q` | 命令退出码为 0；pytest 输出 `passed` | Ruff 或任一相关 pytest 失败时停止，修复后从最终改动重新运行对应命令 |
-| 批改 agent `backend/app/agent/**` | `cd backend && pytest -q tests/test_agent_engine.py tests/test_grading_tools.py tests/test_agent_runner.py tests/test_prompt_policy_sync.py` | 全部通过（含提示词/工具契约同步测试） | 任一失败时停止；提示词契约失败必须同步 `prompts/grading.md` 与工具注册表 |
+| 批改 agent `backend/app/agent/**` | `cd backend && pytest -q tests/test_agent_runner.py tests/test_grading_tools.py tests/test_model_gateway.py tests/test_prompt_policy_sync.py` | 全部通过（含图/网关/提示词-工具契约同步测试） | 任一失败时停止；提示词契约失败必须同步 `app/agent/prompts/*.md` 与节点白名单（`graph/tool_guard.py`） |
 | 前端 `frontend/` | `cd frontend && npm run lint`；组件/交互改动追加 `npm run test:run`；构建或路由改动追加 `npm run build` | 各命令退出码为 0；build 完成且无 TypeScript/Vite 错误 | 任一 lint、test 或 build 失败时停止，不以 dev server 或人工点选结果替代 |
 | 数据库迁移 `backend/` | `cd backend && .venv/bin/alembic upgrade head`，随后 `.venv/bin/alembic current` | upgrade 退出码为 0；current 能输出当前迁移版本 | 数据库不可连接、迁移失败或版本未更新时停止，不继续运行依赖新 schema 的服务检查 |
 | API 契约变更 | `cd backend && PYTHONPATH=. .venv/bin/python scripts/export_openapi.py ../frontend/src/api/openapi.json` → `cd frontend && npm run api:generate && npm run api:check` | `api:check` 退出码为 0（生成物与提交一致） | 契约漂移或生成失败时停止 |

@@ -85,6 +85,8 @@ class ProviderTurnCompleted(ProviderEvent):
     stop_reason: str
     response_items: list[dict[str, Any]] = field(default_factory=list)
     usage: dict[str, Any] | None = None
+    # 通道私有的续会话状态(订阅端为 {"turn_state": ...}),由引擎带回下一回合
+    provider_state: dict[str, Any] | None = None
 
 
 class AgentProvider(Protocol):

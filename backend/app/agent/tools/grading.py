@@ -21,7 +21,7 @@ from typing import Any
 from sqlalchemy.orm import sessionmaker
 
 from app.agent.models import ToolResult, ToolSpec
-from app.agent.tools import CheckpointRequested, ToolRegistry
+from app.agent.tools import ToolRegistry
 from app.application import grading_workflow as workflow
 from app.models.submission import Submission
 from app.schemas.grading import (
@@ -35,7 +35,6 @@ TOOL_OPEN_PACKAGE = "open_grading_package"
 TOOL_SAVE_RUBRIC = "save_question_rubric"
 TOOL_CONFIRM_VISUAL = "confirm_visual_review"
 TOOL_SAVE_ASSESSMENT = "save_assessment"
-TOOL_REQUEST_CONFIRMATION = "request_teacher_confirmation"
 
 # uuid5 命名空间:同 run 内同 payload 生成同一 request_id(幂等重试)。
 _REQUEST_ID_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_URL, "ai-marking/agent/request-id")
@@ -43,7 +42,7 @@ _REQUEST_ID_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_URL, "ai-marking/agent/request
 
 @dataclass
 class GradingToolContext:
-    """单次 run 的工具运行时上下文(可序列化到 ``agent_state``)。"""
+    """单次 run 的工具运行时上下文(句柄随图状态经 checkpointer 持久化)。"""
 
     session_factory: sessionmaker
     run_id: int
@@ -51,6 +50,10 @@ class GradingToolContext:
     grading_handle: str | None = None
     rubric_handle: str | None = None
     client: str = "agent"
+    # 图节点的写权限闸门：只有对应 supervisor 节点为 True。
+    allow_write: bool = True
+    # P4 起由服务端组装 details；P2/P3 为 None 时保持旧入参。
+    assessment_draft: dict[str, Any] | None = None
     _extra: dict[str, Any] = field(default_factory=dict)
 
     def export_state(self) -> dict[str, Any]:
@@ -73,15 +76,19 @@ def build_grading_tools(ctx: GradingToolContext) -> ToolRegistry:
     registry.register(_SAVE_RUBRIC_SPEC, lambda args: _save_rubric(ctx, args))
     registry.register(_CONFIRM_VISUAL_SPEC, lambda args: _confirm_visual(ctx, args))
     registry.register(_SAVE_ASSESSMENT_SPEC, lambda args: _save_assessment(ctx, args))
-    registry.register(
-        _REQUEST_CONFIRMATION_SPEC, lambda args: _request_confirmation(ctx, args)
-    )
     return registry
 
 
 # ---------------------------------------------------------------------------
 # 工具实现
 # ---------------------------------------------------------------------------
+
+
+def _write_denied(tool_name: str) -> ToolResult:
+    return ToolResult(
+        ok=False,
+        error=f"{tool_name} 只允许由主管节点调用；当前节点没有写入权限",
+    )
 
 
 def _open_package(ctx: GradingToolContext, args: dict[str, Any]) -> ToolResult:
@@ -101,6 +108,8 @@ def _open_package(ctx: GradingToolContext, args: dict[str, Any]) -> ToolResult:
 
 
 def _save_rubric(ctx: GradingToolContext, args: dict[str, Any]) -> ToolResult:
+    if not ctx.allow_write:
+        return _write_denied(TOOL_SAVE_RUBRIC)
     if not ctx.rubric_handle:
         return ToolResult(
             ok=False,
@@ -141,6 +150,8 @@ def _save_rubric(ctx: GradingToolContext, args: dict[str, Any]) -> ToolResult:
 
 
 def _confirm_visual(ctx: GradingToolContext, args: dict[str, Any]) -> ToolResult:
+    if not ctx.allow_write:
+        return _write_denied(TOOL_CONFIRM_VISUAL)
     if not ctx.grading_handle:
         return ToolResult(
             ok=False, error="尚未获得评分句柄:请先调用 open_grading_package 读完评分包"
@@ -169,6 +180,8 @@ def _confirm_visual(ctx: GradingToolContext, args: dict[str, Any]) -> ToolResult
 
 
 def _save_assessment(ctx: GradingToolContext, args: dict[str, Any]) -> ToolResult:
+    if not ctx.allow_write:
+        return _write_denied(TOOL_SAVE_ASSESSMENT)
     if not ctx.grading_handle:
         return ToolResult(
             ok=False,
@@ -177,16 +190,31 @@ def _save_assessment(ctx: GradingToolContext, args: dict[str, Any]) -> ToolResul
                 " context_complete=true 后再保存"
             ),
         )
-    raw = args.get("assessment")
+    raw = ctx.assessment_draft
+    if raw is not None:
+        # 服务端已从 item_results 组装 details；主管只补整体反馈与置信度。
+        feedback = str(args.get("feedback") or "").strip()
+        if not feedback:
+            return ToolResult(ok=False, error="feedback 不能为空")
+        raw = {
+            **raw,
+            "feedback": feedback,
+            "confidence": args.get("confidence", raw.get("confidence", 0)),
+        }
+    else:
+        raw = args.get("assessment")
     if not isinstance(raw, dict):
         return ToolResult(ok=False, error="assessment 必须是对象")
     if "request_id" in raw:
         return ToolResult(
             ok=False, error="request_id 由服务端生成,请不要提交"
         )
-    payload = GradingAssessmentRequest.model_validate(
-        {**raw, "request_id": str(uuid.UUID(int=0))}
-    )
+    try:
+        payload = GradingAssessmentRequest.model_validate(
+            {**raw, "request_id": str(uuid.UUID(int=0))}
+        )
+    except ValueError as exc:
+        return ToolResult(ok=False, error=f"评分明细格式错误: {exc}")
     payload_hash = workflow.assessment_payload_hash(payload)
     request_id = uuid.uuid5(
         _REQUEST_ID_NAMESPACE, f"{ctx.run_id}:{payload_hash}"
@@ -203,14 +231,6 @@ def _save_assessment(ctx: GradingToolContext, args: dict[str, Any]) -> ToolResul
             ),
         )
     return ToolResult(ok=True, output=response.model_dump(mode="json"))
-
-
-def _request_confirmation(ctx: GradingToolContext, args: dict[str, Any]) -> ToolResult:
-    message = str(args.get("message") or "").strip()
-    if not message:
-        return ToolResult(ok=False, error="message 不能为空")
-    # 控制流信号:由 engine 捕获,run 驻留为 waiting_for_teacher
-    raise CheckpointRequested(message)
 
 
 def _iso(value: datetime | None) -> str | None:
@@ -275,15 +295,16 @@ _SAVE_RUBRIC_SPEC = ToolSpec(
         "required": ["status"],
         "additionalProperties": False,
     },
+    writes=True,
 )
 
 _CONFIRM_VISUAL_SPEC = ToolSpec(
     name=TOOL_CONFIRM_VISUAL,
     description=(
         "记录教师对「本地代码运行表现与报告描述是否一致」的核验结论。仅含代码"
-        "作业需要,且必须先通过 request_teacher_confirmation 得到教师答复后才能"
-        "调用。verdict=consistent 表示已检查且一致;verdict=mismatch 时必须附"
-        "note 说明差异。答复为未检查或含糊时不得调用本工具,也不得评分保存。"
+        "作业需要，且必须先由教师在图中的检查点答复后才能调用。"
+        "verdict=consistent 表示已检查且一致;verdict=mismatch 时必须附"
+        "note 说明差异。答复为未检查或含糊时不得调用本工具，也不得评分保存。"
     ),
     parameters={
         "type": "object",
@@ -297,21 +318,25 @@ _CONFIRM_VISUAL_SPEC = ToolSpec(
         "required": ["verdict"],
         "additionalProperties": False,
     },
+    writes=True,
 )
 
 _SAVE_ASSESSMENT_SPEC = ToolSpec(
     name=TOOL_SAVE_ASSESSMENT,
     description=(
-        "保存评分建议。逐项提交 rubric_item_id/score/comment/evidence_refs/"
-        "evidence_status 与 confidence/feedback;criterion/max_score/总分由"
-        "服务端推导,提交会被拒绝。得分大于 0 的明细必须提供可定位证据"
-        "(代码用 source_line,报告用 report_quote,格式见评分包 evidence_format);"
-        "内容确实不存在时用 evidence_status=not_found 记 0 分且不引用证据。"
-        "校验失败会返回可修正的 error,按其修正后重试。保存成功即完成本次批改。"
+        "保存评分建议。P4 起 details 由服务端按 item_results 组装，主管只需"
+        "提交整体 feedback 与 confidence；旧版 assessment 对象仍兼容。"
+        "criterion/max_score/总分/request_id 由服务端推导，提交会被拒绝。"
+        "校验失败会返回可修正的 error，按其修正后重试。保存成功即完成本次批改。"
     ),
     parameters={
         "type": "object",
         "properties": {
+            "feedback": {
+                "type": "string",
+                "description": "面向学生的整体反馈，不能为空",
+            },
+            "confidence": {"type": "number", "minimum": 0, "maximum": 1},
             "assessment": {
                 "type": "object",
                 "properties": {
@@ -341,29 +366,9 @@ _SAVE_ASSESSMENT_SPEC = ToolSpec(
                 },
                 "required": ["feedback", "details"],
                 "additionalProperties": False,
-            }
+            },
         },
-        "required": ["assessment"],
         "additionalProperties": False,
     },
-)
-
-_REQUEST_CONFIRMATION_SPEC = ToolSpec(
-    name=TOOL_REQUEST_CONFIRMATION,
-    description=(
-        "暂停本轮批改,向教师发起检查点提问并等待答复。含代码作业在评分前"
-        "必须调用本工具确认「本地运行表现与报告描述是否一致」;教师可在本地"
-        "运行学生代码后确认,或直接确认。本轮暂停是预期行为,答复后会自动续跑。"
-    ),
-    parameters={
-        "type": "object",
-        "properties": {
-            "message": {
-                "type": "string",
-                "description": "向教师展示的问题,要求答复一致性结论(一致/不一致+说明)",
-            }
-        },
-        "required": ["message"],
-        "additionalProperties": False,
-    },
+    writes=True,
 )
