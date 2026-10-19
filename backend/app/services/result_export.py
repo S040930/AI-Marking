@@ -168,7 +168,8 @@ def _criterion_key(item: dict[str, Any], name: str, max_score: float) -> str:
 def _rubric_snapshot_id(suggestion: object) -> str:
     if not isinstance(suggestion, dict):
         return ""
-    metadata = suggestion.get("mcp_metadata")
+    # 兼容读:新数据 agent_metadata,旧数据(v12 及更早)为 mcp_metadata
+    metadata = suggestion.get("agent_metadata") or suggestion.get("mcp_metadata")
     if not isinstance(metadata, dict):
         return ""
     value = metadata.get("rubric_snapshot_id")

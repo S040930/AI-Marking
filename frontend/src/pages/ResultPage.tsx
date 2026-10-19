@@ -211,12 +211,12 @@ export default function ResultPage() {
         </CardContent>
       </Card>
 
-      {data.assessment_suggestion?.mcp_metadata && (
+      {data.assessment_suggestion?.agent_metadata && (
         <Card className="elevated-card overflow-hidden">
           <CardHeader className="pb-4">
             <CardTitle className="flex items-center gap-2 text-base">
               <ShieldCheck className="size-5 text-primary" />
-              {t('MCP 评分来源')}
+              {t('评分来源')}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
@@ -231,11 +231,11 @@ export default function ResultPage() {
                 </span>
               )}
             </div>
-            {data.assessment_suggestion.mcp_metadata.client && (
+            {data.assessment_suggestion.agent_metadata.client && (
               <p className="text-muted-foreground">
-                {t('评分客户端：')}{data.assessment_suggestion.mcp_metadata.client}
-                {data.assessment_suggestion.mcp_metadata.generated_at
-                  ? ` · ${dayjs(data.assessment_suggestion.mcp_metadata.generated_at).format('YYYY-MM-DD HH:mm:ss')}`
+                {t('评分通道：')}{data.assessment_suggestion.agent_metadata.client}
+                {data.assessment_suggestion.agent_metadata.generated_at
+                  ? ` · ${dayjs(data.assessment_suggestion.agent_metadata.generated_at).format('YYYY-MM-DD HH:mm:ss')}`
                   : ''}
               </p>
             )}

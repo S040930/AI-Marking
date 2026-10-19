@@ -1,7 +1,7 @@
 """Submission 路由:上传 PDF、列表、详情。
 
-上传时在同一事务中创建持久化任务，由独立 worker 执行 OCR → awaiting_mcp，
-评分由 MCP 客户端完成，教师在网页确认最终成绩。
+上传时在同一事务中创建持久化任务，由独立 worker 执行 OCR → awaiting_grading，
+评分由内嵌批改 agent 完成，教师在网页确认最终成绩。
 """
 
 import logging
@@ -118,8 +118,8 @@ async def create_submission(
 
     ZIP 由后端解包自动分类:恰好一份报告 PDF、``q<n>.<ext>`` 命名的代码、
     其余为数据集(写入 ``submission_code_input_files``,批改工作区会物化)。
-    收敛为 MCP-only 后固定使用外部编程助手评分模式：上传后只做 OCR，
-    进入 ``awaiting_mcp``，由 MCP 客户端评分。
+    固定使用 agent 评分模式：上传后只做 OCR，
+    进入 ``awaiting_grading``，由内嵌批改 agent 评分。
     """
     upload_kind = _sniff_upload_kind(file)
     if upload_kind == "zip":
@@ -547,7 +547,7 @@ def get_submission_pdf(
     if sub is None:
         raise HTTPException(status_code=404, detail="提交记录不存在")
     if sub.status not in (
-        SubmissionStatus.awaiting_mcp,
+        SubmissionStatus.awaiting_grading,
         SubmissionStatus.ready_for_review,
         SubmissionStatus.reviewed,
         SubmissionStatus.failed,
@@ -598,6 +598,7 @@ def finalize_submission(
     return finalize_submission_use_case(
         db,
         submission_id,
+        expected_revision=payload.expected_revision,
         score=payload.score,
         max_score=payload.max_score,
         feedback=payload.feedback,

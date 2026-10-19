@@ -13,7 +13,7 @@ export interface AiSuggestion {
   feedback: string;
   details: AiSuggestionDetail[];
   confidence: number;
-  mcp_metadata?: components['schemas']['McpMetadataOut'];
+  agent_metadata?: components['schemas']['GradingMetadataOut'];
 }
 
 export type AssessmentReview = components['schemas']['AssessmentReviewOut'];
@@ -86,9 +86,8 @@ export type FinalizePayload = components['schemas']['FinalizeRequest'];
 
 export type BatchDeleteResponse = components['schemas']['BatchDeleteResponse'];
 
-// 终态判断：awaiting_mcp 仍需要等待 MCP 客户端保存建议，不能停止状态刷新。
+// 终态才停止观察；ready_for_review 仍允许更新评分建议和独立复核。
 const TERMINAL_STATUSES: SubmissionStatus[] = [
-  'ready_for_review',
   'reviewed',
   'failed',
 ];
@@ -98,13 +97,18 @@ export function isTerminal(status: SubmissionStatus): boolean {
 }
 
 export function isProcessing(status: SubmissionStatus): boolean {
-  return !isTerminal(status);
+  return ['pending', 'ocr_processing', 'ocr_done', 'awaiting_grading'].includes(status);
 }
 
 /**
- * awaiting_mcp 已经有可展示的作业详情，但仍等待 MCP 客户端写入建议。
+ * awaiting_grading 已经有可展示的作业详情，但仍等待批改 run 写入建议。
  * 其他处理中状态的大字段尚未准备好，避免提前拉取完整详情。
  */
 export function canLoadSubmissionDetail(status: SubmissionStatus): boolean {
-  return status === 'awaiting_mcp' || isTerminal(status);
+  return [
+    'awaiting_grading',
+    'ready_for_review',
+    'reviewed',
+    'failed',
+  ].includes(status);
 }

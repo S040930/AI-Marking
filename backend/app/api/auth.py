@@ -11,7 +11,7 @@
 
 - ``ACCESS_TOKEN`` 为空 → 全部放行（向后兼容，未配置时行为不变）。
 - 令牌来源三种，任一匹配即通过：
-  ``Authorization: Bearer <t>``（MCP/CLI 客户端）/
+  ``Authorization: Bearer <t>``（脚本/CLI 客户端）/
   ``X-Access-Token: <t>``（脚本/测试）/
   ``ai_marking_access`` Cookie（浏览器会话，见下方 login/logout）。
   浏览器侧一律走 Cookie：令牌不进入 URL，避免泄露到浏览器历史、
@@ -38,15 +38,13 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 # 不加 Secure：本机 http 部署；若改 HTTPS 部署需在响应中追加 Secure 属性。
 COOKIE_NAME = "ai_marking_access"
 
-# 探活端点保持公开：start.sh / start.prod.sh 与 MCP 客户端依赖
-# /api/health、/api/mcp/health 做无鉴权探活。
+# 探活端点保持公开：start.sh / start.prod.sh 依赖 /api/health 做无鉴权探活。
 # 注意：/api/auth/verify 不在豁免列表——它由中间件统一强制令牌，
 # 前端令牌门正是靠它返回 401 来识别"鉴权已开启、需要输入令牌"。
 # /api/auth/login 与 /api/auth/logout 必须公开：登录时还没有任何
 # 凭据可校验；登出只是清除 Cookie，无令牌也能安全执行。
 _PUBLIC_PATHS = {
     "/api/health",
-    "/api/mcp/health",
     "/api/auth/login",
     "/api/auth/logout",
 }

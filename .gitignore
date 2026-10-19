@@ -32,6 +32,7 @@ backup_*.sql
 
 # AI workspace artifacts
 .trae/
+.trae-html-share-packages/
 .codebuddy/
 .codex/
 .zcode/
@@ -42,9 +43,13 @@ backup_*.sql
 PROJECT_BRIEF.md
 tmp_ch/
 
-# Skill packaging artifacts
-.agents/skills/*.zip
-
 # Build/generated artifacts
 .codex-build/
 output/
+build/
+
+# Test temp dirs
+.pytest_tmp/
+
+# Spike 报告与原始证据（含账号痕迹，禁止入库）
+backend/.spike/

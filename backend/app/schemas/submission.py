@@ -12,25 +12,27 @@ from app.models.submission import SubmissionGradingMode, SubmissionStatus
 from app.schemas.scoring import ScoreDetail
 
 
-class McpVisualConfirmationOut(BaseModel):
+class GradingVisualConfirmationOut(BaseModel):
     verdict: Literal["consistent", "mismatch"]
     note: str | None = None
     confirmed_at: str | None = None
 
 
-class McpQualityChecksOut(BaseModel):
+class GradingQualityChecksOut(BaseModel):
     arithmetic_valid: bool
     evidence_valid: bool
     code_evidence_valid: bool
-    client_self_check: dict[str, object]
-    second_pass_valid: bool
+    # v11 及更早的历史数据仍带第二遍自检字段;v12 起不再产生。
+    client_self_check: dict[str, object] | None = None
+    second_pass_valid: bool | None = None
     visual_confirmation_valid: bool
 
 
-class McpMetadataOut(BaseModel):
+class GradingMetadataOut(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    source: Literal["mcp"] = "mcp"
+    # agent:自研内嵌 agent 产生;mcp:兼容读 v12 及更早的历史数据(唯一保留的旧键值)。
+    source: Literal["mcp", "agent"] = "agent"
     client: str | None = None
     rubric_source: Literal["configured", "question_extracted", "built_in_default"]
     rubric_snapshot_id: str
@@ -39,10 +41,11 @@ class McpMetadataOut(BaseModel):
     grading_revision: int
     request_id: str
     payload_hash: str
-    quality_checks: McpQualityChecksOut
+    quality_checks: GradingQualityChecksOut
     generated_at: str
-    review_required: bool
-    visual_confirmation: McpVisualConfirmationOut | None = None
+    # v11 及更早的旧数据带 review_required;v12 起不再产生(复核为可选能力)。
+    review_required: bool | None = None
+    visual_confirmation: GradingVisualConfirmationOut | None = None
 
 
 class AssessmentSuggestionOut(BaseModel):
@@ -55,7 +58,22 @@ class AssessmentSuggestionOut(BaseModel):
     confidence: float
     outcome: str | None = None
     review_reason: str | None = None
-    mcp_metadata: McpMetadataOut | None = None
+    agent_metadata: GradingMetadataOut | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _bridge_legacy_metadata(cls, data):
+        """兼容读:v12 及更早历史数据的元数据键为 mcp_metadata。
+
+        统一桥接为 agent_metadata 输出,对外只暴露单一键名。
+        """
+        if isinstance(data, dict) and "mcp_metadata" in data:
+            legacy = data["mcp_metadata"]
+            data = {
+                key: value for key, value in data.items() if key != "mcp_metadata"
+            }
+            data.setdefault("agent_metadata", legacy)
+        return data
 
 
 class ScoreDetailOut(BaseModel):
@@ -101,7 +119,7 @@ class SubmissionOut(BaseModel):
     question_name: str | None = None
     question_original_filename: str | None = None
     status: SubmissionStatus
-    grading_mode: SubmissionGradingMode = SubmissionGradingMode.external_agent
+    grading_mode: SubmissionGradingMode = SubmissionGradingMode.agent
     grading_revision: int = 0
     graded_at: datetime | None = None
     score: float | None = None
@@ -157,6 +175,7 @@ class SubmissionDetail(SubmissionOut):
 class FinalizeRequest(BaseModel):
     """教师确认最终评分。"""
 
+    expected_revision: int = Field(ge=0)
     reviewer_name: str = Field(min_length=1, max_length=100)
     score: float = Field(ge=0)
     max_score: float = Field(gt=0)
@@ -197,7 +216,7 @@ class SubmissionStatusOut(BaseModel):
 
     id: int
     status: SubmissionStatus
-    grading_mode: SubmissionGradingMode = SubmissionGradingMode.external_agent
+    grading_mode: SubmissionGradingMode = SubmissionGradingMode.agent
     grading_revision: int = 0
     original_filename: str
     score: float | None = None

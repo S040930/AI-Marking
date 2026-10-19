@@ -1,7 +1,6 @@
 import { useRef } from 'react';
 import {
   BookOpen,
-  Copy,
   Download,
   Eye,
   FileUp,
@@ -29,7 +28,6 @@ interface QuestionCardProps {
   onRetryUpload: (id: string, file: File) => void;
   onReplace: (question: Question, file: File) => void;
   onDelete: (question: Question) => void;
-  onCopyPrompt: (question: Question) => void;
   onExportResults: (question: Question) => void;
 }
 
@@ -39,7 +37,6 @@ export function QuestionCard({
   onRetryUpload,
   onReplace,
   onDelete,
-  onCopyPrompt,
   onExportResults,
 }: QuestionCardProps) {
   const { t } = useLanguage();
@@ -110,14 +107,6 @@ export function QuestionCard({
             <a href={`/api/questions/${question.id}/pdf`} target="_blank" rel="noopener noreferrer">
               <Eye />{t('查看')}
             </a>
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={question.status !== 'ready' || replacementActive}
-            onClick={() => onCopyPrompt(question)}
-          >
-            <Copy />{t('复制提示词')}
           </Button>
           <Button
             variant="outline"

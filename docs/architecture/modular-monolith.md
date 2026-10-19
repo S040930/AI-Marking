@@ -1,14 +1,14 @@
 # 模块化单体架构
 
 AI-Marking 面向单教师、单机 PostgreSQL、本地文件目录和 loopback 网络运行。
-系统保持一个代码仓库、一个 API 进程和一个任务 worker，不引入微服务、Redis、
-对象存储、通用 Repository 或依赖注入框架。
+系统保持一个代码仓库、一个 API 进程与两个独立 worker（OCR/清理与批改），
+不引入微服务、Redis、对象存储、通用 Repository 或依赖注入框架。
 
 ```text
 React / TanStack Query
         │ HTTP / SSE
         ▼
-API 与 MCP 适配层（薄适配：参数解析、序列化；写编排不在此层）
+API 与批改 agent 层（薄适配：参数解析、序列化、进程内 tool-calling 引擎）
         ▼
 应用用例层：事务、固定锁顺序、状态迁移、任务编排、错误定义
         ├── 纯领域：状态枚举、迁移规则
@@ -17,30 +17,30 @@ API 与 MCP 适配层（薄适配：参数解析、序列化；写编排不在�
 
 ## 依赖方向（由 `tests/test_architecture_boundaries.py` 强制）
 
-- 依赖只能向内：`api → application → services → core/domain`。
+- 依赖只能向内：`api → agent → application → services → core/domain`（agent 四组 AST 规则见 `tests/test_architecture_boundaries.py`）。
 - `app/core` 是共享内核（config/time/errors），不依赖任何其他层；
   `ApplicationError` 族与 worker 重试分类 `BusinessError` 统一定义在
   `app/core/errors.py`。
 - `app/services` 是纯基础设施，**不得 import `app.application`**；需要编排
   事务、锁序或状态迁移的逻辑属于 application 层（如 `marking`、
-  `mcp_workflow`、`uploads`、`questions`、`submissions`、`dead_jobs`）。
+  `grading_workflow`、`uploads`、`questions`、`submissions`、`dead_jobs`）。
 - `app/api` 只做参数解析与序列化；跨实体写事务（删除、finalize、死信重试、
-  MCP 评分保存等）必须位于 application 用例函数，单行纯 CRUD 允许留在路由。
+  批改建议保存等）必须位于 application 用例函数，单行纯 CRUD 允许留在路由。
 
 ## 边界与一致性
 
 - `app/domain` 不依赖 FastAPI、SQLAlchemy、ORM 或路由。
 - `app/application` 拥有跨实体写事务；上传采用“只读预检 → 无事务流式落盘 →
   重新锁定并提交”。异步路由通过线程池执行同步数据库阶段。
-- 全局锁顺序是 `Question → Submission（ID 升序）→ WorkflowHandle/BackgroundJob`。
-  MCP 令牌可先无锁解析目标，写入前必须按该顺序重新锁定并复核 revision/context。
+- 全局锁顺序是 `Question → Submission（ID 升序）→ GradingHandle/BackgroundJob`。
+  批改句柄可先无锁解析目标，写入前必须按该顺序重新锁定并复核 revision/context。
 - 状态字段通过应用层迁移网关写入；`reviewed` 不允许回退。
 - 状态写入、后台任务写入和 PostgreSQL `NOTIFY` 属于同一事务；文件删除仅在提交后执行。
 - 配置读取不使用进程内缓存，API 与 worker 每次从同一数据库读取少量配置行。
 
 ## 运行与事件
 
-- `start.prod.sh` 固定一个 API 进程和一个任务 worker，`WORKERS>1` 直接拒绝。
+- `start.prod.sh` 固定一个 API 进程、一个任务 worker 与一个批改 worker，`WORKERS>1` 直接拒绝。
 - OCR 默认并发为 2。空队列轮询从 1 秒指数退避到 5 秒，领取任务后复位。
 - 题目列表共享 `GET /api/events/questions`；事件固定为
   `{type:"question.changed", question_id, status, replacement_status}`。

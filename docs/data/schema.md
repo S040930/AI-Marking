@@ -7,25 +7,26 @@
 | 表 | 核心数据 | 生命周期 |
 |---|---|---|
 | `questions` | 题目 PDF、`file_sha256`、OCR 文本、服务端校验通过的题目提取 rubric 快照（`extracted_rubric*`）与新版替换状态 | 可被多份作业复用；新版成功后切换 |
-| `submissions` | 学生 PDF 路径、`file_sha256`、作业 OCR、MCP 评分建议与人工审核结果 | 必须关联一个题目；终态记录可单独删除 |
-| `submission_code_files` | 编程助手提交的多语言小题源码与 SHA-256（不保存运行产物） | 随 submission 级联删除 |
+| `submissions` | 学生 PDF 路径、`file_sha256`、作业 OCR、批改 agent 评分建议与人工审核结果 | 必须关联一个题目；终态记录可单独删除 |
+| `submission_code_files` | 多语言小题源码与 SHA-256（不保存运行产物） | 随 submission 级联删除 |
 | `submission_code_input_files` | 历史数据：旧代码运行输入文件，仅只读保留 | 随 submission 级联删除 |
 | `background_jobs` | 待执行、运行中或死信的题目 OCR/题目替换/作业 OCR 任务 | 成功后删除；随业务实体级联删除 |
-| `system_config` | OCR、结构化 `rubric_definition` 与 `review_enabled` 配置 | 独立于业务记录长期保留 |
-| `config_profiles` | 独立配置项目及默认标记 | 被题目引用或为默认时不可删除 |
-| `mcp_workflow_handles` | MCP 评分包句柄（续页、revision/context 绑定）与题目 rubric 提取句柄 | 保存或提取完成后删除，TTL 过期清理 |
-| `mcp_assessment_receipts` | 外部编程助手成功保存的请求哈希与响应 | 用于跨 revision、重启的精确幂等重放 |
+| `system_config` | OCR、结构化 `rubric_definition` 与模型通道配置（含 API key，只写不读） | 独立于业务记录长期保留 |
+| `grading_runs` | 批改运行（状态机 8 态、provider/model/effort、`agent_state`（检查点对话项与句柄）、`applied_config`/`pending_config`、`usage`、租约与重试计数） | 终态永久保留；非终态由租约与恢复扫描管理 |
+| `grading_run_events` | run 事件转录（seq 单调递增，SSE 回放与 NOTIFY 推送） | 随 run 保留 |
+| `grading_handles` | 评分包句柄（续页、revision/context 绑定）与题目 rubric 提取句柄 | 保存或提取完成后删除，TTL 24h 过期清理 |
+| `grading_assessment_receipts` | 批改 agent 成功保存的请求哈希与响应 | 用于跨 revision、重启的精确幂等重放 |
 | `alembic_version` | 当前数据库迁移版本 | 由 Alembic 管理 |
 
-`submissions` 的 MCP 审计字段：`grading_mode`（收敛为 MCP-only 后固定为 `external_agent`）、`grading_revision`（乐观锁整数，每次成功保存建议递增）和 `graded_at`（最近一次建议保存时间）。评分来源记录在 `assessment_suggestion.mcp_metadata.client`（由启动器参数可选提供），界面据此显示具体客户端名称，不保存未经验证的模型名称。后端不再调用任何 LLM，也不存在 Agent/Critic 执行字段。
+`submissions` 的批改审计字段：`grading_mode`（固定为 `agent`）、`grading_revision`（乐观锁整数，每次成功保存建议递增）和 `graded_at`（最近一次建议保存时间）。评分来源记录在 `assessment_suggestion.agent_metadata`（含 `source`、rubric 来源与快照、context hash、revision、请求哈希与生成时间；v12 及更早历史数据为 `mcp_metadata` 键，读侧兼容桥接）。v12 起建议明细由服务端按权威 rubric 补全 `criterion`/`max_score` 并计算总分，旧数据中的 `quality_checks.client_self_check`/`second_pass_valid` 与 `review_required` 字段仅为历史残留，不再产生。
 
-`submissions.assessment_review` 存储独立复核任务对当前建议的结论（总体 `verdict` agree/partial/disagree、`summary`、逐项 `items` 含服务端补全的 criterion/max_score 与可选 `suggested_score`、`reviewed_revision`、复核客户端与时间）。复核由教师按需触发、经 `save_ai_marking_assessment_review` 写入：不修改建议本身、不改变状态；`reviewed_revision` 与当前 `grading_revision` 不一致时界面标记为过期，重试批改时随建议一起清空。
+`submissions.assessment_review` 存储独立复核任务对当前建议的结论（总体 `verdict` agree/partial/disagree、`summary`、逐项 `items` 含服务端补全的 criterion/max_score 与可选 `suggested_score`、`reviewed_revision`、复核客户端与时间）。复核结论由 `save_assessment_review` 函数写入（v1 仅保留函数与数据字段，无前端发起入口）：不修改建议本身、不改变状态；`reviewed_revision` 与当前 `grading_revision` 不一致时界面标记为过期，重试批改时随建议一起清空。
 
-`questions.extracted_rubric*` 只有在 rubric item 的 OCR 原文引用、分值和总分通过后端确定性校验且 OCR SHA-256 匹配时才构成可信 `question_extracted` 快照；快照由编程助手经 `save_ai_marking_question_rubric` 提取、服务端校验后写入，历史旧文本没有来源标记时不参与 MCP rubric 选择。
+`questions.extracted_rubric*` 只有在 rubric item 的 OCR 原文引用、分值和总分通过后端确定性校验且 OCR SHA-256 匹配时才构成可信 `question_extracted` 快照；快照由批改 agent 经 `save_question_rubric` 工具提取、服务端校验后写入，历史旧文本没有来源标记时不参与 rubric 选择。
 
-`mcp_workflow_handles` 同时承载两类句柄：评分包句柄（绑定 submission、revision 与 context hash，用于 `save_ai_marking_assessment`）与题目 rubric 提取句柄（绑定 `question_id` 与 `ocr_hash`，用于 `save_ai_marking_question_rubric`）；保存成功后句柄即失效删除，避免重复提取覆盖快照。
+`grading_handles` 同时承载两类句柄：评分包句柄（绑定 submission、revision 与 context hash，用于 `save_assessment`）与题目 rubric 提取句柄（绑定 `question_id` 与 `ocr_hash`，用于 `save_question_rubric`）；保存成功后句柄即失效删除，避免重复提取覆盖快照。TTL 为 24h（含代码检查点可跨夜驻留）。
 
-编程助手代码联动字段：新提交只写入 `submission_code_files` 中的题号、入口标记、规范化源文本和 SHA-256。后端不编译或执行代码，不保存运行输入、日志、Notebook 新输出或代码产物；代码运行由当前编程助手任务在临时目录中完成，结果只存在于对话。`submission_code_input_files`、执行状态、产物和 `visual_reviews` 仅作为历史数据只读保留，新评分上下文不会读取它们。
+代码联动字段：新提交只写入 `submission_code_files` 中的题号、入口标记、规范化源文本和 SHA-256。后端不编译或执行代码，不保存运行输入、日志、Notebook 新输出或代码产物；含代码作业运行时核对由教师在批改检查点环节在本地完成，运行输出不作为服务端证据。`submission_code_input_files`、执行状态、产物和 `visual_reviews` 仅作为历史数据只读保留，新评分上下文不会读取它们。
 
 ## 关系
 
@@ -63,7 +64,7 @@ queued → running → 成功后删除
 
 ### 单条作业删除（终态）
 
-`DELETE /api/submissions` 仅接受可删除终态（`awaiting_mcp` / `ready_for_review` / `reviewed` / `failed`）记录，存在后台处理中记录时整批原子拒绝。数据库先删记录（级联删 `submission_code_files`），提交成功后再清理学生 PDF；**共享题目 PDF 始终保留**。文件删除失败仅记录 warning，数据库是删除结果的权威来源。
+`DELETE /api/submissions` 仅接受可删除终态（`awaiting_grading` / `ready_for_review` / `reviewed` / `failed`）记录，存在后台处理中记录时整批原子拒绝。数据库先删记录（级联删 `submission_code_files`），提交成功后再清理学生 PDF；**共享题目 PDF 始终保留**。文件删除失败仅记录 warning，数据库是删除结果的权威来源。
 
 ### 题目级联删除
 
@@ -75,7 +76,7 @@ queued → running → 成功后删除
 
 ### 作业重试
 
-失败作业通过 `POST /api/submissions/{id}/retry` 在原记录上重新入队，可选替换学生 PDF。重试会清空旧 OCR、评分建议、分数与审核数据，并重置 MCP 评分句柄；若原 PDF 已被定期清理则必须重新上传。
+失败作业通过 `POST /api/submissions/{id}/retry` 在原记录上重新入队，可选替换学生 PDF。重试会清空旧 OCR、评分建议、分数与审核数据，并重置批改评分句柄；若原 PDF 已被定期清理则必须重新上传。
 
 ## 状态
 
@@ -96,17 +97,17 @@ null → pending → processing → 成功后回到 null
 - 暂存新版保存在 `replacement_file_path`，处理期间题目被冻结。
 - 新版成功后事务内删除旧批改并切换；失败时旧 PDF、旧 OCR 和历史记录保持不变。
 
-作业（MCP-only）：
+作业：
 
 ```text
-pending → ocr_processing → ocr_done → awaiting_mcp
+pending → ocr_processing → ocr_done → awaiting_grading
   → ready_for_review → reviewed
 
 任一处理阶段可进入 failed
 ```
 
-- OCR 完成后进入 `awaiting_mcp`，由编程助手通过 `open_ai_marking_assignment` 打开评分包并保存建议；保存后进入 `ready_for_review`，教师在网页表单式人工复核并确认后写入 `reviewed`。
-- `submissions.grading_mode` 固定为 `external_agent`；`grading_revision` 从 0 开始，每次成功保存外部助手建议递增；`graded_at` 为最近一次建议保存时间。`awaiting_mcp` 不会自动超时，编程助手会话退出后仍可通过 `list_pending_ai_marking_assignments` 重新发现并读取上下文。
+- OCR 完成后进入 `awaiting_grading`，等待教师在评审页发起批改 run；批改 agent 保存建议后进入 `ready_for_review`，教师在网页表单式人工复核并确认后写入 `reviewed`。
+- `submissions.grading_mode` 固定为 `agent`；`grading_revision` 从 0 开始，每次成功保存建议递增；`graded_at` 为最近一次建议保存时间。`awaiting_grading` 不会自动超时；批改 run 失败后可在评审页重新发起。
 
 ## 文件生命周期
 
@@ -118,5 +119,5 @@ pending → ocr_processing → ocr_done → awaiting_mcp
 
 ## 数据敏感性
 
-- `system_config` 当前包含外部服务密钥（PaddleOCR token），属于敏感数据，不应出现在日志、API 明文展示或版本控制中。
+- `system_config` 包含外部服务密钥（PaddleOCR token 与模型通道 API key），属于敏感数据；写入接口只写不读，API 响应仅回显后四位，不应出现在日志或版本控制中。
 - 学生作业、OCR 文本与评分可能包含个人信息，应限制数据库、备份和上传目录的访问权限。

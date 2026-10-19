@@ -18,6 +18,7 @@ import {
   type SubmissionStatusOut,
   isProcessing,
   isTerminal,
+  canLoadSubmissionDetail,
 } from './submissionTypes';
 
 // 统一出口:类型与状态函数定义在 ./submissionTypes.ts
@@ -189,7 +190,8 @@ export function useSubmission(
     queryFn: () =>
       apiClient.get<SubmissionDetail>(`/submissions/${id}`).then((r) => r.data),
     enabled: id !== undefined && !isNaN(id) && enabled,
-    refetchInterval: false,
+    refetchInterval: (query) =>
+      query.state.data?.status === 'ready_for_review' ? 30_000 : false,
     refetchIntervalInBackground: false,
   });
 }
@@ -232,8 +234,8 @@ export function useSubmissionEvents(
         queryClient.invalidateQueries({
           queryKey: queryKeys.submissions.status(id),
         });
-        if (data.status && isTerminal(data.status)) {
-          // 终态:刷新完整详情,供 ResultPage 渲染 ocr_text/feedback 等
+        if (data.status && canLoadSubmissionDetail(data.status)) {
+          // 同状态的建议/复核更新也必须刷新详情,供 ResultPage 渲染 ocr_text/feedback 等
           queryClient.invalidateQueries({ queryKey: queryKeys.submissions.detailPrefix(id) });
         }
       } catch {
@@ -268,11 +270,11 @@ export function useSubmissionStatus(id: number | undefined) {
     refetchInterval: (query) => {
       const data = query.state.data;
       if (!data) return false;
-      return isProcessing(data.status) ? 30000 : false;
+      return !isTerminal(data.status) ? 30000 : false;
     },
     refetchIntervalInBackground: false,
   });
-  useSubmissionEvents(id, query.data ? isProcessing(query.data.status) : true);
+  useSubmissionEvents(id, query.data ? !isTerminal(query.data.status) : true);
   return query;
 }
 
@@ -312,6 +314,14 @@ export function useFinalizeSubmission(submissionId: number) {
           skipErrorToast: true,
         })
         .then((r) => r.data),
+    onError: async (error) => {
+      if (isAxiosError(error) && error.response?.status === 409) {
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: queryKeys.submissions.detailPrefix(submissionId) }),
+          queryClient.invalidateQueries({ queryKey: queryKeys.submissions.status(submissionId) }),
+        ]);
+      }
+    },
     onSuccess: (data) => {
       cacheFinalizedSubmission(queryClient, submissionId, data);
       queryClient.invalidateQueries({ queryKey: queryKeys.submissions.all });

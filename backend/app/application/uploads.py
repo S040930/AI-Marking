@@ -37,7 +37,7 @@ from app.services.queue import (
 
 DELETABLE_SUBMISSION_STATUSES = frozenset(
     {
-        SubmissionStatus.awaiting_mcp,
+        SubmissionStatus.awaiting_grading,
         SubmissionStatus.ready_for_review,
         SubmissionStatus.reviewed,
         SubmissionStatus.failed,
@@ -144,9 +144,9 @@ def preflight_submission_retry(
         if not replacing_file and not Path(sub.file_path).is_file():
             raise ConflictError("原学生作业文件已过期，请重新选择 PDF 后重试")
         if any(not Path(item.file_path).is_file() for item in sub.code_files):
-            raise ConflictError("原代码文件已过期，请通过编程助手（MCP）重新提交 PDF 与全部代码文件")
+            raise ConflictError("原代码文件已过期，请重新提交 PDF 与全部代码文件")
         if any(not Path(item.file_path).is_file() for item in sub.code_input_files):
-            raise ConflictError("原数据集文件已过期，请通过编程助手（MCP）重新提交 PDF、代码与数据集")
+            raise ConflictError("原数据集文件已过期，请重新提交 PDF、代码与数据集")
         return sub.question_id
 
 

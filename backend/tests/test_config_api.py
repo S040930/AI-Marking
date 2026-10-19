@@ -9,7 +9,8 @@ async def test_get_config_returns_empty_defaults(client):
     assert data["paddleocr_api_url"] == ""
     assert data["paddleocr_token"] == ""
     assert data["rubric_definition"] is None
-    assert data["review_enabled"] is True
+    # v12:第二遍自检开关已随强制第二遍一起移除
+    assert "review_enabled" not in data
     assert "llm_api_key" not in data
     assert "llm_user_prompt" not in data
 
@@ -29,11 +30,10 @@ async def test_put_config_updates_subset(client):
     assert data["paddleocr_api_url"] == "https://ocr.example/jobs"  # 保持不变
 
 
-async def test_put_config_updates_review_enabled(client):
-    """review_enabled 布尔开关可更新。"""
+async def test_put_config_rejects_removed_review_enabled_key(client):
+    """PUT /api/config 已删除的 review_enabled key 一并返回 422。"""
     response = await client.put("/api/config", json={"review_enabled": False})
-    assert response.status_code == 200
-    assert response.json()["review_enabled"] is False
+    assert response.status_code == 422
 
 
 async def test_put_config_rejects_unknown_key(client):

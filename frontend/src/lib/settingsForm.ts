@@ -21,7 +21,6 @@ export const configSchema = z.object({
   paddleocr_api_url: z.string().optional(),
   paddleocr_token: z.string().optional(),
   rubric_definition: z.string().optional(),
-  review_enabled: z.boolean(),
 });
 
 export type ConfigFormValues = z.infer<typeof configSchema>;
@@ -30,7 +29,6 @@ export const defaultConfigFormValues: ConfigFormValues = {
   paddleocr_api_url: '',
   paddleocr_token: '',
   rubric_definition: '',
-  review_enabled: true,
 };
 
 export function errorText(error: Error): string {

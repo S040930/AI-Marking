@@ -14,14 +14,14 @@ class SubmissionStatus(str, enum.Enum):
     pending = "pending"
     ocr_processing = "ocr_processing"
     ocr_done = "ocr_done"
-    awaiting_mcp = "awaiting_mcp"
+    awaiting_grading = "awaiting_grading"
     ready_for_review = "ready_for_review"
     reviewed = "reviewed"
     failed = "failed"
 
 
 class SubmissionGradingMode(str, enum.Enum):
-    external_agent = "external_agent"
+    agent = "agent"
 
 
 class QuestionStatus(str, enum.Enum):
@@ -45,9 +45,9 @@ SUBMISSION_TRANSITIONS: Mapping[SubmissionStatus, frozenset[SubmissionStatus]] =
         {SubmissionStatus.ocr_processing, SubmissionStatus.ocr_done, SubmissionStatus.failed}
     ),
     SubmissionStatus.ocr_done: frozenset(
-        {SubmissionStatus.ocr_processing, SubmissionStatus.awaiting_mcp, SubmissionStatus.failed}
+        {SubmissionStatus.ocr_processing, SubmissionStatus.awaiting_grading, SubmissionStatus.failed}
     ),
-    SubmissionStatus.awaiting_mcp: frozenset(
+    SubmissionStatus.awaiting_grading: frozenset(
         {
             SubmissionStatus.ocr_processing,
             SubmissionStatus.ready_for_review,

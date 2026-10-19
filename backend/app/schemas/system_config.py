@@ -27,10 +27,6 @@ class ConfigUpdate(BaseModel):
         default=None,
         description="结构化评分标准；每个条目包含 criterion、max_score、details",
     )
-    review_enabled: bool | None = Field(
-        default=None,
-        description="是否要求 MCP 客户端在保存建议前完成第二遍反向自检(默认开启)",
-    )
 
 
 class ConfigOut(BaseModel):
@@ -41,4 +37,3 @@ class ConfigOut(BaseModel):
     paddleocr_api_url: str = ""
     paddleocr_token: str = ""
     rubric_definition: RubricDefinition | None = None
-    review_enabled: bool = True

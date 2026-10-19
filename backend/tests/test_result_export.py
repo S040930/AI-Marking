@@ -6,6 +6,7 @@ from zipfile import ZipFile
 
 from app.services.result_export import (
     _normalize_criterion,
+    _rubric_snapshot_id,
     _score_band_index,
     build_results_workbook,
     safe_export_filename,
@@ -26,11 +27,19 @@ def _row(
         max_score=max_score,
         feedback=f"Feedback {row_id}",
         details=details,
-        assessment_suggestion={"mcp_metadata": {"rubric_snapshot_id": "rubric-v1"}},
+        assessment_suggestion={"agent_metadata": {"rubric_snapshot_id": "rubric-v1"}},
         reviewed_by="Teacher",
         reviewed_at=datetime(2026, 8, 31, 8, row_id),
         uploaded_at=datetime(2026, 8, 30, 8, row_id),
     )
+
+
+def test_rubric_snapshot_id_reads_legacy_metadata_key():
+    """v12 及更早历史数据的键为 mcp_metadata,导出须兼容读。"""
+    legacy = {"mcp_metadata": {"rubric_snapshot_id": "rubric-legacy"}}
+    assert _rubric_snapshot_id(legacy) == "rubric-legacy"
+    assert _rubric_snapshot_id({"agent_metadata": legacy["mcp_metadata"]}) == "rubric-legacy"
+    assert _rubric_snapshot_id({}) == ""
 
 
 def test_score_bands_and_normalization_cover_boundaries():

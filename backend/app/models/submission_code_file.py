@@ -32,7 +32,7 @@ class SubmissionCodeFile(Base):
     """一个与小题对应的代码文件；每题恰有一个 entrypoint。
 
     ``execution_result`` 和 ``artifacts`` 只保存结构化审计摘要；原始文件和
-    产物路径仍由应用层校验后提供，绝不把任意本机路径暴露给 MCP。
+    产物路径仍由应用层校验后提供，绝不把任意本机路径暴露给模型。
     """
 
     __tablename__ = "submission_code_files"

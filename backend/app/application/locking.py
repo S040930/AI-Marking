@@ -17,8 +17,14 @@ def lock_submission_after_question(
     if question_id is None:
         return None
     db.execute(
-        select(Question.id)
+        select(Question)
         .where(Question.id == question_id)
         .with_for_update()
+        .execution_options(populate_existing=True)
     ).scalar_one_or_none()
-    return db.get(Submission, submission_id, with_for_update=True)
+    return db.execute(
+        select(Submission)
+        .where(Submission.id == submission_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    ).scalar_one_or_none()

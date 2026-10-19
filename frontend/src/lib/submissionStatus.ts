@@ -5,7 +5,7 @@ export const STATUS_TEXT: Record<SubmissionStatus, string> = {
   pending: '待处理',
   ocr_processing: 'OCR识别中',
   ocr_done: 'OCR完成',
-  awaiting_mcp: '等待MCP评分',
+  awaiting_grading: '等待批改',
   ready_for_review: '待审阅',
   reviewed: '已审阅',
   failed: '失败',
@@ -14,7 +14,7 @@ export const STATUS_TEXT: Record<SubmissionStatus, string> = {
 export function isDeletableStatus(status: SubmissionStatus): boolean {
   return (
     status === 'ready_for_review' ||
-    status === 'awaiting_mcp' ||
+    status === 'awaiting_grading' ||
     status === 'reviewed' ||
     status === 'failed'
   );

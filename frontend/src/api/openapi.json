@@ -1,428 +1,7 @@
 {
   "components": {
     "schemas": {
-      "AcpAgentListResponse": {
-        "properties": {
-          "agents": {
-            "items": {
-              "$ref": "#/components/schemas/AcpAgentOut"
-            },
-            "title": "Agents",
-            "type": "array"
-          },
-          "fetched_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Fetched At"
-          },
-          "registry_version": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Registry Version"
-          }
-        },
-        "required": [
-          "agents"
-        ],
-        "title": "AcpAgentListResponse",
-        "type": "object"
-      },
-      "AcpAgentOut": {
-        "properties": {
-          "agent_id": {
-            "title": "Agent Id",
-            "type": "string"
-          },
-          "available_version": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Available Version"
-          },
-          "connection_status": {
-            "enum": [
-              "ready",
-              "needs_auth",
-              "unsupported",
-              "failed",
-              "unknown"
-            ],
-            "title": "Connection Status",
-            "type": "string"
-          },
-          "display_name": {
-            "title": "Display Name",
-            "type": "string"
-          },
-          "distributions": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Distributions",
-            "type": "array"
-          },
-          "installed_version": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Installed Version"
-          },
-          "whitelist_package": {
-            "title": "Whitelist Package",
-            "type": "string"
-          }
-        },
-        "required": [
-          "agent_id",
-          "display_name",
-          "whitelist_package",
-          "distributions",
-          "connection_status"
-        ],
-        "title": "AcpAgentOut",
-        "type": "object"
-      },
-      "AcpChatConfigurationUpdateRequest": {
-        "additionalProperties": false,
-        "description": "已有会话的配置热更新;permission_mode 缺省表示保持不变。",
-        "properties": {
-          "fast_confirmed": {
-            "default": false,
-            "title": "Fast Confirmed",
-            "type": "boolean"
-          },
-          "model_id": {
-            "anyOf": [
-              {
-                "maxLength": 128,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Model Id"
-          },
-          "permission_mode": {
-            "anyOf": [
-              {
-                "enum": [
-                  "ask",
-                  "auto_review"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Permission Mode"
-          },
-          "reasoning_effort": {
-            "anyOf": [
-              {
-                "maxLength": 64,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Reasoning Effort"
-          },
-          "speed_mode": {
-            "default": "standard",
-            "enum": [
-              "standard",
-              "fast"
-            ],
-            "title": "Speed Mode",
-            "type": "string"
-          }
-        },
-        "title": "AcpChatConfigurationUpdateRequest",
-        "type": "object"
-      },
-      "AcpChatCreateRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "codex_config": {
-            "$ref": "#/components/schemas/CodexConfigRequest"
-          },
-          "permission_mode": {
-            "default": "ask",
-            "enum": [
-              "ask",
-              "auto_review"
-            ],
-            "title": "Permission Mode",
-            "type": "string"
-          },
-          "submission_id": {
-            "title": "Submission Id",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "submission_id"
-        ],
-        "title": "AcpChatCreateRequest",
-        "type": "object"
-      },
-      "AcpChatEventOut": {
-        "properties": {
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "kind": {
-            "title": "Kind",
-            "type": "string"
-          },
-          "payload": {
-            "additionalProperties": true,
-            "title": "Payload",
-            "type": "object"
-          },
-          "seq": {
-            "title": "Seq",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "seq",
-          "kind",
-          "payload",
-          "created_at"
-        ],
-        "title": "AcpChatEventOut",
-        "type": "object"
-      },
-      "AcpChatMessageRequest": {
-        "properties": {
-          "text": {
-            "maxLength": 8000,
-            "minLength": 1,
-            "title": "Text",
-            "type": "string"
-          }
-        },
-        "required": [
-          "text"
-        ],
-        "title": "AcpChatMessageRequest",
-        "type": "object"
-      },
-      "AcpChatPermissionRequest": {
-        "properties": {
-          "allow": {
-            "title": "Allow",
-            "type": "boolean"
-          },
-          "option_id": {
-            "anyOf": [
-              {
-                "maxLength": 64,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Option Id"
-          },
-          "permission_id": {
-            "maxLength": 64,
-            "minLength": 8,
-            "title": "Permission Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "permission_id",
-          "allow"
-        ],
-        "title": "AcpChatPermissionRequest",
-        "type": "object"
-      },
-      "AcpChatSessionListResponse": {
-        "properties": {
-          "sessions": {
-            "items": {
-              "$ref": "#/components/schemas/AcpChatSessionOut"
-            },
-            "title": "Sessions",
-            "type": "array"
-          }
-        },
-        "required": [
-          "sessions"
-        ],
-        "title": "AcpChatSessionListResponse",
-        "type": "object"
-      },
-      "AcpChatSessionOut": {
-        "properties": {
-          "agent_id": {
-            "title": "Agent Id",
-            "type": "string"
-          },
-          "applied_codex_config": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/CodexConfigSnapshot"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "applied_config": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/CodexConfigSnapshot"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "codex_config": {
-            "$ref": "#/components/schemas/CodexConfigSnapshot"
-          },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "desired_config": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/CodexConfigSnapshot"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "effective_at": {
-            "default": "current",
-            "enum": [
-              "current",
-              "next_turn"
-            ],
-            "title": "Effective At",
-            "type": "string"
-          },
-          "id": {
-            "title": "Id",
-            "type": "integer"
-          },
-          "last_error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Error"
-          },
-          "latest_seq": {
-            "default": 0,
-            "title": "Latest Seq",
-            "type": "integer"
-          },
-          "pending_codex_config": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/CodexConfigSnapshot"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "pending_config": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/CodexConfigSnapshot"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "permission_mode": {
-            "default": "ask",
-            "enum": [
-              "ask",
-              "auto_review"
-            ],
-            "title": "Permission Mode",
-            "type": "string"
-          },
-          "status": {
-            "enum": [
-              "idle",
-              "running",
-              "waiting_permission",
-              "closed",
-              "error"
-            ],
-            "title": "Status",
-            "type": "string"
-          },
-          "submission_id": {
-            "title": "Submission Id",
-            "type": "integer"
-          },
-          "updated_at": {
-            "format": "date-time",
-            "title": "Updated At",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "submission_id",
-          "agent_id",
-          "codex_config",
-          "status",
-          "created_at",
-          "updated_at"
-        ],
-        "title": "AcpChatSessionOut",
-        "type": "object"
-      },
-      "AcpCheckpointOut": {
+      "AgentCheckpointOut": {
         "properties": {
           "asked_at": {
             "anyOf": [
@@ -461,83 +40,14 @@
           "type",
           "message"
         ],
-        "title": "AcpCheckpointOut",
+        "title": "AgentCheckpointOut",
         "type": "object"
       },
-      "AcpCodexConfigurationResponse": {
-        "properties": {
-          "agent_id": {
-            "const": "codex-acp",
-            "title": "Agent Id",
-            "type": "string"
-          },
-          "agent_version": {
-            "title": "Agent Version",
-            "type": "string"
-          },
-          "capability_error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Capability Error"
-          },
-          "models": {
-            "items": {
-              "additionalProperties": true,
-              "type": "object"
-            },
-            "title": "Models",
-            "type": "array"
-          },
-          "reasoning_efforts": {
-            "items": {
-              "additionalProperties": true,
-              "type": "object"
-            },
-            "title": "Reasoning Efforts",
-            "type": "array"
-          },
-          "selected_model_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Selected Model Id"
-          },
-          "speed_modes": {
-            "items": {
-              "additionalProperties": true,
-              "type": "object"
-            },
-            "title": "Speed Modes",
-            "type": "array"
-          }
-        },
-        "required": [
-          "agent_id",
-          "agent_version"
-        ],
-        "title": "AcpCodexConfigurationResponse",
-        "type": "object"
-      },
-      "AcpConfigurationUpdateRequest": {
+      "AgentConfigurationUpdateRequest": {
         "additionalProperties": false,
+        "description": "运行中切换 model/effort;null 不改动。",
         "properties": {
-          "fast_confirmed": {
-            "default": false,
-            "title": "Fast Confirmed",
-            "type": "boolean"
-          },
-          "model_id": {
+          "model": {
             "anyOf": [
               {
                 "maxLength": 128,
@@ -548,7 +58,54 @@
                 "type": "null"
               }
             ],
-            "title": "Model Id"
+            "title": "Model"
+          },
+          "reasoning_effort": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reasoning Effort"
+          }
+        },
+        "title": "AgentConfigurationUpdateRequest",
+        "type": "object"
+      },
+      "AgentRunCreateRequest": {
+        "additionalProperties": false,
+        "description": "发起批改;provider/model/effort 缺省时取系统默认配置。",
+        "properties": {
+          "model": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
           },
           "reasoning_effort": {
             "anyOf": [
@@ -563,62 +120,6 @@
             ],
             "title": "Reasoning Effort"
           },
-          "speed_mode": {
-            "default": "standard",
-            "enum": [
-              "standard",
-              "fast"
-            ],
-            "title": "Speed Mode",
-            "type": "string"
-          }
-        },
-        "title": "AcpConfigurationUpdateRequest",
-        "type": "object"
-      },
-      "AcpInstallResponse": {
-        "properties": {
-          "agent_id": {
-            "title": "Agent Id",
-            "type": "string"
-          },
-          "distribution": {
-            "title": "Distribution",
-            "type": "string"
-          },
-          "reinstalled": {
-            "default": true,
-            "title": "Reinstalled",
-            "type": "boolean"
-          },
-          "version": {
-            "title": "Version",
-            "type": "string"
-          }
-        },
-        "required": [
-          "agent_id",
-          "version",
-          "distribution"
-        ],
-        "title": "AcpInstallResponse",
-        "type": "object"
-      },
-      "AcpRunCreateRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "codex_config": {
-            "$ref": "#/components/schemas/CodexConfigRequest"
-          },
-          "permission_mode": {
-            "default": "ask",
-            "enum": [
-              "ask",
-              "auto_review"
-            ],
-            "title": "Permission Mode",
-            "type": "string"
-          },
           "submission_id": {
             "title": "Submission Id",
             "type": "integer"
@@ -627,32 +128,22 @@
         "required": [
           "submission_id"
         ],
-        "title": "AcpRunCreateRequest",
+        "title": "AgentRunCreateRequest",
         "type": "object"
       },
-      "AcpRunDetailResponse": {
+      "AgentRunDetailResponse": {
         "properties": {
           "applied_config": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/CodexConfigSnapshot"
+                "additionalProperties": true,
+                "type": "object"
               },
               {
                 "type": "null"
               }
-            ]
-          },
-          "desired_config": {
-            "$ref": "#/components/schemas/CodexConfigSnapshot"
-          },
-          "effective_at": {
-            "default": "current",
-            "enum": [
-              "current",
-              "next_turn"
             ],
-            "title": "Effective At",
-            "type": "string"
+            "title": "Applied Config"
           },
           "latest_seq": {
             "default": 0,
@@ -662,25 +153,26 @@
           "pending_config": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/CodexConfigSnapshot"
+                "additionalProperties": true,
+                "type": "object"
               },
               {
                 "type": "null"
               }
-            ]
+            ],
+            "title": "Pending Config"
           },
           "run": {
-            "$ref": "#/components/schemas/AcpRunOut"
+            "$ref": "#/components/schemas/AgentRunOut"
           }
         },
         "required": [
-          "run",
-          "desired_config"
+          "run"
         ],
-        "title": "AcpRunDetailResponse",
+        "title": "AgentRunDetailResponse",
         "type": "object"
       },
-      "AcpRunEventOut": {
+      "AgentRunEventOut": {
         "properties": {
           "created_at": {
             "format": "date-time",
@@ -707,36 +199,11 @@
           "payload",
           "created_at"
         ],
-        "title": "AcpRunEventOut",
+        "title": "AgentRunEventOut",
         "type": "object"
       },
-      "AcpRunOut": {
+      "AgentRunOut": {
         "properties": {
-          "acp_session_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Acp Session Id"
-          },
-          "agent_id": {
-            "title": "Agent Id",
-            "type": "string"
-          },
-          "applied_codex_config": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/CodexConfigSnapshot"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
           "attempts": {
             "default": 0,
             "title": "Attempts",
@@ -745,15 +212,12 @@
           "checkpoint": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/AcpCheckpointOut"
+                "$ref": "#/components/schemas/AgentCheckpointOut"
               },
               {
                 "type": "null"
               }
             ]
-          },
-          "codex_config": {
-            "$ref": "#/components/schemas/CodexConfigSnapshot"
           },
           "created_at": {
             "format": "date-time",
@@ -801,24 +265,31 @@
             "title": "Max Attempts",
             "type": "integer"
           },
-          "pending_codex_config": {
+          "model": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/CodexConfigSnapshot"
+                "type": "string"
               },
               {
                 "type": "null"
               }
-            ]
-          },
-          "permission_mode": {
-            "default": "ask",
-            "enum": [
-              "ask",
-              "auto_review"
             ],
-            "title": "Permission Mode",
+            "title": "Model"
+          },
+          "provider": {
+            "title": "Provider",
             "type": "string"
+          },
+          "reasoning_effort": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reasoning Effort"
           },
           "status": {
             "enum": [
@@ -863,20 +334,32 @@
               }
             ],
             "title": "Teacher Verdict"
+          },
+          "usage": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usage"
           }
         },
         "required": [
           "id",
           "submission_id",
-          "agent_id",
-          "codex_config",
+          "provider",
           "status",
           "created_at"
         ],
-        "title": "AcpRunOut",
+        "title": "AgentRunOut",
         "type": "object"
       },
-      "AcpRunReplyRequest": {
+      "AgentRunReplyRequest": {
+        "additionalProperties": false,
         "properties": {
           "note": {
             "anyOf": [
@@ -902,110 +385,7 @@
         "required": [
           "verdict"
         ],
-        "title": "AcpRunReplyRequest",
-        "type": "object"
-      },
-      "AcpTestConnectionResponse": {
-        "properties": {
-          "agent_id": {
-            "title": "Agent Id",
-            "type": "string"
-          },
-          "agent_info": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Agent Info"
-          },
-          "detail": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Detail"
-          },
-          "mcp_visible": {
-            "default": false,
-            "title": "Mcp Visible",
-            "type": "boolean"
-          },
-          "protocol_version": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Protocol Version"
-          },
-          "status": {
-            "enum": [
-              "ready",
-              "needs_auth",
-              "unsupported",
-              "failed"
-            ],
-            "title": "Status",
-            "type": "string"
-          },
-          "steps": {
-            "additionalProperties": {
-              "type": "string"
-            },
-            "title": "Steps",
-            "type": "object"
-          }
-        },
-        "required": [
-          "agent_id",
-          "status"
-        ],
-        "title": "AcpTestConnectionResponse",
-        "type": "object"
-      },
-      "AcpUninstallResponse": {
-        "properties": {
-          "agent_id": {
-            "title": "Agent Id",
-            "type": "string"
-          },
-          "removed_cache": {
-            "default": false,
-            "title": "Removed Cache",
-            "type": "boolean"
-          },
-          "uninstalled": {
-            "default": true,
-            "title": "Uninstalled",
-            "type": "boolean"
-          },
-          "version": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Version"
-          }
-        },
-        "required": [
-          "agent_id"
-        ],
-        "title": "AcpUninstallResponse",
+        "title": "AgentRunReplyRequest",
         "type": "object"
       },
       "AssessmentReviewItemOut": {
@@ -1116,6 +496,16 @@
       "AssessmentSuggestionOut": {
         "additionalProperties": true,
         "properties": {
+          "agent_metadata": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GradingMetadataOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "confidence": {
             "title": "Confidence",
             "type": "number"
@@ -1134,16 +524,6 @@
           "max_score": {
             "title": "Max Score",
             "type": "number"
-          },
-          "mcp_metadata": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/McpMetadataOut"
-              },
-              {
-                "type": "null"
-              }
-            ]
           },
           "outcome": {
             "anyOf": [
@@ -1245,7 +625,7 @@
         "properties": {
           "code_files": {
             "default": [],
-            "description": "可选多语言代码文件",
+            "description": "可选多语言代码文件(仅纯 PDF 上传)",
             "items": {
               "contentMediaType": "application/octet-stream",
               "type": "string"
@@ -1263,12 +643,12 @@
                 "type": "null"
               }
             ],
-            "description": "代码文件小题映射 JSON",
+            "description": "代码文件小题映射 JSON(仅纯 PDF 上传)",
             "title": "Code Manifest"
           },
           "file": {
             "contentMediaType": "application/octet-stream",
-            "description": "学生作业 PDF",
+            "description": "学生作业 PDF 或 ZIP(PDF+代码+数据集)",
             "title": "File",
             "type": "string"
           },
@@ -1342,110 +722,6 @@
         "title": "Body_retry_submission_api_submissions__submission_id__retry_post",
         "type": "object"
       },
-      "CodexConfigRequest": {
-        "additionalProperties": false,
-        "description": "Only product-level Codex fields are accepted from the browser.",
-        "properties": {
-          "fast_confirmed": {
-            "default": false,
-            "title": "Fast Confirmed",
-            "type": "boolean"
-          },
-          "model_id": {
-            "anyOf": [
-              {
-                "maxLength": 128,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Model Id"
-          },
-          "reasoning_effort": {
-            "anyOf": [
-              {
-                "maxLength": 64,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Reasoning Effort"
-          },
-          "speed_mode": {
-            "default": "standard",
-            "enum": [
-              "standard",
-              "fast"
-            ],
-            "title": "Speed Mode",
-            "type": "string"
-          }
-        },
-        "title": "CodexConfigRequest",
-        "type": "object"
-      },
-      "CodexConfigSnapshot": {
-        "additionalProperties": false,
-        "properties": {
-          "catalog_version": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Catalog Version"
-          },
-          "model_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Model Id"
-          },
-          "option_ids": {
-            "additionalProperties": {
-              "type": "string"
-            },
-            "title": "Option Ids",
-            "type": "object"
-          },
-          "reasoning_effort": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Reasoning Effort"
-          },
-          "speed_mode": {
-            "default": "standard",
-            "enum": [
-              "standard",
-              "fast"
-            ],
-            "title": "Speed Mode",
-            "type": "string"
-          }
-        },
-        "title": "CodexConfigSnapshot",
-        "type": "object"
-      },
       "ConfigOut": {
         "description": "配置完整输出结构。",
         "properties": {
@@ -1458,11 +734,6 @@
             "default": "",
             "title": "Paddleocr Token",
             "type": "string"
-          },
-          "review_enabled": {
-            "default": true,
-            "title": "Review Enabled",
-            "type": "boolean"
           },
           "rubric_definition": {
             "anyOf": [
@@ -1505,18 +776,6 @@
             ],
             "description": "PaddleOCR-VL Access Token(AI Studio 令牌)",
             "title": "Paddleocr Token"
-          },
-          "review_enabled": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "是否要求 MCP 客户端在保存建议前完成第二遍反向自检(默认开启)",
-            "title": "Review Enabled"
           },
           "rubric_definition": {
             "anyOf": [
@@ -1650,6 +909,11 @@
             "title": "Details",
             "type": "array"
           },
+          "expected_revision": {
+            "minimum": 0.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          },
           "feedback": {
             "minLength": 1,
             "title": "Feedback",
@@ -1673,6 +937,7 @@
           }
         },
         "required": [
+          "expected_revision",
           "reviewer_name",
           "score",
           "max_score",
@@ -1682,251 +947,7 @@
         "title": "FinalizeRequest",
         "type": "object"
       },
-      "GradingPromptOut": {
-        "description": "按题目生成的可审计批改提示词：与运行时评分包中的 grading_policy 同源。",
-        "properties": {
-          "grading_mode": {
-            "title": "Grading Mode",
-            "type": "string"
-          },
-          "grading_policy": {
-            "additionalProperties": true,
-            "title": "Grading Policy",
-            "type": "object"
-          },
-          "name": {
-            "title": "Name",
-            "type": "string"
-          },
-          "needs_rubric": {
-            "title": "Needs Rubric",
-            "type": "boolean"
-          },
-          "ocr_text": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Ocr Text"
-          },
-          "question_id": {
-            "title": "Question Id",
-            "type": "string"
-          },
-          "review_enabled": {
-            "title": "Review Enabled",
-            "type": "boolean"
-          },
-          "snapshot_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Snapshot Id"
-          },
-          "source": {
-            "title": "Source",
-            "type": "string"
-          },
-          "text": {
-            "title": "Text",
-            "type": "string"
-          },
-          "total_max_score": {
-            "title": "Total Max Score",
-            "type": "number"
-          }
-        },
-        "required": [
-          "question_id",
-          "name",
-          "grading_mode",
-          "review_enabled",
-          "source",
-          "total_max_score",
-          "needs_rubric",
-          "grading_policy",
-          "text"
-        ],
-        "title": "GradingPromptOut",
-        "type": "object"
-      },
-      "HTTPValidationError": {
-        "properties": {
-          "detail": {
-            "items": {
-              "$ref": "#/components/schemas/ValidationError"
-            },
-            "title": "Detail",
-            "type": "array"
-          }
-        },
-        "title": "HTTPValidationError",
-        "type": "object"
-      },
-      "LoginRequest": {
-        "description": "登录请求体：待校验的访问令牌。",
-        "properties": {
-          "token": {
-            "title": "Token",
-            "type": "string"
-          }
-        },
-        "required": [
-          "token"
-        ],
-        "title": "LoginRequest",
-        "type": "object"
-      },
-      "McpAssessmentRequest": {
-        "additionalProperties": false,
-        "description": "外部编程助手提交的评分建议(对外唯一请求模型)。\n\n``expected_revision``/``context_hash`` 由服务端在保存时从作业当前状态\n补全,不在对外请求中出现;它们是防呆用的版本校验字段。",
-        "properties": {
-          "confidence": {
-            "default": 0,
-            "maximum": 1.0,
-            "minimum": 0.0,
-            "title": "Confidence",
-            "type": "number"
-          },
-          "details": {
-            "items": {
-              "$ref": "#/components/schemas/ScoreDetail"
-            },
-            "maxItems": 100,
-            "minItems": 1,
-            "title": "Details",
-            "type": "array"
-          },
-          "feedback": {
-            "maxLength": 20000,
-            "minLength": 1,
-            "title": "Feedback",
-            "type": "string"
-          },
-          "max_score": {
-            "exclusiveMinimum": 0.0,
-            "title": "Max Score",
-            "type": "number"
-          },
-          "request_id": {
-            "format": "uuid",
-            "title": "Request Id",
-            "type": "string"
-          },
-          "rubric_snapshot_id": {
-            "maxLength": 128,
-            "minLength": 8,
-            "title": "Rubric Snapshot Id",
-            "type": "string"
-          },
-          "rubric_source": {
-            "enum": [
-              "configured",
-              "question_extracted",
-              "built_in_default"
-            ],
-            "title": "Rubric Source",
-            "type": "string"
-          },
-          "score": {
-            "minimum": 0.0,
-            "title": "Score",
-            "type": "number"
-          },
-          "self_check": {
-            "$ref": "#/components/schemas/McpSelfCheck"
-          }
-        },
-        "required": [
-          "rubric_source",
-          "rubric_snapshot_id",
-          "request_id",
-          "score",
-          "max_score",
-          "feedback",
-          "details"
-        ],
-        "title": "McpAssessmentRequest",
-        "type": "object"
-      },
-      "McpAssessmentResponse": {
-        "properties": {
-          "grading_mode": {
-            "$ref": "#/components/schemas/SubmissionGradingMode"
-          },
-          "grading_revision": {
-            "title": "Grading Revision",
-            "type": "integer"
-          },
-          "idempotent": {
-            "default": false,
-            "title": "Idempotent",
-            "type": "boolean"
-          },
-          "quality_checks": {
-            "$ref": "#/components/schemas/McpQualityChecksOut"
-          },
-          "status": {
-            "$ref": "#/components/schemas/SubmissionStatus"
-          },
-          "submission_id": {
-            "title": "Submission Id",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "submission_id",
-          "status",
-          "grading_revision",
-          "grading_mode",
-          "quality_checks"
-        ],
-        "title": "McpAssessmentResponse",
-        "type": "object"
-      },
-      "McpHealthResponse": {
-        "properties": {
-          "database": {
-            "title": "Database",
-            "type": "string"
-          },
-          "mcp_api_version": {
-            "title": "Mcp Api Version",
-            "type": "string"
-          },
-          "service": {
-            "title": "Service",
-            "type": "string"
-          },
-          "status": {
-            "title": "Status",
-            "type": "string"
-          },
-          "worker_required": {
-            "default": true,
-            "title": "Worker Required",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "status",
-          "service",
-          "database",
-          "mcp_api_version"
-        ],
-        "title": "McpHealthResponse",
-        "type": "object"
-      },
-      "McpMetadataOut": {
+      "GradingMetadataOut": {
         "additionalProperties": true,
         "properties": {
           "client": {
@@ -1957,15 +978,22 @@
             "type": "string"
           },
           "quality_checks": {
-            "$ref": "#/components/schemas/McpQualityChecksOut"
+            "$ref": "#/components/schemas/GradingQualityChecksOut"
           },
           "request_id": {
             "title": "Request Id",
             "type": "string"
           },
           "review_required": {
-            "title": "Review Required",
-            "type": "boolean"
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Required"
           },
           "rubric_snapshot": {
             "anyOf": [
@@ -1992,15 +1020,18 @@
             "type": "string"
           },
           "source": {
-            "const": "mcp",
-            "default": "mcp",
+            "default": "agent",
+            "enum": [
+              "mcp",
+              "agent"
+            ],
             "title": "Source",
             "type": "string"
           },
           "visual_confirmation": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/McpVisualConfirmationOut"
+                "$ref": "#/components/schemas/GradingVisualConfirmationOut"
               },
               {
                 "type": "null"
@@ -2016,311 +1047,28 @@
           "request_id",
           "payload_hash",
           "quality_checks",
-          "generated_at",
-          "review_required"
+          "generated_at"
         ],
-        "title": "McpMetadataOut",
+        "title": "GradingMetadataOut",
         "type": "object"
       },
-      "McpPackageResponse": {
-        "properties": {
-          "assessment": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/AssessmentSuggestionOut"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "content": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Content"
-          },
-          "context_complete": {
-            "default": false,
-            "title": "Context Complete",
-            "type": "boolean"
-          },
-          "continuation_token": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Continuation Token"
-          },
-          "error_message": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Error Message"
-          },
-          "grading_handle": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Grading Handle"
-          },
-          "needs_rubric": {
-            "default": false,
-            "title": "Needs Rubric",
-            "type": "boolean"
-          },
-          "question_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Question Id"
-          },
-          "question_ocr_text": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Question Ocr Text"
-          },
-          "review_url": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Review Url"
-          },
-          "rubric_handle": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Rubric Handle"
-          },
-          "status": {
-            "$ref": "#/components/schemas/SubmissionStatus"
-          },
-          "submission_id": {
-            "title": "Submission Id",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "submission_id",
-          "status"
-        ],
-        "title": "McpPackageResponse",
-        "type": "object"
-      },
-      "McpPendingAssignment": {
-        "description": "待评分作业列表项。",
-        "properties": {
-          "original_filename": {
-            "title": "Original Filename",
-            "type": "string"
-          },
-          "question_name": {
-            "title": "Question Name",
-            "type": "string"
-          },
-          "submission_id": {
-            "title": "Submission Id",
-            "type": "integer"
-          },
-          "uploaded_at": {
-            "format": "date-time",
-            "title": "Uploaded At",
-            "type": "string"
-          }
-        },
-        "required": [
-          "submission_id",
-          "original_filename",
-          "question_name",
-          "uploaded_at"
-        ],
-        "title": "McpPendingAssignment",
-        "type": "object"
-      },
-      "McpPendingAssignmentsResponse": {
-        "properties": {
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/McpPendingAssignment"
-            },
-            "title": "Items",
-            "type": "array"
-          },
-          "next_cursor": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Next Cursor"
-          }
-        },
-        "title": "McpPendingAssignmentsResponse",
-        "type": "object"
-      },
-      "McpPreflightFile": {
-        "properties": {
-          "entrypoint": {
-            "default": true,
-            "title": "Entrypoint",
-            "type": "boolean"
-          },
-          "filename": {
-            "maxLength": 255,
-            "minLength": 1,
-            "title": "Filename",
-            "type": "string"
-          },
-          "question_number": {
-            "anyOf": [
-              {
-                "minimum": 1.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Question Number"
-          }
-        },
-        "required": [
-          "filename"
-        ],
-        "title": "McpPreflightFile",
-        "type": "object"
-      },
-      "McpPreflightRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "code_files": {
-            "items": {
-              "$ref": "#/components/schemas/McpPreflightFile"
-            },
-            "maxItems": 20,
-            "title": "Code Files",
-            "type": "array"
-          },
-          "question_name": {
-            "maxLength": 200,
-            "minLength": 1,
-            "title": "Question Name",
-            "type": "string"
-          }
-        },
-        "required": [
-          "question_name"
-        ],
-        "title": "McpPreflightRequest",
-        "type": "object"
-      },
-      "McpPreflightResponse": {
-        "properties": {
-          "candidates": {
-            "items": {
-              "$ref": "#/components/schemas/McpQuestionCandidate"
-            },
-            "title": "Candidates",
-            "type": "array"
-          },
-          "code_manifest": {
-            "items": {
-              "additionalProperties": true,
-              "type": "object"
-            },
-            "title": "Code Manifest",
-            "type": "array"
-          },
-          "question_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Question Id"
-          },
-          "question_name": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Question Name"
-          },
-          "status": {
-            "enum": [
-              "ready_to_submit",
-              "needs_question_choice"
-            ],
-            "title": "Status",
-            "type": "string"
-          }
-        },
-        "required": [
-          "status"
-        ],
-        "title": "McpPreflightResponse",
-        "type": "object"
-      },
-      "McpQualityChecksOut": {
+      "GradingQualityChecksOut": {
         "properties": {
           "arithmetic_valid": {
             "title": "Arithmetic Valid",
             "type": "boolean"
           },
           "client_self_check": {
-            "additionalProperties": true,
-            "title": "Client Self Check",
-            "type": "object"
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Self Check"
           },
           "code_evidence_valid": {
             "title": "Code Evidence Valid",
@@ -2331,8 +1079,15 @@
             "type": "boolean"
           },
           "second_pass_valid": {
-            "title": "Second Pass Valid",
-            "type": "boolean"
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Second Pass Valid"
           },
           "visual_confirmation_valid": {
             "title": "Visual Confirmation Valid",
@@ -2343,366 +1098,12 @@
           "arithmetic_valid",
           "evidence_valid",
           "code_evidence_valid",
-          "client_self_check",
-          "second_pass_valid",
           "visual_confirmation_valid"
         ],
-        "title": "McpQualityChecksOut",
+        "title": "GradingQualityChecksOut",
         "type": "object"
       },
-      "McpQuestionCandidate": {
-        "properties": {
-          "id": {
-            "title": "Id",
-            "type": "string"
-          },
-          "name": {
-            "title": "Name",
-            "type": "string"
-          },
-          "original_filename": {
-            "title": "Original Filename",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "name",
-          "original_filename"
-        ],
-        "title": "McpQuestionCandidate",
-        "type": "object"
-      },
-      "McpReviewItem": {
-        "additionalProperties": false,
-        "description": "复核者对单个评分项的结论。",
-        "properties": {
-          "comment": {
-            "maxLength": 4000,
-            "minLength": 1,
-            "title": "Comment",
-            "type": "string"
-          },
-          "rubric_item_id": {
-            "maxLength": 100,
-            "minLength": 5,
-            "title": "Rubric Item Id",
-            "type": "string"
-          },
-          "suggested_score": {
-            "anyOf": [
-              {
-                "minimum": 0.0,
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Suggested Score"
-          },
-          "verdict": {
-            "enum": [
-              "agree",
-              "disagree"
-            ],
-            "title": "Verdict",
-            "type": "string"
-          }
-        },
-        "required": [
-          "rubric_item_id",
-          "verdict",
-          "comment"
-        ],
-        "title": "McpReviewItem",
-        "type": "object"
-      },
-      "McpRubricExtractionItem": {
-        "additionalProperties": false,
-        "description": "客户端从题目 OCR 中提取的单个评分项。",
-        "properties": {
-          "criterion": {
-            "maxLength": 200,
-            "minLength": 1,
-            "title": "Criterion",
-            "type": "string"
-          },
-          "details": {
-            "maxLength": 2000,
-            "minLength": 1,
-            "title": "Details",
-            "type": "string"
-          },
-          "max_score": {
-            "exclusiveMinimum": 0.0,
-            "title": "Max Score",
-            "type": "number"
-          },
-          "source_quote": {
-            "maxLength": 4000,
-            "minLength": 1,
-            "title": "Source Quote",
-            "type": "string"
-          }
-        },
-        "required": [
-          "criterion",
-          "max_score",
-          "details",
-          "source_quote"
-        ],
-        "title": "McpRubricExtractionItem",
-        "type": "object"
-      },
-      "McpSaveAssessmentRequest": {
-        "properties": {
-          "assessment": {
-            "$ref": "#/components/schemas/McpAssessmentRequest"
-          },
-          "client": {
-            "anyOf": [
-              {
-                "maxLength": 64,
-                "pattern": "^[a-z0-9][a-z0-9._-]*$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Client"
-          },
-          "grading_handle": {
-            "maxLength": 2000,
-            "minLength": 20,
-            "title": "Grading Handle",
-            "type": "string"
-          }
-        },
-        "required": [
-          "grading_handle",
-          "assessment"
-        ],
-        "title": "McpSaveAssessmentRequest",
-        "type": "object"
-      },
-      "McpSaveReviewRequest": {
-        "additionalProperties": false,
-        "description": "独立复核任务提交的对当前评分建议的复核结论。\n\n``grading_handle`` 来自对 ``ready_for_review`` 作业调用\n``open_ai_marking_assignment`` 后的评分包;服务端校验建议版本\n(grading_revision)未变化后写入 ``submissions.assessment_review``。\n``items`` 必须逐项引用当前 rubric 的全部 item,与评分建议相同。",
-        "properties": {
-          "client": {
-            "anyOf": [
-              {
-                "maxLength": 64,
-                "pattern": "^[a-z0-9][a-z0-9._-]*$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Client"
-          },
-          "confidence": {
-            "default": 0,
-            "maximum": 1.0,
-            "minimum": 0.0,
-            "title": "Confidence",
-            "type": "number"
-          },
-          "grading_handle": {
-            "maxLength": 2000,
-            "minLength": 20,
-            "title": "Grading Handle",
-            "type": "string"
-          },
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/McpReviewItem"
-            },
-            "maxItems": 100,
-            "minItems": 1,
-            "title": "Items",
-            "type": "array"
-          },
-          "summary": {
-            "maxLength": 20000,
-            "minLength": 1,
-            "title": "Summary",
-            "type": "string"
-          },
-          "verdict": {
-            "enum": [
-              "agree",
-              "partial",
-              "disagree"
-            ],
-            "title": "Verdict",
-            "type": "string"
-          }
-        },
-        "required": [
-          "grading_handle",
-          "verdict",
-          "summary",
-          "items"
-        ],
-        "title": "McpSaveReviewRequest",
-        "type": "object"
-      },
-      "McpSaveReviewResponse": {
-        "properties": {
-          "reviewed_revision": {
-            "title": "Reviewed Revision",
-            "type": "integer"
-          },
-          "status": {
-            "$ref": "#/components/schemas/SubmissionStatus"
-          },
-          "submission_id": {
-            "title": "Submission Id",
-            "type": "integer"
-          },
-          "verdict": {
-            "enum": [
-              "agree",
-              "partial",
-              "disagree"
-            ],
-            "title": "Verdict",
-            "type": "string"
-          }
-        },
-        "required": [
-          "submission_id",
-          "status",
-          "reviewed_revision",
-          "verdict"
-        ],
-        "title": "McpSaveReviewResponse",
-        "type": "object"
-      },
-      "McpSaveRubricRequest": {
-        "additionalProperties": false,
-        "description": "保存客户端提取的题目 rubric。\n\n``handle`` 为 ``open_ai_marking_assignment`` 返回的 rubric 提取句柄;\n``status`` 为 ``complete``（有明确 rubric）或 ``absent_or_ambiguous``\n（无明确 rubric）。``complete`` 时逐项 ``source_quote`` 必须是题目 OCR\n原文子串且包含该项满分,服务端确定性校验后写入题目级权威快照。",
-        "properties": {
-          "handle": {
-            "maxLength": 2000,
-            "minLength": 20,
-            "title": "Handle",
-            "type": "string"
-          },
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/McpRubricExtractionItem"
-            },
-            "maxItems": 100,
-            "title": "Items",
-            "type": "array"
-          },
-          "status": {
-            "enum": [
-              "complete",
-              "absent_or_ambiguous"
-            ],
-            "title": "Status",
-            "type": "string"
-          },
-          "total_max_score": {
-            "anyOf": [
-              {
-                "exclusiveMinimum": 0.0,
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Total Max Score"
-          }
-        },
-        "required": [
-          "handle",
-          "status"
-        ],
-        "title": "McpSaveRubricRequest",
-        "type": "object"
-      },
-      "McpSaveRubricResponse": {
-        "properties": {
-          "question_id": {
-            "title": "Question Id",
-            "type": "string"
-          },
-          "question_name": {
-            "title": "Question Name",
-            "type": "string"
-          },
-          "rubric_snapshot_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Rubric Snapshot Id"
-          },
-          "status": {
-            "enum": [
-              "complete",
-              "absent_or_ambiguous"
-            ],
-            "title": "Status",
-            "type": "string"
-          }
-        },
-        "required": [
-          "status",
-          "question_id",
-          "question_name"
-        ],
-        "title": "McpSaveRubricResponse",
-        "type": "object"
-      },
-      "McpSelfCheck": {
-        "properties": {
-          "changes_made": {
-            "items": {
-              "type": "string"
-            },
-            "maxItems": 20,
-            "title": "Changes Made",
-            "type": "array"
-          },
-          "issues_found": {
-            "items": {
-              "type": "string"
-            },
-            "maxItems": 20,
-            "title": "Issues Found",
-            "type": "array"
-          },
-          "rubric_items_reviewed": {
-            "items": {
-              "type": "string"
-            },
-            "maxItems": 100,
-            "title": "Rubric Items Reviewed",
-            "type": "array"
-          },
-          "second_pass_completed": {
-            "default": false,
-            "title": "Second Pass Completed",
-            "type": "boolean"
-          }
-        },
-        "title": "McpSelfCheck",
-        "type": "object"
-      },
-      "McpVisualConfirmationOut": {
+      "GradingVisualConfirmationOut": {
         "properties": {
           "confirmed_at": {
             "anyOf": [
@@ -2738,110 +1139,34 @@
         "required": [
           "verdict"
         ],
-        "title": "McpVisualConfirmationOut",
+        "title": "GradingVisualConfirmationOut",
         "type": "object"
       },
-      "McpVisualConfirmationRequest": {
+      "HTTPValidationError": {
         "properties": {
-          "grading_handle": {
-            "maxLength": 2000,
-            "minLength": 20,
-            "title": "Grading Handle",
-            "type": "string"
-          },
-          "note": {
-            "anyOf": [
-              {
-                "maxLength": 2000,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Note"
-          },
-          "verdict": {
-            "enum": [
-              "consistent",
-              "mismatch"
-            ],
-            "title": "Verdict",
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "LoginRequest": {
+        "description": "登录请求体：待校验的访问令牌。",
+        "properties": {
+          "token": {
+            "title": "Token",
             "type": "string"
           }
         },
         "required": [
-          "grading_handle",
-          "verdict"
+          "token"
         ],
-        "title": "McpVisualConfirmationRequest",
-        "type": "object"
-      },
-      "McpVisualConfirmationResponse": {
-        "properties": {
-          "confirmed_at": {
-            "title": "Confirmed At",
-            "type": "string"
-          },
-          "grading_handle": {
-            "title": "Grading Handle",
-            "type": "string"
-          },
-          "note": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Note"
-          },
-          "submission_id": {
-            "title": "Submission Id",
-            "type": "integer"
-          },
-          "verdict": {
-            "enum": [
-              "consistent",
-              "mismatch"
-            ],
-            "title": "Verdict",
-            "type": "string"
-          }
-        },
-        "required": [
-          "submission_id",
-          "grading_handle",
-          "verdict",
-          "confirmed_at"
-        ],
-        "title": "McpVisualConfirmationResponse",
-        "type": "object"
-      },
-      "McpWaitReadyResponse": {
-        "description": "wait-ready 长轮询响应:当前状态与是否已进入可打开状态。\n\n``ready`` 为 true 时 status 必然属于 awaiting_mcp/ready_for_review/\nreviewed/failed,客户端可立即调用 open_ai_marking_assignment;\nfalse 表示超时仍未就绪,客户端可继续等待。",
-        "properties": {
-          "ready": {
-            "title": "Ready",
-            "type": "boolean"
-          },
-          "status": {
-            "title": "Status",
-            "type": "string"
-          },
-          "submission_id": {
-            "title": "Submission Id",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "submission_id",
-          "status",
-          "ready"
-        ],
-        "title": "McpWaitReadyResponse",
+        "title": "LoginRequest",
         "type": "object"
       },
       "PaginatedQuestions": {
@@ -2905,6 +1230,282 @@
           "limit"
         ],
         "title": "PaginatedSubmissions",
+        "type": "object"
+      },
+      "ProviderConfigUpdateRequest": {
+        "additionalProperties": false,
+        "description": "更新通道配置;null 不改动、空串清除。\n\n``api_key`` 只写不读(响应永不回显密钥本体)。",
+        "properties": {
+          "api_key": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key"
+          },
+          "base_url": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Url"
+          },
+          "default_model": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Model"
+          },
+          "reasoning_effort": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reasoning Effort"
+          }
+        },
+        "title": "ProviderConfigUpdateRequest",
+        "type": "object"
+      },
+      "ProviderDefaultUpdateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "provider": {
+            "enum": [
+              "openai_api",
+              "chatgpt_sub"
+            ],
+            "title": "Provider",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider"
+        ],
+        "title": "ProviderDefaultUpdateRequest",
+        "type": "object"
+      },
+      "ProviderListResponse": {
+        "properties": {
+          "provider_default": {
+            "title": "Provider Default",
+            "type": "string"
+          },
+          "providers": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ProviderStatusOut"
+            },
+            "title": "Providers",
+            "type": "object"
+          }
+        },
+        "required": [
+          "provider_default",
+          "providers"
+        ],
+        "title": "ProviderListResponse",
+        "type": "object"
+      },
+      "ProviderOAuthStartResponse": {
+        "properties": {
+          "authorize_url": {
+            "title": "Authorize Url",
+            "type": "string"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          }
+        },
+        "required": [
+          "authorize_url"
+        ],
+        "title": "ProviderOAuthStartResponse",
+        "type": "object"
+      },
+      "ProviderOAuthStatusResponse": {
+        "properties": {
+          "authorize_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authorize Url"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "status": {
+            "enum": [
+              "idle",
+              "pending",
+              "completed",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "ProviderOAuthStatusResponse",
+        "type": "object"
+      },
+      "ProviderStatusOut": {
+        "properties": {
+          "account_last4": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Last4"
+          },
+          "available": {
+            "default": true,
+            "title": "Available",
+            "type": "boolean"
+          },
+          "base_url": {
+            "default": "",
+            "title": "Base Url",
+            "type": "string"
+          },
+          "configured": {
+            "default": false,
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "default_model": {
+            "default": "",
+            "title": "Default Model",
+            "type": "string"
+          },
+          "expires_at": {
+            "default": "",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "key_last4": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Last4"
+          },
+          "plan": {
+            "default": "",
+            "title": "Plan",
+            "type": "string"
+          },
+          "reasoning_effort": {
+            "default": "",
+            "title": "Reasoning Effort",
+            "type": "string"
+          }
+        },
+        "title": "ProviderStatusOut",
+        "type": "object"
+      },
+      "ProviderTestResponse": {
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "models": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Models",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ready",
+              "needs_auth",
+              "unsupported",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "status"
+        ],
+        "title": "ProviderTestResponse",
         "type": "object"
       },
       "QuestionConfirmRequest": {
@@ -3336,7 +1937,7 @@
         "type": "object"
       },
       "ScoreDetail": {
-        "description": "单项评分:MCP 与教师最终确认共用。",
+        "description": "单项评分:agent 与教师最终确认共用。",
         "properties": {
           "comment": {
             "minLength": 1,
@@ -3711,7 +2312,7 @@
           },
           "grading_mode": {
             "$ref": "#/components/schemas/SubmissionGradingMode",
-            "default": "external_agent"
+            "default": "agent"
           },
           "grading_revision": {
             "default": 0,
@@ -3851,7 +2452,7 @@
       },
       "SubmissionGradingMode": {
         "enum": [
-          "external_agent"
+          "agent"
         ],
         "title": "SubmissionGradingMode",
         "type": "string"
@@ -3896,7 +2497,7 @@
           },
           "grading_mode": {
             "$ref": "#/components/schemas/SubmissionGradingMode",
-            "default": "external_agent"
+            "default": "agent"
           },
           "grading_revision": {
             "default": 0,
@@ -3983,7 +2584,7 @@
           "pending",
           "ocr_processing",
           "ocr_done",
-          "awaiting_mcp",
+          "awaiting_grading",
           "ready_for_review",
           "reviewed",
           "failed"
@@ -4030,7 +2631,7 @@
           },
           "grading_mode": {
             "$ref": "#/components/schemas/SubmissionGradingMode",
-            "default": "external_agent"
+            "default": "agent"
           },
           "grading_revision": {
             "default": 0,
@@ -4134,1289 +2735,6 @@
   },
   "openapi": "3.1.0",
   "paths": {
-    "/api/acp/agents": {
-      "get": {
-        "description": "白名单 agent 目录;Registry 不可达时返回缓存或空目录(可离线浏览)。",
-        "operationId": "list_agents_api_acp_agents_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AcpAgentListResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "List Agents",
-        "tags": [
-          "acp",
-          "acp"
-        ]
-      }
-    },
-    "/api/acp/agents/refresh": {
-      "post": {
-        "operationId": "refresh_registry_api_acp_agents_refresh_post",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Refresh Registry Api Acp Agents Refresh Post",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Refresh Registry",
-        "tags": [
-          "acp",
-          "acp"
-        ]
-      }
-    },
-    "/api/acp/agents/{agent_id}/install": {
-      "delete": {
-        "description": "卸载已安装链接:删除安装标记与该版本下载缓存。\n\n与\"移出白名单\"不同:卸载后 agent 仍留在目录中(状态回到未安装),\n可随时重新安装;npx/uvx 发行不触碰本机全局包缓存。",
-        "operationId": "uninstall_agent_api_acp_agents__agent_id__install_delete",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "agent_id",
-            "required": true,
-            "schema": {
-              "title": "Agent Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AcpUninstallResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Uninstall Agent",
-        "tags": [
-          "acp",
-          "acp"
-        ]
-      },
-      "post": {
-        "description": "安装白名单 agent 的精确版本;已缓存同版本时不重复下载。\n\nnpm/uvx 发行:安装即解析并审核精确版本快照(npx/uvx 在 spawn 时按\n精确版本拉取);binary 发行:下载归档 → SHA-256 校验 → 安全解压到\n受控缓存,并把 command 指向解压出的可执行文件。",
-        "operationId": "install_agent_api_acp_agents__agent_id__install_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "agent_id",
-            "required": true,
-            "schema": {
-              "title": "Agent Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AcpInstallResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Install Agent",
-        "tags": [
-          "acp",
-          "acp"
-        ]
-      }
-    },
-    "/api/acp/agents/{agent_id}/set-default": {
-      "post": {
-        "description": "教师显式选择机器级默认 agent;要求该 agent 已安装。",
-        "operationId": "set_default_agent_api_acp_agents__agent_id__set_default_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "agent_id",
-            "required": true,
-            "schema": {
-              "title": "Agent Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Set Default Agent Api Acp Agents  Agent Id  Set Default Post",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Set Default Agent",
-        "tags": [
-          "acp",
-          "acp"
-        ]
-      }
-    },
-    "/api/acp/agents/{agent_id}/test": {
-      "post": {
-        "description": "连接诊断:initialize → 能力协商 → 安全关闭;不保存认证秘密。",
-        "operationId": "test_agent_connection_api_acp_agents__agent_id__test_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "agent_id",
-            "required": true,
-            "schema": {
-              "title": "Agent Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AcpTestConnectionResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Test Agent Connection",
-        "tags": [
-          "acp",
-          "acp"
-        ]
-      }
-    },
-    "/api/acp/chat/sessions": {
-      "get": {
-        "operationId": "list_chat_sessions_api_acp_chat_sessions_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "submission_id",
-            "required": true,
-            "schema": {
-              "minimum": 1,
-              "title": "Submission Id",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AcpChatSessionListResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "List Chat Sessions",
-        "tags": [
-          "acp-chat",
-          "acp-chat"
-        ]
-      },
-      "post": {
-        "operationId": "create_chat_session_api_acp_chat_sessions_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AcpChatCreateRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AcpChatSessionOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Create Chat Session",
-        "tags": [
-          "acp-chat",
-          "acp-chat"
-        ]
-      }
-    },
-    "/api/acp/chat/sessions/{chat_id}": {
-      "delete": {
-        "operationId": "close_chat_session_api_acp_chat_sessions__chat_id__delete",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "chat_id",
-            "required": true,
-            "schema": {
-              "title": "Chat Id",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Close Chat Session Api Acp Chat Sessions  Chat Id  Delete",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Close Chat Session",
-        "tags": [
-          "acp-chat",
-          "acp-chat"
-        ]
-      },
-      "get": {
-        "operationId": "get_chat_session_detail_api_acp_chat_sessions__chat_id__get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "chat_id",
-            "required": true,
-            "schema": {
-              "title": "Chat Id",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AcpChatSessionOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Get Chat Session Detail",
-        "tags": [
-          "acp-chat",
-          "acp-chat"
-        ]
-      }
-    },
-    "/api/acp/chat/sessions/{chat_id}/cancel": {
-      "post": {
-        "operationId": "cancel_chat_turn_api_acp_chat_sessions__chat_id__cancel_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "chat_id",
-            "required": true,
-            "schema": {
-              "title": "Chat Id",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Cancel Chat Turn Api Acp Chat Sessions  Chat Id  Cancel Post",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Cancel Chat Turn",
-        "tags": [
-          "acp-chat",
-          "acp-chat"
-        ]
-      }
-    },
-    "/api/acp/chat/sessions/{chat_id}/codex-configuration": {
-      "patch": {
-        "operationId": "update_chat_codex_configuration_api_acp_chat_sessions__chat_id__codex_configuration_patch",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "chat_id",
-            "required": true,
-            "schema": {
-              "title": "Chat Id",
-              "type": "integer"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AcpChatConfigurationUpdateRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AcpChatSessionOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Update Chat Codex Configuration",
-        "tags": [
-          "acp-chat",
-          "acp-chat"
-        ]
-      }
-    },
-    "/api/acp/chat/sessions/{chat_id}/events": {
-      "get": {
-        "operationId": "list_chat_events_api_acp_chat_sessions__chat_id__events_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "chat_id",
-            "required": true,
-            "schema": {
-              "title": "Chat Id",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "after_seq",
-            "required": false,
-            "schema": {
-              "default": 0,
-              "minimum": 0,
-              "title": "After Seq",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "default": 200,
-              "maximum": 500,
-              "minimum": 1,
-              "title": "Limit",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/AcpChatEventOut"
-                  },
-                  "title": "Response List Chat Events Api Acp Chat Sessions  Chat Id  Events Get",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "List Chat Events",
-        "tags": [
-          "acp-chat",
-          "acp-chat"
-        ]
-      }
-    },
-    "/api/acp/chat/sessions/{chat_id}/messages": {
-      "post": {
-        "operationId": "send_chat_message_api_acp_chat_sessions__chat_id__messages_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "chat_id",
-            "required": true,
-            "schema": {
-              "title": "Chat Id",
-              "type": "integer"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AcpChatMessageRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AcpChatSessionOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Send Chat Message",
-        "tags": [
-          "acp-chat",
-          "acp-chat"
-        ]
-      }
-    },
-    "/api/acp/chat/sessions/{chat_id}/permanent": {
-      "delete": {
-        "description": "永久删除对话:停止运行中的会话,删除会话行、事件转录与专属工作区。\n\n与上面的\"关闭会话\"不同,此操作不可恢复。",
-        "operationId": "delete_chat_session_permanently_api_acp_chat_sessions__chat_id__permanent_delete",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "chat_id",
-            "required": true,
-            "schema": {
-              "title": "Chat Id",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Delete Chat Session Permanently Api Acp Chat Sessions  Chat Id  Permanent Delete",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Delete Chat Session Permanently",
-        "tags": [
-          "acp-chat",
-          "acp-chat"
-        ]
-      }
-    },
-    "/api/acp/chat/sessions/{chat_id}/permission": {
-      "post": {
-        "operationId": "answer_chat_permission_api_acp_chat_sessions__chat_id__permission_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "chat_id",
-            "required": true,
-            "schema": {
-              "title": "Chat Id",
-              "type": "integer"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AcpChatPermissionRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Answer Chat Permission Api Acp Chat Sessions  Chat Id  Permission Post",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Answer Chat Permission",
-        "tags": [
-          "acp-chat",
-          "acp-chat"
-        ]
-      }
-    },
-    "/api/acp/chat/sessions/{chat_id}/stream": {
-      "get": {
-        "description": "SSE:先回放数据库事件,再通过 PG NOTIFY 推送增量。\n\nSSE ``id`` 等于事件 seq;会话进入终态且读尽后发送 ``: done``。",
-        "operationId": "stream_chat_events_api_acp_chat_sessions__chat_id__stream_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "chat_id",
-            "required": true,
-            "schema": {
-              "title": "Chat Id",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "after_seq",
-            "required": false,
-            "schema": {
-              "default": 0,
-              "minimum": 0,
-              "title": "After Seq",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "header",
-            "name": "Last-Event-ID",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Last-Event-Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Stream Chat Events",
-        "tags": [
-          "acp-chat",
-          "acp-chat"
-        ]
-      }
-    },
-    "/api/acp/codex/configuration": {
-      "get": {
-        "description": "Return the live Codex model/thought/speed catalog for the UI.",
-        "operationId": "get_codex_configuration_catalog_api_acp_codex_configuration_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "model_id",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "maxLength": 128,
-                  "minLength": 1,
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Model Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AcpCodexConfigurationResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Get Codex Configuration Catalog",
-        "tags": [
-          "acp",
-          "acp"
-        ]
-      }
-    },
-    "/api/acp/default-agent": {
-      "get": {
-        "operationId": "get_default_agent_api_acp_default_agent_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Get Default Agent Api Acp Default Agent Get",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Get Default Agent",
-        "tags": [
-          "acp",
-          "acp"
-        ]
-      }
-    },
-    "/api/acp/runs": {
-      "post": {
-        "operationId": "create_run_api_acp_runs_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AcpRunCreateRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AcpRunDetailResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Create Run",
-        "tags": [
-          "acp",
-          "acp"
-        ]
-      }
-    },
-    "/api/acp/runs/by-submission/{submission_id}": {
-      "get": {
-        "description": "查询作业当前的活跃 run;不存在返回 404(前端视为无运行)。",
-        "operationId": "get_active_run_by_submission_api_acp_runs_by_submission__submission_id__get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "submission_id",
-            "required": true,
-            "schema": {
-              "title": "Submission Id",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AcpRunDetailResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Get Active Run By Submission",
-        "tags": [
-          "acp",
-          "acp"
-        ]
-      }
-    },
-    "/api/acp/runs/{run_id}": {
-      "get": {
-        "operationId": "get_run_api_acp_runs__run_id__get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "run_id",
-            "required": true,
-            "schema": {
-              "title": "Run Id",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AcpRunDetailResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Get Run",
-        "tags": [
-          "acp",
-          "acp"
-        ]
-      }
-    },
-    "/api/acp/runs/{run_id}/cancel": {
-      "post": {
-        "operationId": "cancel_run_api_acp_runs__run_id__cancel_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "run_id",
-            "required": true,
-            "schema": {
-              "title": "Run Id",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Cancel Run Api Acp Runs  Run Id  Cancel Post",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Cancel Run",
-        "tags": [
-          "acp",
-          "acp"
-        ]
-      }
-    },
-    "/api/acp/runs/{run_id}/codex-configuration": {
-      "patch": {
-        "operationId": "update_run_codex_configuration_api_acp_runs__run_id__codex_configuration_patch",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "run_id",
-            "required": true,
-            "schema": {
-              "title": "Run Id",
-              "type": "integer"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AcpConfigurationUpdateRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AcpRunDetailResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Update Run Codex Configuration",
-        "tags": [
-          "acp",
-          "acp"
-        ]
-      }
-    },
-    "/api/acp/runs/{run_id}/events": {
-      "get": {
-        "operationId": "list_run_events_api_acp_runs__run_id__events_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "run_id",
-            "required": true,
-            "schema": {
-              "title": "Run Id",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "after_seq",
-            "required": false,
-            "schema": {
-              "default": 0,
-              "minimum": 0,
-              "title": "After Seq",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "default": 100,
-              "maximum": 500,
-              "minimum": 1,
-              "title": "Limit",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/AcpRunEventOut"
-                  },
-                  "title": "Response List Run Events Api Acp Runs  Run Id  Events Get",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "List Run Events",
-        "tags": [
-          "acp",
-          "acp"
-        ]
-      }
-    },
-    "/api/acp/runs/{run_id}/reply": {
-      "post": {
-        "description": "教师答复检查点;答复持久化后由 worker 恢复会话续跑。",
-        "operationId": "reply_checkpoint_api_acp_runs__run_id__reply_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "run_id",
-            "required": true,
-            "schema": {
-              "title": "Run Id",
-              "type": "integer"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AcpRunReplyRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Reply Checkpoint Api Acp Runs  Run Id  Reply Post",
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Reply Checkpoint",
-        "tags": [
-          "acp",
-          "acp"
-        ]
-      }
-    },
-    "/api/acp/runs/{run_id}/stream": {
-      "get": {
-        "description": "SSE:先回放数据库事件,再通过 PG NOTIFY 推送增量。\n\nSSE ``id`` 等于事件 seq,断线重连带 ``Last-Event-ID`` 从该 seq 续读。",
-        "operationId": "stream_run_events_api_acp_runs__run_id__stream_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "run_id",
-            "required": true,
-            "schema": {
-              "title": "Run Id",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "after_seq",
-            "required": false,
-            "schema": {
-              "default": 0,
-              "minimum": 0,
-              "title": "After Seq",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "header",
-            "name": "Last-Event-ID",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Last-Event-Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Stream Run Events",
-        "tags": [
-          "acp",
-          "acp"
-        ]
-      }
-    },
     "/api/admin/dead-jobs": {
       "get": {
         "description": "列出所有死信任务(按 ``updated_at`` 降序)。",
@@ -5552,6 +2870,658 @@
         "tags": [
           "admin",
           "admin"
+        ]
+      }
+    },
+    "/api/agent/providers": {
+      "get": {
+        "operationId": "list_providers_api_agent_providers_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Providers",
+        "tags": [
+          "agent",
+          "agent"
+        ]
+      }
+    },
+    "/api/agent/providers/chatgpt_sub/oauth/logout": {
+      "post": {
+        "operationId": "logout_chatgpt_api_agent_providers_chatgpt_sub_oauth_logout_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Logout Chatgpt",
+        "tags": [
+          "agent",
+          "agent"
+        ]
+      }
+    },
+    "/api/agent/providers/chatgpt_sub/oauth/start": {
+      "post": {
+        "description": "发起 PKCE 登录;返回需要浏览器打开的授权地址。",
+        "operationId": "start_chatgpt_login_api_agent_providers_chatgpt_sub_oauth_start_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderOAuthStartResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Start Chatgpt Login",
+        "tags": [
+          "agent",
+          "agent"
+        ]
+      }
+    },
+    "/api/agent/providers/chatgpt_sub/oauth/status": {
+      "get": {
+        "description": "轮询登录结果;完成时把令牌落库(只落一次)。",
+        "operationId": "chatgpt_login_status_api_agent_providers_chatgpt_sub_oauth_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderOAuthStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Chatgpt Login Status",
+        "tags": [
+          "agent",
+          "agent"
+        ]
+      }
+    },
+    "/api/agent/providers/default": {
+      "put": {
+        "operationId": "set_default_provider_api_agent_providers_default_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProviderDefaultUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Default Provider",
+        "tags": [
+          "agent",
+          "agent"
+        ]
+      }
+    },
+    "/api/agent/providers/{name}/config": {
+      "put": {
+        "description": "更新通道配置;null 不改动、空串清除;密钥只写不读。",
+        "operationId": "update_provider_config_api_agent_providers__name__config_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProviderConfigUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Provider Config",
+        "tags": [
+          "agent",
+          "agent"
+        ]
+      }
+    },
+    "/api/agent/providers/{name}/test": {
+      "post": {
+        "operationId": "test_provider_api_agent_providers__name__test_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderTestResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Test Provider",
+        "tags": [
+          "agent",
+          "agent"
+        ]
+      }
+    },
+    "/api/agent/runs": {
+      "post": {
+        "operationId": "create_run_api_agent_runs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentRunCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRunDetailResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Run",
+        "tags": [
+          "agent",
+          "agent"
+        ]
+      }
+    },
+    "/api/agent/runs/by-submission/{submission_id}": {
+      "get": {
+        "description": "查询作业当前的活跃 run;不存在返回 404(前端视为无运行)。",
+        "operationId": "get_active_run_by_submission_api_agent_runs_by_submission__submission_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "submission_id",
+            "required": true,
+            "schema": {
+              "title": "Submission Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRunDetailResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Active Run By Submission",
+        "tags": [
+          "agent",
+          "agent"
+        ]
+      }
+    },
+    "/api/agent/runs/{run_id}": {
+      "get": {
+        "operationId": "get_run_api_agent_runs__run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRunDetailResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Run",
+        "tags": [
+          "agent",
+          "agent"
+        ]
+      }
+    },
+    "/api/agent/runs/{run_id}/cancel": {
+      "post": {
+        "operationId": "cancel_run_api_agent_runs__run_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Cancel Run Api Agent Runs  Run Id  Cancel Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Run",
+        "tags": [
+          "agent",
+          "agent"
+        ]
+      }
+    },
+    "/api/agent/runs/{run_id}/configuration": {
+      "patch": {
+        "description": "切换 model/effort;queued 立即生效,运行中排队到下一回合。",
+        "operationId": "update_run_configuration_api_agent_runs__run_id__configuration_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentConfigurationUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentRunDetailResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Run Configuration",
+        "tags": [
+          "agent",
+          "agent"
+        ]
+      }
+    },
+    "/api/agent/runs/{run_id}/events": {
+      "get": {
+        "operationId": "list_run_events_api_agent_runs__run_id__events_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "after_seq",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "After Seq",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AgentRunEventOut"
+                  },
+                  "title": "Response List Run Events Api Agent Runs  Run Id  Events Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Run Events",
+        "tags": [
+          "agent",
+          "agent"
+        ]
+      }
+    },
+    "/api/agent/runs/{run_id}/reply": {
+      "post": {
+        "description": "教师答复检查点;答复持久化后由 worker 恢复续跑。",
+        "operationId": "reply_checkpoint_api_agent_runs__run_id__reply_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentRunReplyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Reply Checkpoint Api Agent Runs  Run Id  Reply Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reply Checkpoint",
+        "tags": [
+          "agent",
+          "agent"
+        ]
+      }
+    },
+    "/api/agent/runs/{run_id}/stream": {
+      "get": {
+        "description": "SSE:先回放数据库事件,再通过 PG NOTIFY 推送增量。\n\nSSE ``id`` 等于事件 seq,断线重连带 ``Last-Event-ID`` 从该 seq 续读。",
+        "operationId": "stream_run_events_api_agent_runs__run_id__stream_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "after_seq",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "After Seq",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Last-Event-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Last-Event-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stream Run Events",
+        "tags": [
+          "agent",
+          "agent"
         ]
       }
     },
@@ -5753,458 +3723,6 @@
         "summary": "Health Check",
         "tags": [
           "health"
-        ]
-      }
-    },
-    "/api/mcp/health": {
-      "get": {
-        "operationId": "mcp_health_api_mcp_health_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/McpHealthResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Mcp Health",
-        "tags": [
-          "mcp"
-        ]
-      }
-    },
-    "/api/mcp/pending-assignments": {
-      "get": {
-        "description": "列出等待 MCP 客户端评分的作业(按上传时间与 ID 升序)。\n\n仅列出 ``awaiting_mcp`` 的作业。使用 keyset 游标分页:\n``(uploaded_at, id) >`` 上一个游标,保证排序稳定且不随翻页偏移。\n``limit`` 范围 1–100。",
-        "operationId": "mcp_pending_assignments_api_mcp_pending_assignments_get",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "cursor",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "maxLength": 2000,
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Cursor"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "default": 20,
-              "maximum": 100,
-              "minimum": 1,
-              "title": "Limit",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/McpPendingAssignmentsResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Mcp Pending Assignments",
-        "tags": [
-          "mcp"
-        ]
-      }
-    },
-    "/api/mcp/questions/{question_id}/rubric": {
-      "put": {
-        "description": "保存客户端从题目 OCR 提取的 rubric(服务端确定性校验)。",
-        "operationId": "save_mcp_question_rubric_api_mcp_questions__question_id__rubric_put",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "question_id",
-            "required": true,
-            "schema": {
-              "title": "Question Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/McpSaveRubricRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/McpSaveRubricResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Save Mcp Question Rubric",
-        "tags": [
-          "mcp"
-        ]
-      }
-    },
-    "/api/mcp/submission-preflight": {
-      "post": {
-        "description": "Resolve a teacher-provided question name and validate only file metadata.",
-        "operationId": "mcp_submission_preflight_api_mcp_submission_preflight_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/McpPreflightRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/McpPreflightResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Mcp Submission Preflight",
-        "tags": [
-          "mcp"
-        ]
-      }
-    },
-    "/api/mcp/submissions/{submission_id}/assessment-review": {
-      "put": {
-        "description": "保存独立复核任务对当前评分建议的复核结论。",
-        "operationId": "save_mcp_assessment_review_api_mcp_submissions__submission_id__assessment_review_put",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "submission_id",
-            "required": true,
-            "schema": {
-              "title": "Submission Id",
-              "type": "integer"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/McpSaveReviewRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/McpSaveReviewResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Save Mcp Assessment Review",
-        "tags": [
-          "mcp"
-        ]
-      }
-    },
-    "/api/mcp/submissions/{submission_id}/assessment-v2": {
-      "put": {
-        "description": "Save a model-facing compact assessment using a server-issued grading handle.",
-        "operationId": "save_mcp_assessment_api_mcp_submissions__submission_id__assessment_v2_put",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "submission_id",
-            "required": true,
-            "schema": {
-              "title": "Submission Id",
-              "type": "integer"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/McpSaveAssessmentRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/McpAssessmentResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Save Mcp Assessment",
-        "tags": [
-          "mcp"
-        ]
-      }
-    },
-    "/api/mcp/submissions/{submission_id}/package": {
-      "get": {
-        "description": "Expose the grading context in bounded pages with opaque continuation.",
-        "operationId": "mcp_submission_package_api_mcp_submissions__submission_id__package_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "submission_id",
-            "required": true,
-            "schema": {
-              "title": "Submission Id",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "continuation_token",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "maxLength": 2000,
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Continuation Token"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/McpPackageResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Mcp Submission Package",
-        "tags": [
-          "mcp"
-        ]
-      }
-    },
-    "/api/mcp/submissions/{submission_id}/visual-confirmation": {
-      "post": {
-        "operationId": "confirm_mcp_visual_review_api_mcp_submissions__submission_id__visual_confirmation_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "submission_id",
-            "required": true,
-            "schema": {
-              "title": "Submission Id",
-              "type": "integer"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/McpVisualConfirmationRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/McpVisualConfirmationResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Confirm Mcp Visual Review",
-        "tags": [
-          "mcp"
-        ]
-      }
-    },
-    "/api/mcp/submissions/{submission_id}/wait-ready": {
-      "get": {
-        "description": "长轮询等待作业进入可打开状态（OCR 完成/失败或已有建议）。\n\n替代客户端固定间隔轮询 /package:PG 后端复用 LISTEN/NOTIFY 通道,\n状态变更即时返回;非 PG 后端内部退化为低频轮询。超时返回当前状态,\n客户端据 ``ready`` 决定是打开评分包还是继续等待。",
-        "operationId": "mcp_wait_ready_api_mcp_submissions__submission_id__wait_ready_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "submission_id",
-            "required": true,
-            "schema": {
-              "title": "Submission Id",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "timeout",
-            "required": false,
-            "schema": {
-              "default": 30.0,
-              "exclusiveMinimum": 0,
-              "maximum": 60.0,
-              "title": "Timeout",
-              "type": "number"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/McpWaitReadyResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Mcp Wait Ready",
-        "tags": [
-          "mcp"
         ]
       }
     },
@@ -6471,49 +3989,6 @@
         ]
       }
     },
-    "/api/questions/{question_id}/grading-prompt": {
-      "get": {
-        "description": "按题目生成可审计的批改提示词。\n\n复用与运行时评分包完全相同的 rubric 解析与评分策略组装\n（``resolve_submission_rubric`` + ``build_grading_policy``），\n保证教师复制的提示词与 ``open_ai_marking_assignment`` 返回的\ngrading_policy 同源、一字不差。题目 OCR 未完成时无法生成。",
-        "operationId": "get_question_grading_prompt_api_questions__question_id__grading_prompt_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "question_id",
-            "required": true,
-            "schema": {
-              "title": "Question Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GradingPromptOut"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Get Question Grading Prompt",
-        "tags": [
-          "questions"
-        ]
-      }
-    },
     "/api/questions/{question_id}/pdf": {
       "get": {
         "operationId": "get_question_pdf_api_questions__question_id__pdf_get",
@@ -6772,7 +4247,7 @@
         ]
       },
       "post": {
-        "description": "上传学生报告 PDF 及可选的多语言代码文件。\n\n收敛为 MCP-only 后固定使用外部编程助手评分模式：上传后只做 OCR，\n进入 ``awaiting_mcp``，由 MCP 客户端评分。",
+        "description": "上传学生作业:纯报告 PDF(+可选散装代码),或一个 ZIP 包。\n\nZIP 由后端解包自动分类:恰好一份报告 PDF、``q<n>.<ext>`` 命名的代码、\n其余为数据集(写入 ``submission_code_input_files``,批改工作区会物化)。\n固定使用 agent 评分模式：上传后只做 OCR，\n进入 ``awaiting_grading``，由内嵌批改 agent 评分。",
         "operationId": "create_submission_api_submissions_post",
         "requestBody": {
           "content": {

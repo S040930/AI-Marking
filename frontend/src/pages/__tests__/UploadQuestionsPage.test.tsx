@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { LanguageProvider } from '@/i18n';
@@ -52,8 +52,10 @@ function setOcrStatus(
   status: 'ready' | 'failed',
   error_message?: string,
 ) {
-  mocks.serverStatus.set(id, { status, error_message });
-  mocks.listeners.forEach((listener) => listener(id));
+  act(() => {
+    mocks.serverStatus.set(id, { status, error_message });
+    mocks.listeners.forEach((listener) => listener(id));
+  });
 }
 
 import UploadQuestionsPage from '@/pages/UploadQuestionsPage';
@@ -157,18 +159,21 @@ describe('UploadQuestionsPage', () => {
   });
 
   it('多文件时全部识别完成才跳转', async () => {
+    mocks.mutate.mockImplementation((vars, opts) => {
+      opts?.onSuccess?.({ id: vars.name, name: vars.name, status: 'pending' });
+    });
     renderPage();
     selectFiles(['a.pdf', 'b.pdf']);
     fireEvent.click(screen.getByRole('button', { name: '上传' }));
     expect(screen.getAllByText('识别中')).toHaveLength(2);
 
     // 第一个 ready → 仍在等待第二个
-    setOcrStatus('DTS208TC_CW1_Paper', 'ready');
+    setOcrStatus('a', 'ready');
     await waitFor(() => expect(screen.getByText('识别完成')).toBeInTheDocument());
     expect(screen.queryByText('上传作业页面')).not.toBeInTheDocument();
 
     // 第二个也 ready → 跳转
-    setOcrStatus('DTS208TC_CW1_Paper', 'ready');
+    setOcrStatus('b', 'ready');
     await waitFor(() =>
       expect(screen.getByText('上传作业页面')).toBeInTheDocument(),
     );
@@ -197,12 +202,15 @@ describe('UploadQuestionsPage', () => {
     expect(mocks.mutate).toHaveBeenCalledTimes(1);
 
     // 重试时后端把题目状态重置回 pending，重新轮询
-    mocks.serverStatus.set('DTS208TC_CW1_Paper', { status: 'pending' });
-    mocks.retryMutate.mock.calls[0][1]?.onSuccess?.({
-      id: 'DTS208TC_CW1_Paper',
-      name: 'essay',
-      status: 'pending',
+    await act(async () => {
+      mocks.serverStatus.set('DTS208TC_CW1_Paper', { status: 'pending' });
+      mocks.retryMutate.mock.calls[0][1]?.onSuccess?.({
+        id: 'DTS208TC_CW1_Paper',
+        name: 'essay',
+        status: 'pending',
+      });
     });
+    await waitFor(() => expect(mocks.listeners.size).toBe(1));
     await waitFor(() => expect(screen.getByText('识别中')).toBeInTheDocument());
 
     setOcrStatus('DTS208TC_CW1_Paper', 'ready');

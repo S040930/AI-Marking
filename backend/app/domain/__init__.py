@@ -1,2 +1,2 @@
-"""Pure domain policies shared by API, workers, and MCP adapters."""
+"""Pure domain policies shared by API, workers, and grading adapters."""
 

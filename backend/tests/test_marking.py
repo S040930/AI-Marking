@@ -1,7 +1,7 @@
 """批改流水线的关键路径测试。
 
 覆盖 MCP-only 收敛后的语义:
-- 流水线只做作业 OCR,完成后停在 awaiting_mcp,不调用任何后端评分 Agent
+- 流水线只做作业 OCR,完成后停在 awaiting_grading,不调用任何后端评分 Agent
 - 轻量状态接口 GET /submissions/{id}/status 返回的字段集合
 - 上传请求写入持久化任务
 
@@ -76,7 +76,7 @@ def marking_session_factory(db_session):
 async def test_pipeline_reuses_question_ocr_and_only_ocr_student_submission(
     monkeypatch, tmp_path, db_session, marking_session_factory
 ):
-    """题目 OCR 已缓存，批改时只调用一次学生作业 OCR，完成后停在 awaiting_mcp。"""
+    """题目 OCR 已缓存，批改时只调用一次学生作业 OCR，完成后停在 awaiting_grading。"""
     paths: list[str] = []
 
     async def fake_ocr(file_path: str, api_url: str, token: str) -> str:
@@ -91,7 +91,7 @@ async def test_pipeline_reuses_question_ocr_and_only_ocr_student_submission(
     assert paths == [str(tmp_path / "h.pdf")]
 
     db_session.refresh(sub)
-    assert sub.status == SubmissionStatus.awaiting_mcp
+    assert sub.status == SubmissionStatus.awaiting_grading
     assert sub.ocr_text == "OCR 文本"
 
 
@@ -144,10 +144,10 @@ async def test_pipeline_uses_global_config(
 
 
 @pytest.mark.asyncio
-async def test_pipeline_stops_at_awaiting_mcp_without_backend_agent(
+async def test_pipeline_stops_at_awaiting_grading_without_backend_agent(
     monkeypatch, tmp_path, db_session, marking_session_factory
 ):
-    """MCP-only: 流水线完成 OCR 后直接停在 awaiting_mcp，不调用任何后端评分 Agent。
+    """MCP-only: 流水线完成 OCR 后直接停在 awaiting_grading，不调用任何后端评分 Agent。
 
     后端评分 Agent 已随收敛删除：marking 模块不再存在 run_marking_agent
     入口，流水线不可能再进入 agent 阶段。
@@ -164,7 +164,7 @@ async def test_pipeline_stops_at_awaiting_mcp_without_backend_agent(
     await marking.run_marking_pipeline(sub.id)
 
     db_session.refresh(sub)
-    assert sub.status == SubmissionStatus.awaiting_mcp
+    assert sub.status == SubmissionStatus.awaiting_grading
     assert sub.ocr_text == "学生 OCR"
 
 
@@ -412,7 +412,7 @@ async def test_status_endpoint_returns_light_fields_only(client, db_session, tmp
             ocr_text="题目",
             status=QuestionStatus.ready,
         ),
-        status=SubmissionStatus.awaiting_mcp,
+        status=SubmissionStatus.awaiting_grading,
         score=None,
         ocr_text="MG级的 ocr 文本不应该出现" * 100,
         assessment_suggestion={"score": 80},
@@ -603,5 +603,5 @@ async def test_pipeline_releases_db_connection_during_ocr(
     await marking.run_marking_pipeline(sub.id)
 
     db_session.refresh(sub)
-    assert sub.status == SubmissionStatus.awaiting_mcp
+    assert sub.status == SubmissionStatus.awaiting_grading
     assert sub.ocr_text == "OCR 文本"

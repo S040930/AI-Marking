@@ -19,7 +19,7 @@ export default function HomePage() {
         className="mb-6"
         title={t('AI 作业批改')}
         description={t(
-          '学生作业通过编程助手（如 Codex）提交，本网页用于管理题目、查看评分并确认最终成绩。',
+          '网页端管理题目、上传学生作业，由 AI 批改 agent 评分并确认最终成绩。',
         )}
       />
 
@@ -55,11 +55,11 @@ export default function HomePage() {
               </span>
               <div>
                 <p className="font-medium text-foreground">
-                  {t('编程助手提交作业')}
+                  {t('网页上传作业')}
                 </p>
                 <p className="mt-0.5 text-sm text-muted-foreground">
                   {t(
-                    '在编程助手（如 Codex）中打开本项目的 AI-Marking 工具，直接提供学生报告 PDF 与代码文件路径，由它调用本地 MCP 完成评分。',
+                    '上传学生报告 PDF 与代码文件（或包含全部文件的 ZIP），在详情页选择模型通道后开始批改，AI 批改 agent 自动完成评分。',
                   )}
                 </p>
               </div>
@@ -74,7 +74,7 @@ export default function HomePage() {
                 </p>
                 <p className="mt-0.5 text-sm text-muted-foreground">
                   {t(
-                    '编程助手只保存评分建议；进入历史记录或评分工作台审阅，确认后提交最终成绩。',
+                    '评分建议生成后进入批改详情页核对，必要时人工调整，确认后提交最终成绩。',
                   )}
                 </p>
               </div>

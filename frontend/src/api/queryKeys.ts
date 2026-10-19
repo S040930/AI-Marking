@@ -3,8 +3,6 @@ export const queryKeys = {
     all: ['questions'] as const,
     list: (search: string, limit: number) =>
       ['questions', { search, limit }] as const,
-    gradingPrompt: (id: string | null) =>
-      ['questions', id, 'grading-prompt'] as const,
     watch: (id: string | null) => ['questions', id, 'watch'] as const,
   },
   submissions: {
@@ -20,22 +18,11 @@ export const queryKeys = {
   config: {
     all: ['config'] as const,
   },
-  acp: {
-    all: ['acp'] as const,
-    agents: ['acp', 'agents'] as const,
-    run: (id: number | undefined) => ['acp', 'run', id] as const,
-    runEvents: (id: number | undefined) => ['acp', 'run-events', id] as const,
-    defaultAgent: ['acp', 'default-agent'] as const,
-    codexConfiguration: (modelId?: string | null) =>
-      ['acp', 'codex-configuration', modelId ?? 'default'] as const,
-    chat: {
-      all: ['acp', 'chat'] as const,
-      sessions: (submissionId: number | undefined) =>
-        ['acp', 'chat', 'sessions', { submissionId }] as const,
-      session: (id: number | undefined) =>
-        ['acp', 'chat', 'session', id] as const,
-      events: (id: number | undefined) =>
-        ['acp', 'chat', 'session-events', id] as const,
-    },
+  agent: {
+    all: ['agent'] as const,
+    providers: ['agent', 'providers'] as const,
+    chatgptOauth: ['agent', 'oauth', 'chatgpt_sub'] as const,
+    run: (id: number | undefined) => ['agent', 'run', id] as const,
+    runEvents: (id: number | undefined) => ['agent', 'run-events', id] as const,
   },
 };

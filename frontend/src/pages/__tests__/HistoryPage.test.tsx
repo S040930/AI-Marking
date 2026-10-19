@@ -23,7 +23,7 @@ describe('StatusBadge', () => {
     'pending',
     'ocr_processing',
     'ocr_done',
-    'awaiting_mcp',
+    'awaiting_grading',
   ];
 
   processingStatuses.forEach((status) => {
@@ -62,7 +62,7 @@ describe('STATUS_TEXT 完整性', () => {
     'pending',
     'ocr_processing',
     'ocr_done',
-    'awaiting_mcp',
+    'awaiting_grading',
     'ready_for_review',
     'reviewed',
     'failed',
@@ -78,7 +78,7 @@ describe('STATUS_TEXT 完整性', () => {
 
 describe('isDeletableStatus', () => {
   const deletable: SubmissionStatus[] = [
-    'awaiting_mcp',
+    'awaiting_grading',
     'ready_for_review',
     'reviewed',
     'failed',

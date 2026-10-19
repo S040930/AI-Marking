@@ -98,7 +98,7 @@ async def run_question_replace(question_id: str) -> None:
         raise
 
     # 新版题目 OCR 后,旧的 extracted_rubric 快照随新 OCR 作废(ocr_hash 不匹配)。
-    # 首次评分时由 MCP 客户端通过 save_ai_marking_question_rubric 重新提取。
+    # 首次评分时由 agent 通过 save_question_rubric 重新提取。
     with SessionLocal() as db:
         question = db.get(Question, question_id, with_for_update=True)
         if question is None:

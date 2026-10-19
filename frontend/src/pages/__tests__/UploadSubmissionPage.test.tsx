@@ -5,19 +5,6 @@ const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
   createMutate: vi.fn(),
   analyzeZip: vi.fn(),
-  agents: {
-    value: [
-      {
-        agent_id: 'codex-acp',
-        display_name: 'Codex',
-        whitelist_package: '@agentclientprotocol/codex-acp',
-        distributions: ['npx'],
-        installed_version: '1.0.0',
-        available_version: '1.0.0',
-        connection_status: 'ready',
-      },
-    ] as unknown[],
-  },
 }));
 
 vi.mock('@/lib/zipPreview', async () => {
@@ -47,10 +34,6 @@ vi.mock('@/api/questions', () => ({
       limit: 50,
     },
   }),
-}));
-
-vi.mock('@/api/acp', () => ({
-  useAcpAgents: () => ({ data: { agents: mocks.agents.value }, isLoading: false }),
 }));
 
 import UploadSubmissionPage from '@/pages/UploadSubmissionPage';
@@ -100,22 +83,18 @@ describe('UploadSubmissionPage', () => {
     });
   });
 
-  it('渲染题目下拉、评分方式二选一;权限档位不在上传页选择', () => {
+  it('渲染题目下拉与提交区域;评分方式选择已移除', () => {
     renderWithProviders(<UploadSubmissionPage />);
 
     expect(screen.getByLabelText('选择题目')).toBeInTheDocument();
-    expect(screen.getByText('使用 ACP 自动批改')).toBeInTheDocument();
-    expect(screen.getByText('使用 MCP 等待外部编程助手')).toBeInTheDocument();
-    // 权限档位已移到批改会话工具栏热切换,上传页不再渲染
-    expect(screen.queryByLabelText('权限档位')).not.toBeInTheDocument();
-    expect(
-      screen.getByText('默认以 Ask for approval 档位启动，批改会话中可随时调整模型与权限。'),
-    ).toBeInTheDocument();
-    // 运行配置入口已移除:不再渲染模型/思考/速度选择
-    expect(screen.queryByLabelText('Codex 模型')).not.toBeInTheDocument();
+    // 评分方式双选已移除:批改在详情页由教师发起
+    expect(screen.queryByText('使用 ACP 自动批改')).not.toBeInTheDocument();
+    expect(screen.queryByText('使用 MCP 等待外部编程助手')).not.toBeInTheDocument();
+    expect(screen.getByText('批改流程')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '开始上传' })).toBeInTheDocument();
   });
 
-  it('q1.py 自动填小题号;ACP 提交写入自动启动标记并跳转详情页', () => {
+  it('q1.py 自动填小题号;提交跳转详情页', () => {
     renderWithProviders(<UploadSubmissionPage />);
 
     fireEvent.change(screen.getByLabelText('选择题目'), {
@@ -143,29 +122,6 @@ describe('UploadSubmissionPage', () => {
       },
       expect.anything(),
     );
-    expect(window.sessionStorage.getItem('acp-assistant-prefill:5')).toBe('1');
-    expect(mocks.navigate).toHaveBeenCalledWith('/review/5');
-  });
-
-  it('MCP 模式提交不写助手预填标记,仍跳转详情页', () => {
-    renderWithProviders(<UploadSubmissionPage />);
-
-    fireEvent.click(screen.getByText('使用 MCP 等待外部编程助手'));
-    fireEvent.change(screen.getByLabelText('选择题目'), {
-      target: { value: 'q1' },
-    });
-    const pdf = pdfFile();
-    fireEvent.change(screen.getByLabelText('选择作业文件'), {
-      target: { files: [pdf] },
-    });
-
-    fireEvent.click(screen.getByRole('button', { name: '开始上传' }));
-
-    expect(mocks.createMutate).toHaveBeenCalledWith(
-      expect.objectContaining({ questionId: 'q1', file: pdf }),
-      expect.anything(),
-    );
-    expect(window.sessionStorage.getItem('acp-assistant-prefill:5')).toBeNull();
     expect(mocks.navigate).toHaveBeenCalledWith('/review/5');
   });
 

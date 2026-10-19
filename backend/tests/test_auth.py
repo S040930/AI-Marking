@@ -117,16 +117,9 @@ async def test_logout_clears_cookie(client, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_public_health_exempt(client, monkeypatch):
-    """/api/health 供启动脚本与 MCP 客户端无鉴权探活，必须豁免。"""
+    """/api/health 供启动脚本无鉴权探活，必须豁免。"""
     monkeypatch.setattr(settings, "ACCESS_TOKEN", TEST_ACCESS_TOKEN)
     response = await client.get("/api/health")
-    assert response.status_code == 200
-
-
-@pytest.mark.asyncio
-async def test_public_mcp_health_exempt(client, monkeypatch):
-    monkeypatch.setattr(settings, "ACCESS_TOKEN", TEST_ACCESS_TOKEN)
-    response = await client.get("/api/mcp/health")
     assert response.status_code == 200
 
 
