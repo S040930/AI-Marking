@@ -14,6 +14,7 @@ from app.core.time import utc_now_naive
 from app.models.code_test_suite import CodeTestSuite
 from app.models.grading_run_artifact import GradingRunArtifact
 from app.models.question import Question
+from app.services.sandbox import SANDBOX_POLICY_VERSION
 
 MAX_CODE_TESTS = 20
 MAX_CASE_TIMEOUT_SECONDS = 10
@@ -26,13 +27,10 @@ class CodeTestCase(BaseModel):
 
     question_number: int = Field(ge=1)
     title: str = Field(min_length=1, max_length=160)
-    mode: Literal["program_io", "notebook_assertion"]
-    language: Literal[
-        "any", "python", "r", "java", "notebook_python", "notebook_r"
-    ]
+    mode: Literal["program_io"]
+    language: Literal["any", "python", "r", "java"]
     input: str | None = Field(default=None, max_length=8_000)
     expected_stdout: str | None = Field(default=None, max_length=8_000)
-    assertion: str | None = Field(default=None, max_length=4_000)
 
     @model_validator(mode="after")
     def validate_mode(self) -> "CodeTestCase":
@@ -41,13 +39,6 @@ class CodeTestCase(BaseModel):
                 raise ValueError("program_io 语言必须是 any/python/r/java")
             if self.input is None or self.expected_stdout is None:
                 raise ValueError("program_io 必须提供 input 和 expected_stdout")
-            if self.assertion is not None:
-                raise ValueError("program_io 不得包含 assertion")
-        else:
-            if self.language not in ("notebook_python", "notebook_r"):
-                raise ValueError("notebook_assertion 必须声明 Notebook kernel")
-            if not self.assertion or self.input is not None or self.expected_stdout is not None:
-                raise ValueError("notebook_assertion 只接受 assertion")
         return self
 
     def serialized(self, index: int) -> dict[str, Any]:
@@ -60,6 +51,7 @@ def source_fingerprint(question: Question, rubric_snapshot_id: str) -> str:
         "file_sha256": question.file_sha256,
         "ocr_sha256": hashlib.sha256((question.ocr_text or "").encode()).hexdigest(),
         "rubric_snapshot_id": rubric_snapshot_id,
+        "execution_policy": SANDBOX_POLICY_VERSION,
     }
     return hashlib.sha256(
         json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
@@ -202,13 +194,15 @@ def persist_run_results(
     results: list[dict[str, Any]],
 ) -> dict[str, Any]:
     passed = sum(result.get("status") == "passed" for result in results)
+    not_run = sum(result.get("status") == "not_run" for result in results)
     payload = {
         **snapshot,
         "results": results,
         "summary": {
             "total": len(results),
             "passed": passed,
-            "failed": len(results) - passed,
+            "failed": len(results) - passed - not_run,
+            "not_run": not_run,
         },
     }
     _store_run_artifact(db, run_id, "code_test_results", payload)
@@ -287,7 +281,7 @@ def test_evidence_map(db: Session, run_id: int) -> dict[str, dict[str, Any]]:
             "quote": evidence_quote(result),
         }
         for result in payload.get("results", [])
-        if isinstance(result, dict) and result.get("id")
+        if isinstance(result, dict) and result.get("id") and result.get("status") != "not_run"
     }
 
 

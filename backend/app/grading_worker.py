@@ -24,6 +24,7 @@ from app.agent.workspace import cleanup_expired_workspaces, materialize_workspac
 from app.db.session import SessionLocal, engine
 from app.domain.grading_run import GradingRunStatus
 from app.models.grading_run import GradingRun
+from app.services.code_runner import sandbox_readiness
 
 logger = logging.getLogger(__name__)
 
@@ -125,6 +126,12 @@ async def _run_one(run_id: int, checkpointer=None) -> None:
 
 async def run_worker() -> None:
     worker_id = f"grading-{socket.gethostname()}-{uuid.uuid4().hex[:12]}"
+    sandbox_ready, sandbox_detail = sandbox_readiness()
+    if not sandbox_ready:
+        logger.warning(
+            "代码自动测试运行环境未就绪：%s 代码批改将 fail-closed。",
+            sandbox_detail,
+        )
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     checkpointer = await create_postgres_checkpointer()

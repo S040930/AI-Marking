@@ -1,9 +1,0 @@
-FROM python:3.12.13-slim-bookworm
-COPY requirements-notebook.txt /runner/requirements-notebook.txt
-RUN python -m pip install --no-cache-dir pip==24.3.1 \
-    && python -m pip install --no-cache-dir --only-binary=:all: \
-       -r /runner/requirements-notebook.txt
-COPY case_runner.py /runner/case_runner.py
-RUN python -m ipykernel install --prefix=/usr/local --name=python3 --display-name='Python 3'
-ENV HOME=/tmp JUPYTER_RUNTIME_DIR=/tmp/jupyter/runtime IPYTHONDIR=/tmp/ipython
-ENTRYPOINT []

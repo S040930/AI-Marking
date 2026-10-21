@@ -1,3 +1,0 @@
-FROM python:3.12.13-slim-bookworm
-COPY case_runner.py /runner/case_runner.py
-ENTRYPOINT []

@@ -3,6 +3,7 @@
 使用应用工厂模式创建 FastAPI 实例,模块级 `app` 便于 uvicorn 直接加载。
 """
 
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -29,18 +30,24 @@ from app.core.errors import (
     ValidationError,
 )
 from app.db.session import engine as _engine
+from app.services.code_runner import sandbox_readiness
 from app.services.ocr import close_client as close_ocr_client
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """应用生命周期。
 
-    Startup:无本机子进程资源需要初始化(批改 agent 进程内运行)。
+    Startup:检查本机代码沙箱与固定语言运行时；批改 agent 由独立 worker 驱动。
     Shutdown:关闭 OCR 共享客户端并释放 DB 连接池资源。持久化任务与
     uploads 清理由独立 ``python -m app.worker`` / ``app.grading_worker``
     进程负责。
     """
+    ready, detail = sandbox_readiness()
+    if not ready:
+        logger.warning("代码自动测试运行环境未就绪：%s 代码批改将 fail-closed。", detail)
     try:
         yield
     finally:
