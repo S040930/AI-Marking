@@ -48,7 +48,7 @@ vi.mock('@/api/agent', async (importOriginal) => {
 
 import { LanguageProvider } from '@/i18n';
 import { AgentRunPanel } from '@/components/review/AgentRunPanel';
-import { AgentTranscript } from '@/components/review/AgentRunProgress';
+import { AgentTranscript } from '@/components/review/AgentRunTranscript';
 import type { AgentRunEvent } from '@/api/agent';
 
 function renderPanel() {
@@ -79,6 +79,26 @@ const RUNNING_RUN = {
   created_at: '2026-10-13T08:00:00',
   finished_at: null,
 };
+
+function testResults(isolation?: string) {
+  return {
+    suite_id: 3,
+    version: 1,
+    summary: { total: 1, passed: 1, failed: 0 },
+    results: [
+      {
+        id: 'q1-t1',
+        question_number: 1,
+        title: 'square',
+        mode: 'program_io' as const,
+        language: 'python' as const,
+        status: 'passed' as const,
+        output: '标准输出与预期一致',
+        ...(isolation ? { isolation } : {}),
+      },
+    ],
+  };
+}
 
 describe('AgentRunPanel', () => {
   beforeEach(() => {
@@ -124,6 +144,79 @@ describe('AgentRunPanel', () => {
     expect(screen.getByText('批改进行中')).toBeInTheDocument();
     expect(screen.getByText('运行配置')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '取消批改' })).toBeInTheDocument();
+  });
+
+  it('隔离降级时在自动测试结果旁给出提示', () => {
+    mocks.activeRun.value = {
+      isLoading: false,
+      data: {
+        run: { ...RUNNING_RUN, code_test_results: testResults('seatbelt:partial') },
+        latest_seq: 1,
+        applied_config: null,
+        pending_config: null,
+      },
+    };
+    renderPanel();
+
+    expect(screen.getByText('自动测试结果 · v1')).toBeInTheDocument();
+    expect(screen.getByText('沙箱隔离（受限）')).toBeInTheDocument();
+  });
+
+  it('完整隔离或旧 run 缺少字段时不显示隔离提示', () => {
+    mocks.activeRun.value = {
+      isLoading: false,
+      data: {
+        run: { ...RUNNING_RUN, code_test_results: testResults('container:full') },
+        latest_seq: 1,
+        applied_config: null,
+        pending_config: null,
+      },
+    };
+    renderPanel();
+
+    expect(screen.queryByText('容器隔离（完整）')).not.toBeInTheDocument();
+  });
+
+  it('订阅 run 的思考强度只提供实测档位', () => {
+    mocks.activeRun.value = {
+      isLoading: false,
+      data: {
+        run: {
+          ...RUNNING_RUN,
+          provider: 'chatgpt_sub',
+          model: 'gpt-6.1-sol',
+          reasoning_effort: 'high',
+        },
+        latest_seq: 1,
+        applied_config: null,
+        pending_config: null,
+      },
+    };
+    renderPanel();
+
+    const select = screen.getByLabelText('思考强度');
+    const values = Array.from(select.querySelectorAll('option')).map(
+      (option) => (option as HTMLOptionElement).value,
+    );
+
+    expect(values).toEqual(['', 'low', 'medium', 'high', 'xhigh', 'max']);
+    expect(values).not.toContain('minimal');
+  });
+
+  it('官方 run 保留 minimal 档位', () => {
+    mocks.activeRun.value = {
+      isLoading: false,
+      data: { run: RUNNING_RUN, latest_seq: 1, applied_config: null, pending_config: null },
+    };
+    renderPanel();
+
+    const select = screen.getByLabelText('思考强度');
+    const values = Array.from(select.querySelectorAll('option')).map(
+      (option) => (option as HTMLOptionElement).value,
+    );
+
+    expect(values).toContain('minimal');
+    expect(values).not.toContain('xhigh');
   });
 
   it('等待教师确认时展示检查点表单(含义务文案)', () => {

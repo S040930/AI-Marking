@@ -7,6 +7,7 @@ import json
 from sqlalchemy.orm import sessionmaker
 
 from app.agent.graph.driver import execute_graph
+from app.agent.graph.rubric import _parse_rubric_draft, _rubric_max_rounds
 from app.agent.provider import (
     ModelOption,
     ProviderAuthStatus,
@@ -32,7 +33,8 @@ class RubricProvider:
     def create_turn(self, request):
         tool_names = {tool.name for tool in request.tools}
         items: list[dict] = []
-        if "submit_question_rubric" in tool_names and self.turn_index == 0:
+        if "submit_question_rubric" in tool_names and self.turn_index in (0, 1):
+            valid = self.turn_index == 1
             items.append(
                 {
                     "type": "function_call",
@@ -46,13 +48,17 @@ class RubricProvider:
                                     "criterion": "实验报告",
                                     "max_score": 60,
                                     "details": "完成报告主体",
-                                    "source_quote": "实验报告（60分）",
+                                    "source_quote": "实验报告（60分）"
+                                    if valid
+                                    else "报告 60",
                                 },
                                 {
                                     "criterion": "数据分析",
                                     "max_score": 40,
                                     "details": "给出数据分析",
-                                    "source_quote": "数据分析（40分）",
+                                    "source_quote": "数据分析（40分）"
+                                    if valid
+                                    else "分析 40",
                                 },
                             ],
                             "total_max_score": 100,
@@ -185,3 +191,43 @@ async def test_missing_rubric_is_extracted_then_scored(db_session) -> None:
     refreshed = db_session.get(Submission, sub.id)
     details = (refreshed.assessment_suggestion or {}).get("details") or []
     assert [detail["score"] for detail in details] == [60.0, 40.0]
+
+
+def test_rubric_retry_budget_includes_ocr_pages_and_corrections() -> None:
+    assert _rubric_max_rounds(19_548) == 8
+    assert _rubric_max_rounds(80_000) == 14
+    assert _rubric_max_rounds(1_000_000) == 24
+
+
+def test_parse_rubric_draft_ignores_unaccepted_attempts() -> None:
+    accepted = {
+        "status": "complete",
+        "items": [{"criterion": "A", "max_score": 10}],
+        "total_max_score": 10,
+    }
+    items = [
+        {
+            "type": "function_call",
+            "call_id": "accepted",
+            "name": "submit_question_rubric",
+            "arguments": json.dumps(accepted),
+        },
+        {
+            "type": "function_call_output",
+            "call_id": "accepted",
+            "output": json.dumps({"accepted": True, "status": "complete"}),
+        },
+        {
+            "type": "function_call",
+            "call_id": "rejected",
+            "name": "submit_question_rubric",
+            "arguments": json.dumps({**accepted, "total_max_score": 20}),
+        },
+        {
+            "type": "function_call_output",
+            "call_id": "rejected",
+            "output": json.dumps({"ok": False, "error": "invalid"}),
+        },
+    ]
+
+    assert _parse_rubric_draft(items) == accepted

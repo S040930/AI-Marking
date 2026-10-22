@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "api:generate": "openapi-typescript src/api/openapi.json -o src/api/generated.ts",
-    "api:check": "npm run api:generate && git diff --exit-code -- src/api/openapi.json src/api/generated.ts",
+    "api:check": "node scripts/check-generated-api.mjs",
     "lint": "oxlint .",
     "format": "prettier --write \"src/**/*.{ts,tsx,css,json}\"",
     "preview": "vite preview",

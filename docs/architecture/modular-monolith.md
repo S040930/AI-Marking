@@ -23,9 +23,13 @@ API 与批改 agent 层（薄适配：参数解析、序列化、进程内 tool-
   `app/core/errors.py`。
 - `app/services` 是纯基础设施，**不得 import `app.application`**；需要编排
   事务、锁序或状态迁移的逻辑属于 application 层（如 `marking`、
-  `grading_workflow`、`uploads`、`questions`、`submissions`、`dead_jobs`）。
+  `grading_package`、`grading_validation`、`grading_workflow`、`uploads`、
+  `questions`、`submissions`、`dead_jobs`）。
 - `app/api` 只做参数解析与序列化；跨实体写事务（删除、finalize、死信重试、
   批改建议保存等）必须位于 application 用例函数，单行纯 CRUD 允许留在路由。
+- Agent API 由运行/SSE 路由与 Provider/OAuth 路由组合；沙箱代码测试分别由运行时
+  自检、输入暂存、单项执行和结果组装模块负责。成绩导出将纯统计与工作簿写入分开，
+  保持行数据流式处理。
 
 ## 边界与一致性
 

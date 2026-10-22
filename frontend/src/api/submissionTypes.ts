@@ -7,26 +7,16 @@ export type SubmissionStatus = components['schemas']['SubmissionStatus'];
 
 export type AiSuggestionDetail = components['schemas']['ScoreDetail'];
 
-export interface AiSuggestion {
-  score: number;
-  max_score: number;
-  feedback: string;
-  details: AiSuggestionDetail[];
-  confidence: number;
-  agent_metadata?: components['schemas']['GradingMetadataOut'];
-}
+export type AiSuggestion = components['schemas']['AssessmentSuggestionOut'];
 
 export type AssessmentReview = components['schemas']['AssessmentReviewOut'];
 
 export type SubmissionOut = components['schemas']['SubmissionOut'];
 
-export interface SubmissionCodeFile {
-  id: number;
-  question_number: number;
-  original_filename: string;
-  file_kind: string;
-  source_sha256: string;
-  source_text: string | null;
+export type SubmissionCodeFile = Omit<
+  components['schemas']['SubmissionCodeFileOut'],
+  'execution_result' | 'artifacts' | 'visual_reviews'
+> & {
   execution_status: 'pending' | 'running' | 'completed' | 'failed';
   execution_result: {
     stdout?: string;
@@ -43,24 +33,14 @@ export interface SubmissionCodeFile {
     sha256: string;
   }> | null;
   visual_reviews: Array<Record<string, unknown>> | null;
-}
+};
 
-export interface SubmissionCodeInputFile {
-  id: number;
-  original_filename: string;
-  size_bytes: number;
-  sha256: string;
-}
+export type SubmissionCodeInputFile =
+  components['schemas']['SubmissionCodeInputFileOut'];
 
-export interface DetailItem {
-  criterion: string;
-  score: number;
-  max_score?: number;
-  comment: string;
-  evidence?: string[];
-}
+export type DetailItem = components['schemas']['ScoreDetailOut'];
 
-export interface SubmissionDetail extends SubmissionOut {
+export type SubmissionDetail = components['schemas']['SubmissionDetail'] & {
   question_id?: string | null;
   ocr_text: string | null;
   question_ocr_text: string | null;
@@ -73,7 +53,7 @@ export interface SubmissionDetail extends SubmissionOut {
   error_message: string | null;
   code_files: SubmissionCodeFile[];
   code_input_files: SubmissionCodeInputFile[];
-}
+};
 // 轻量状态:处理中轮询用,字段集合刻意比 SubmissionOut 小
 // 含 original_filename/uploaded_at 供 processing UI 显示,避免处理中拉完整详情
 export type SubmissionStatusOut = components['schemas']['SubmissionStatusOut'];

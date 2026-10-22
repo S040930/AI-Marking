@@ -7,7 +7,7 @@ from uuid import UUID
 
 import pytest
 
-from app.application.grading_workflow import validate_assessment_payload
+from app.application.grading_validation import validate_assessment_payload
 from app.core.errors import ValidationError
 from app.schemas.grading import GradingAssessmentRequest
 from app.services.rubric import ResolvedRubric, RubricDefinition, RubricItem

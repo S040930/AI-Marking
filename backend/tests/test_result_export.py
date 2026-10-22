@@ -8,6 +8,8 @@ from app.services.result_export import (
     _normalize_criterion,
     _rubric_snapshot_id,
     _score_band_index,
+)
+from app.services.result_export_workbook import (
     build_results_workbook,
     safe_export_filename,
 )

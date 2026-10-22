@@ -29,6 +29,8 @@ def create_provider(
     tokens: dict[str, Any] | None = None,
     token_sink: Any | None = None,
     token_loader: Any | None = None,
+    refresh_lease_acquire: Any | None = None,
+    refresh_lease_release: Any | None = None,
     http_client: httpx.AsyncClient | None = None,
     session_id: str | None = None,
 ) -> AgentProvider:
@@ -57,6 +59,8 @@ def create_provider(
             http_client=http_client,
             on_tokens_refreshed=token_sink,
             load_tokens=token_loader,
+            refresh_lease_acquire=refresh_lease_acquire,
+            refresh_lease_release=refresh_lease_release,
             session_id=session_id,
         )
     raise AgentProviderError(

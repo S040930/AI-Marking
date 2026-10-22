@@ -15,6 +15,7 @@ from app.agent.provider import (
     ProviderToolCallStarted,
     ProviderTurnCompleted,
 )
+from app.agent.providers import chatgpt_sub
 from app.agent.providers.chatgpt_sub import BASE_URL, ChatGptSubProvider
 
 
@@ -39,7 +40,16 @@ def _completed(output: list[dict], usage: dict | None = None) -> tuple[str, dict
     )
 
 
-def _provider(handler, *, tokens: dict | None = None, sink=None) -> ChatGptSubProvider:
+def _provider(
+    handler,
+    *,
+    tokens: dict | None = None,
+    sink=None,
+    loader=None,
+    lease_acquire=None,
+    lease_release=None,
+    **kwargs,
+) -> ChatGptSubProvider:
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     return ChatGptSubProvider(
         tokens=tokens
@@ -53,7 +63,23 @@ def _provider(handler, *, tokens: dict | None = None, sink=None) -> ChatGptSubPr
         default_model="gpt-6.1-sol",
         http_client=client,
         on_tokens_refreshed=sink,
+        load_tokens=loader,
+        refresh_lease_acquire=lease_acquire,
+        refresh_lease_release=lease_release,
+        **kwargs,
     )
+
+
+def _expired_tokens(**overrides) -> dict:
+    tokens = {
+        "access_token": "access-old",
+        "refresh_token": "refresh-1",
+        "account_id": "acct-1234",
+        "plan": "plus",
+        "expires_at": int(time.time()) - 10,
+    }
+    tokens.update(overrides)
+    return tokens
 
 
 def _request() -> TurnRequest:
@@ -101,6 +127,7 @@ async def test_text_turn_sends_required_shape_and_returns_turn_state():
     assert captured["body"]["store"] is False
     assert captured["body"]["stream"] is True
     assert captured["body"]["model"] == "gpt-6.1-sol"
+    assert "prompt_cache_key" not in captured["body"]
     assert captured["headers"]["originator"] == "ai_marking"
     assert captured["headers"]["chatgpt-account-id"] == "acct-1234"
     assert any(isinstance(event, ProviderTextDelta) for event in events)
@@ -459,3 +486,291 @@ async def test_concurrent_turns_share_one_refresh_request():
 
     assert token_calls == 1
     assert all(any(isinstance(e, ProviderTurnCompleted) for e in r) for r in results)
+
+
+# ---------------------------------------------------------------------------
+# 令牌轮换:保留账号字段 / 落库失败 / 跨进程租约 / P2 硬化
+# ---------------------------------------------------------------------------
+
+
+async def test_refresh_preserves_account_and_plan_when_id_token_missing():
+    """刷新响应不带 id_token 时,不能把 account_id/plan 覆盖成空串。"""
+    saved: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "auth.openai.com":
+            return httpx.Response(
+                200,
+                json={
+                    "access_token": "access-new",
+                    "refresh_token": "refresh-2",
+                    "expires_in": 3600,
+                },
+            )
+        return httpx.Response(200, content=_sse([_completed([])]))
+
+    provider = _provider(handler, tokens=_expired_tokens(), sink=saved.append)
+    [event async for event in provider.create_turn(_request())]
+    await provider.aclose()
+
+    assert saved and saved[0]["access_token"] == "access-new"
+    assert saved[0]["account_id"] == "acct-1234"
+    assert saved[0]["plan"] == "plus"
+
+
+async def test_refresh_persist_failure_is_retried_then_succeeds(monkeypatch):
+    monkeypatch.setattr(chatgpt_sub, "_PERSIST_BACKOFF_SECONDS", 0)
+    calls = {"n": 0}
+
+    def sink(tokens: dict) -> None:
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise RuntimeError("db down")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "auth.openai.com":
+            return httpx.Response(
+                200,
+                json={"access_token": "access-new", "refresh_token": "r2", "expires_in": 3600},
+            )
+        return httpx.Response(200, content=_sse([_completed([])]))
+
+    provider = _provider(
+        handler, tokens=_expired_tokens(), sink=sink, persist_attempts=3
+    )
+    events = [event async for event in provider.create_turn(_request())]
+    await provider.aclose()
+
+    assert calls["n"] == 3
+    assert any(isinstance(e, ProviderTurnCompleted) for e in events)
+
+
+async def test_refresh_persist_permanent_failure_raises_retryable(monkeypatch):
+    monkeypatch.setattr(chatgpt_sub, "_PERSIST_BACKOFF_SECONDS", 0)
+
+    def sink(tokens: dict) -> None:
+        raise RuntimeError("db down")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "auth.openai.com":
+            return httpx.Response(
+                200,
+                json={"access_token": "access-new", "refresh_token": "r2", "expires_in": 3600},
+            )
+        return httpx.Response(200, content=_sse([_completed([])]))
+
+    provider = _provider(handler, tokens=_expired_tokens(), sink=sink)
+    with pytest.raises(AgentProviderError) as excinfo:
+        [event async for event in provider.create_turn(_request())]
+    await provider.aclose()
+
+    assert excinfo.value.kind == "retryable"
+    assert "保存失败" in excinfo.value.message
+
+
+async def test_next_turn_flushes_pending_tokens_without_second_refresh(monkeypatch):
+    """落库失败后,下一回合先补救,不再消费一次 refresh_token。"""
+    monkeypatch.setattr(chatgpt_sub, "_PERSIST_BACKOFF_SECONDS", 0)
+    token_calls = {"n": 0}
+    broken = {"on": True}
+
+    def sink(tokens: dict) -> None:
+        if broken["on"]:
+            raise RuntimeError("db down")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "auth.openai.com":
+            token_calls["n"] += 1
+            return httpx.Response(
+                200,
+                json={"access_token": "access-new", "refresh_token": "r2", "expires_in": 3600},
+            )
+        return httpx.Response(200, content=_sse([_completed([])]))
+
+    provider = _provider(handler, tokens=_expired_tokens(), sink=sink)
+    with pytest.raises(AgentProviderError):
+        [event async for event in provider.create_turn(_request())]
+
+    broken["on"] = False
+    [event async for event in provider.create_turn(_request())]
+    await provider.aclose()
+
+    assert token_calls["n"] == 1
+
+
+async def test_lease_busy_waits_for_other_process_tokens():
+    """拿不到跨进程租约时等待对方写库,而不是再消费一次 refresh_token。"""
+    loads = {"n": 0}
+
+    def loader() -> dict:
+        loads["n"] += 1
+        if loads["n"] <= 2:
+            return _expired_tokens()
+        return {
+            "access_token": "access-new",
+            "refresh_token": "refresh-2",
+            "account_id": "acct-1234",
+            "plan": "plus",
+            "expires_at": int(time.time()) + 3600,
+        }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.host != "auth.openai.com"
+        assert request.headers["authorization"] == "Bearer access-new"
+        return httpx.Response(200, content=_sse([_completed([])]))
+
+    provider = _provider(
+        handler,
+        tokens=_expired_tokens(),
+        loader=loader,
+        lease_acquire=lambda ttl: False,
+        refresh_wait_seconds=1.0,
+        refresh_poll_seconds=0.01,
+    )
+    events = [event async for event in provider.create_turn(_request())]
+    await provider.aclose()
+
+    assert any(isinstance(e, ProviderTurnCompleted) for e in events)
+
+
+async def test_lease_timeout_is_retryable_not_auth_required():
+    def handler(request: httpx.Request) -> httpx.Response:  # pragma: no cover
+        raise AssertionError("不应发起任何请求")
+
+    provider = _provider(
+        handler,
+        tokens=_expired_tokens(),
+        loader=lambda: _expired_tokens(),
+        lease_acquire=lambda ttl: False,
+        refresh_wait_seconds=0.05,
+        refresh_poll_seconds=0.01,
+    )
+    with pytest.raises(AgentProviderError) as excinfo:
+        [event async for event in provider.create_turn(_request())]
+    await provider.aclose()
+
+    assert excinfo.value.kind == "retryable"
+    assert "其他进程" in excinfo.value.message
+
+
+async def test_lease_is_released_after_refresh():
+    released: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "auth.openai.com":
+            return httpx.Response(
+                200,
+                json={"access_token": "access-new", "refresh_token": "r2", "expires_in": 3600},
+            )
+        return httpx.Response(200, content=_sse([_completed([])]))
+
+    provider = _provider(
+        handler,
+        tokens=_expired_tokens(),
+        sink=lambda tokens: None,
+        lease_acquire=lambda ttl: True,
+        lease_release=lambda: released.append(1),
+    )
+    [event async for event in provider.create_turn(_request())]
+    await provider.aclose()
+
+    assert released == [1]
+
+
+async def test_list_models_refreshes_once_on_401():
+    calls = {"models": 0, "token": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "auth.openai.com":
+            calls["token"] += 1
+            return httpx.Response(
+                200,
+                json={"access_token": "access-new", "refresh_token": "r2", "expires_in": 3600},
+            )
+        calls["models"] += 1
+        if calls["models"] == 1:
+            return httpx.Response(401, json={"error": {"message": "expired"}})
+        return httpx.Response(
+            200,
+            json={
+                "models": [
+                    {
+                        "slug": "gpt-6.1-sol",
+                        "display_name": "GPT-6.1-Sol",
+                        "supported_reasoning_levels": [{"effort": "low"}],
+                    }
+                ]
+            },
+        )
+
+    provider = _provider(handler, sink=lambda tokens: None)
+    models = await provider.list_models()
+    await provider.aclose()
+
+    assert [model.id for model in models] == ["gpt-6.1-sol"]
+    assert calls == {"models": 2, "token": 1}
+
+
+async def test_redirect_response_is_not_success():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(307, headers={"Location": "https://example.com/x"})
+
+    provider = _provider(handler)
+    with pytest.raises(AgentProviderError) as excinfo:
+        [event async for event in provider.create_turn(_request())]
+    await provider.aclose()
+
+    assert excinfo.value.kind == "invalid_request"
+    assert "重定向" in excinfo.value.message
+
+
+async def test_empty_catalog_does_not_fabricate_models():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"models": []})
+
+    provider = _provider(handler)
+    models = await provider.list_models()
+    await provider.aclose()
+
+    assert models == []
+
+
+async def test_429_quota_exhausted_is_not_retryable():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            429,
+            headers={
+                "x-codex-primary-used-percent": "100",
+                "x-codex-primary-reset-after-seconds": "36000",
+            },
+            json={"error": {"message": ""}},
+        )
+
+    provider = _provider(handler)
+    with pytest.raises(AgentProviderError) as excinfo:
+        [event async for event in provider.create_turn(_request())]
+    await provider.aclose()
+
+    assert excinfo.value.kind == "rate_limited"
+    assert excinfo.value.retryable is False
+    assert "配额已用尽" in excinfo.value.message
+
+
+async def test_429_short_codex_reset_sets_retry_after():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            429,
+            headers={
+                "x-codex-primary-used-percent": "3",
+                "x-codex-primary-reset-after-seconds": "7",
+            },
+            json={"error": {"message": ""}},
+        )
+
+    provider = _provider(handler)
+    with pytest.raises(AgentProviderError) as excinfo:
+        [event async for event in provider.create_turn(_request())]
+    await provider.aclose()
+
+    assert excinfo.value.retryable is True
+    assert excinfo.value.retry_after == 7.0

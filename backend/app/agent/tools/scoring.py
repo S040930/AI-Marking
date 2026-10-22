@@ -16,6 +16,33 @@ TOOL_SUBMIT_ITEM_SCORE = "submit_item_score"
 TOOL_SUBMIT_EVIDENCE_FIX = "submit_evidence_fix"
 TOOL_SUBMIT_QUESTION_RUBRIC = "submit_question_rubric"
 
+QUESTION_RUBRIC_PARAMETERS = {
+    "type": "object",
+    "properties": {
+        "status": {
+            "type": "string",
+            "enum": ["complete", "absent_or_ambiguous"],
+        },
+        "items": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "criterion": {"type": "string"},
+                    "max_score": {"type": "number"},
+                    "details": {"type": "string"},
+                    "source_quote": {"type": "string"},
+                },
+                "required": ["criterion", "max_score", "details", "source_quote"],
+                "additionalProperties": False,
+            },
+        },
+        "total_max_score": {"type": "number"},
+    },
+    "required": ["status"],
+    "additionalProperties": False,
+}
+
 SUBMIT_ITEM_SCORE_SPEC = ToolSpec(
     name=TOOL_SUBMIT_ITEM_SCORE,
     description=(
@@ -129,36 +156,13 @@ SUBMIT_QUESTION_RUBRIC_SPEC = ToolSpec(
     name=TOOL_SUBMIT_QUESTION_RUBRIC,
     description=(
         "提交从题目 OCR 提取的 rubric。status=complete 时逐项给出 criterion/"
-        "max_score/details/source_quote（引用必须是 OCR 原文连续子串且含该项满分），"
+        "max_score/details/source_quote（引用必须是 OCR 原文连续子串；普通分项需在"
+        "引用中包含满分数字，多个明确等级区间构成的整体 rubric 可推断为 100 分），"
         "total_max_score 等于各项满分之和；status=absent_or_ambiguous 时题目没有明确"
-        "标准，items 留空。服务端会逐条校验，返回错误时按错误信息修正后重试。"
+        "标准，items 留空。整体等级制 rubric 用一个整体评分项表示。服务端会校验"
+        "原文引用、分项满分、总分和重复项，返回错误时按错误信息修正后重试。"
     ),
-    parameters={
-        "type": "object",
-        "properties": {
-            "status": {
-                "type": "string",
-                "enum": ["complete", "absent_or_ambiguous"],
-            },
-            "items": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "criterion": {"type": "string"},
-                        "max_score": {"type": "number"},
-                        "details": {"type": "string"},
-                        "source_quote": {"type": "string"},
-                    },
-                    "required": ["criterion", "max_score", "details", "source_quote"],
-                    "additionalProperties": False,
-                },
-            },
-            "total_max_score": {"type": "number"},
-        },
-        "required": ["status"],
-        "additionalProperties": False,
-    },
+    parameters=QUESTION_RUBRIC_PARAMETERS,
 )
 
 
@@ -185,7 +189,8 @@ def _submit_question_rubric(args: dict[str, Any], ocr_text: str) -> ToolResult:
         return ToolResult(
             ok=False,
             error=(
-                "rubric 校验失败：source_quote 必须是题目 OCR 原文连续子串且包含该项满分，"
+                "rubric 校验失败：source_quote 必须是题目 OCR 原文连续子串且包含分项满分"
+                "（整体等级区间可推断 100 分），"
                 "各项满分之和必须等于 total_max_score，criterion 不得重复。"
             ),
         )

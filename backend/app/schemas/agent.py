@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 AgentRunStatusLiteral = Literal[
     "queued",
@@ -28,6 +28,7 @@ class AgentRunCreateRequest(BaseModel):
     provider: str | None = Field(default=None, min_length=1, max_length=32)
     model: str | None = Field(default=None, min_length=1, max_length=128)
     reasoning_effort: str | None = Field(default=None, min_length=1, max_length=64)
+    regenerate_code_tests: bool = False
 
 
 class AgentConfigurationUpdateRequest(BaseModel):
@@ -44,6 +45,7 @@ class AgentCheckpointOut(BaseModel):
     message: str
     asked_at: datetime | None = None
     expires_at: datetime | None = None
+    preview: dict[str, Any] | None = None
 
 
 class AgentRunOut(BaseModel):
@@ -52,6 +54,7 @@ class AgentRunOut(BaseModel):
     provider: str
     model: str | None = None
     reasoning_effort: str | None = None
+    regenerate_code_tests: bool = False
     effective_at: Literal["current", "next_turn"] = "current"
     status: AgentRunStatusLiteral
     checkpoint: AgentCheckpointOut | None = None
@@ -61,6 +64,8 @@ class AgentRunOut(BaseModel):
     attempts: int = 0
     max_attempts: int = 3
     usage: dict[str, Any] | None = None
+    code_test_suite: dict[str, Any] | None = None
+    code_test_results: dict[str, Any] | None = None
     created_at: datetime
     finished_at: datetime | None = None
 
@@ -82,8 +87,17 @@ class AgentRunEventOut(BaseModel):
 class AgentRunReplyRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    verdict: Literal["consistent", "mismatch"]
+    verdict: Literal["consistent", "mismatch"] | None = None
+    action: Literal["approve_test_suite", "regenerate_test_suite"] | None = None
     note: str | None = Field(default=None, max_length=2000)
+
+    @model_validator(mode="after")
+    def validate_answer(self) -> "AgentRunReplyRequest":
+        if (self.verdict is None) == (self.action is None):
+            raise ValueError("必须且只能提供 verdict 或 action")
+        if self.verdict == "mismatch" and not (self.note or "").strip():
+            raise ValueError("存在不一致时必须填写说明")
+        return self
 
 
 class ProviderStatusOut(BaseModel):

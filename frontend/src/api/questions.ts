@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiClient } from '@/api/client';
+import { apiClient, responseData } from '@/api/client';
 import type { components } from '@/api/generated';
 import { subscribeToQuestionEvents } from '@/api/questionEvents';
 import { queryKeys } from '@/api/queryKeys';
@@ -18,11 +18,11 @@ export function useQuestions(search = '', limit = 50) {
   return useQuery({
     queryKey: queryKeys.questions.list(search, limit),
     queryFn: () =>
-      apiClient
-        .get<components['schemas']['PaginatedQuestions']>('/questions', {
+      responseData(
+        apiClient.get<components['schemas']['PaginatedQuestions']>('/questions', {
           params: { search, limit, skip: 0 },
-        })
-        .then((response) => response.data),
+        }),
+      ),
     refetchInterval: (query) =>
       query.state.data?.items.some(
         (item) => item.status === 'pending' || item.status === 'ocr_processing',
@@ -50,11 +50,11 @@ export function useQuestionWatch(questionId: string | null, maxPolls = 120) {
   return useQuery<Question | null>({
     queryKey: queryKeys.questions.watch(questionId),
     queryFn: () =>
-      apiClient
-        .get<components['schemas']['QuestionDetail']>(`/questions/${questionId}`, {
+      responseData(
+        apiClient.get<components['schemas']['QuestionDetail']>(`/questions/${questionId}`, {
           skipErrorToast: true,
-        })
-        .then((response) => response.data as Question),
+        }),
+      ) as Promise<Question>,
     enabled: questionId !== null,
     refetchInterval: (query) => {
       const status = query.state.data?.status;
@@ -75,12 +75,10 @@ export function useCreateQuestion() {
       const form = new FormData();
       form.append('file', file);
       if (name) form.append('name', name);
-      return apiClient
-        .post<Question>('/questions', form, {
+      return responseData(apiClient.post<Question>('/questions', form, {
           headers: { 'Content-Type': 'multipart/form-data' },
           skipErrorToast: true,
-        })
-        .then((response) => response.data);
+        }));
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.questions.all }),
   });
@@ -90,9 +88,7 @@ export function useRenameQuestion() {
   const queryClient = useQueryClient();
   return useMutation<Question, Error, { id: string; name: string }>({
     mutationFn: ({ id, name }) =>
-      apiClient
-        .patch<Question>(`/questions/${id}`, { name })
-        .then((response) => response.data),
+      responseData(apiClient.patch<Question>(`/questions/${id}`, { name })),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.questions.all }),
   });
 }
@@ -103,14 +99,10 @@ export function useRetryQuestionOcr() {
     mutationFn: ({ id, file }) => {
       const form = new FormData();
       form.append('file', file);
-      return (
-      apiClient
-        .post<Question>(`/questions/${id}/retry-ocr`, form, {
+      return responseData(apiClient.post<Question>(`/questions/${id}/retry-ocr`, form, {
           headers: { 'Content-Type': 'multipart/form-data' },
           skipErrorToast: true,
-        })
-        .then((response) => response.data)
-      );
+        }));
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.questions.all }),
   });
@@ -124,12 +116,10 @@ export function useDeleteQuestion() {
     { id: string; confirmationName: string }
   >({
     mutationFn: ({ id, confirmationName }) =>
-      apiClient
-        .delete(`/questions/${id}`, {
+      responseData(apiClient.delete(`/questions/${id}`, {
           data: { confirmation_name: confirmationName },
           skipErrorToast: true,
-        })
-        .then((response) => response.data),
+        })),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.questions.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.submissions.all });
@@ -154,13 +144,11 @@ export function useReplaceQuestion() {
       form.append('file', file);
       form.append('confirmation_name', confirmationName);
       form.append('acknowledge_deletion', String(acknowledgeDeletion));
-      return apiClient
-        .post(`/questions/${id}/replace`, form, {
+      return responseData(apiClient.post(`/questions/${id}/replace`, form, {
           headers: { 'Content-Type': 'multipart/form-data' },
           timeout: 660_000,
           skipErrorToast: true,
-        })
-        .then((response) => response.data);
+        }));
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.questions.all });

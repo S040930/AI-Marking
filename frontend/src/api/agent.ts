@@ -1,59 +1,77 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiClient } from './client';
+import { apiClient, responseData } from './client';
 import { queryKeys } from './queryKeys';
+import type { components } from './generated';
 
 // 批改 agent:run 生命周期与模型通道配置前端接口。
 
-export type AgentRunStatus =
-  | 'queued'
-  | 'starting'
-  | 'running'
-  | 'waiting_for_teacher'
-  | 'cancelling'
-  | 'completed'
-  | 'failed'
-  | 'cancelled';
+export type AgentRunStatus = components['schemas']['AgentRunOut']['status'];
+export type AgentProviderName =
+  components['schemas']['ProviderDefaultUpdateRequest']['provider'];
 
-export type AgentProviderName = 'openai_api' | 'chatgpt_sub';
+export type AgentCheckpoint = Omit<
+  components['schemas']['AgentCheckpointOut'],
+  'preview'
+> & {
+  preview?: { suite_id?: number; version?: number; tests?: CodeTestCase[] } | null;
+};
 
-export interface AgentCheckpoint {
-  type: string;
-  message: string;
-  asked_at: string | null;
-  expires_at: string | null;
+export interface CodeTestCase {
+  id?: string;
+  question_number: number;
+  title: string;
+  mode: 'program_io';
+  language: 'any' | 'python' | 'r' | 'java';
+  input?: string;
+  expected_stdout?: string;
 }
 
-export interface AgentRun {
-  id: number;
-  submission_id: number;
-  provider: string;
-  model: string | null;
-  reasoning_effort: string | null;
-  effective_at: 'current' | 'next_turn';
-  status: AgentRunStatus;
-  checkpoint: AgentCheckpoint | null;
-  teacher_verdict: 'consistent' | 'mismatch' | null;
-  teacher_note: string | null;
-  error_message: string | null;
-  attempts: number;
-  max_attempts: number;
-  usage: Record<string, unknown> | null;
-  created_at: string;
-  finished_at: string | null;
+export interface CodeTestResult extends CodeTestCase {
+  id: string;
+  status: 'passed' | 'failed' | 'compile_error' | 'runtime_error' | 'timeout' | 'missing_code' | 'not_run';
+  output: string;
+  /** `<backend>:<completeness>`，旧 run 没有该字段。 */
+  isolation?: string;
+  execution?: {
+    elapsed_ms: number;
+    peak_memory_bytes: number;
+    peak_workdir_bytes: number;
+    runtime_version: string;
+    policy_version: string;
+  };
 }
 
-export interface AgentRunDetail {
-  run: AgentRun;
-  latest_seq: number;
-  applied_config: Record<string, unknown> | null;
-  pending_config: Record<string, unknown> | null;
-}
+export type AgentRun = Omit<
+  components['schemas']['AgentRunOut'],
+  'checkpoint' | 'code_test_suite' | 'code_test_results'
+> & {
+  checkpoint?: AgentCheckpoint | null;
+  code_test_suite?: {
+    suite_id?: number;
+    id?: number;
+    version: number;
+    status?: string;
+    tests: CodeTestCase[];
+  } | null;
+  code_test_results?: {
+    suite_id: number;
+    version: number;
+    summary: { total: number; passed: number; failed: number; not_run?: number };
+    results: CodeTestResult[];
+  } | null;
+};
 
-export interface AgentRunEvent {
-  seq: number;
-  kind: string;
-  payload: {
+export type AgentRunDetail = Omit<
+  components['schemas']['AgentRunDetailResponse'],
+  'run'
+> & { run: AgentRun };
+
+export type AgentRunEvent = Omit<
+  components['schemas']['AgentRunEventOut'],
+  'payload'
+> & {
+  payload: components['schemas']['AgentRunEventOut']['payload'] & {
     text?: string;
     title?: string;
     status?: string;
@@ -61,74 +79,56 @@ export interface AgentRunEvent {
     agent?: string;
     [k: string]: unknown;
   };
-  created_at: string;
-}
+};
 
-export interface AgentProviderStatus {
-  configured: boolean;
-  key_last4: string | null;
-  base_url: string;
-  default_model: string;
-  reasoning_effort: string;
-  available: boolean;
-  /** 订阅通道:套餐类型(plus/pro/…) */
-  plan?: string;
-  /** 订阅通道:ChatGPT 账号后四位 */
-  account_last4?: string | null;
-  /** 订阅通道:access_token 过期时间(UTC ISO) */
-  expires_at?: string;
-}
-
-export interface AgentProviderList {
-  provider_default: string;
-  providers: Record<string, AgentProviderStatus>;
-}
-
-export type AgentOAuthStatus = 'idle' | 'pending' | 'completed' | 'failed';
-
-export interface AgentOAuthStartResult {
-  authorize_url: string;
-  expires_at: string | null;
-}
-
-export interface AgentOAuthStatusResult {
-  status: AgentOAuthStatus;
-  detail: string | null;
-  authorize_url: string | null;
-  expires_at: string | null;
-}
-
-export interface AgentProviderTestResult {
-  name: string;
-  status: 'ready' | 'needs_auth' | 'unsupported' | 'failed';
-  detail: string | null;
-  models: string[];
-}
-
-export interface AgentProviderConfigUpdate {
-  api_key?: string | null;
-  base_url?: string | null;
-  default_model?: string | null;
-  reasoning_effort?: string | null;
-}
+export type AgentProviderStatus = components['schemas']['ProviderStatusOut'];
+export type AgentProviderList = components['schemas']['ProviderListResponse'];
+export type AgentOAuthStatus =
+  components['schemas']['ProviderOAuthStatusResponse']['status'];
+export type AgentOAuthStartResult =
+  components['schemas']['ProviderOAuthStartResponse'];
+export type AgentOAuthStatusResult =
+  components['schemas']['ProviderOAuthStatusResponse'];
+export type AgentProviderTestResult = components['schemas']['ProviderTestResponse'];
+export type AgentProviderConfigUpdate =
+  components['schemas']['ProviderConfigUpdateRequest'];
 
 /** 模型通道列表(设置页与开始批改面板共用)。 */
-export function useAgentProviders(enabled = true) {
-  return useQuery<AgentProviderList>({
+export function useAgentProviders(
+  enabled = true,
+  modelsFor: AgentProviderName | null = null,
+) {
+  const providersQuery = useQuery<AgentProviderList>({
     queryKey: queryKeys.agent.providers,
-    queryFn: () => apiClient.get<AgentProviderList>('/agent/providers').then((r) => r.data),
+    queryFn: () => responseData(apiClient.get<AgentProviderList>('/agent/providers')),
     retry: 1,
     enabled,
   });
+  const modelsQuery = useQuery<AgentProviderTestResult>({
+    queryKey: queryKeys.agent.providerModels(modelsFor ?? ''),
+    queryFn: () =>
+      responseData(
+        apiClient.get<AgentProviderTestResult>(`/agent/providers/${modelsFor}/models`),
+      ),
+    enabled:
+      enabled &&
+      modelsFor !== null &&
+      Boolean(providersQuery.data?.providers[modelsFor]?.available),
+    staleTime: 60_000,
+    retry: 0,
+  });
+  return {
+    ...providersQuery,
+    modelDiscovery: modelsQuery.data,
+    modelsLoading: modelsQuery.isLoading,
+  };
 }
 
 export function useSetDefaultProvider() {
   const queryClient = useQueryClient();
   return useMutation<AgentProviderList, Error, AgentProviderName>({
     mutationFn: (provider) =>
-      apiClient
-        .put<AgentProviderList>('/agent/providers/default', { provider })
-        .then((r) => r.data),
+      responseData(apiClient.put<AgentProviderList>('/agent/providers/default', { provider })),
     onSuccess: (data) => {
       queryClient.setQueryData(queryKeys.agent.providers, data);
     },
@@ -143,11 +143,12 @@ export function useUpdateProviderConfig() {
     { name: AgentProviderName; config: AgentProviderConfigUpdate }
   >({
     mutationFn: ({ name, config }) =>
-      apiClient
-        .put<AgentProviderList>(`/agent/providers/${name}/config`, config)
-        .then((r) => r.data),
-    onSuccess: (data) => {
+      responseData(apiClient.put<AgentProviderList>(`/agent/providers/${name}/config`, config)),
+    onSuccess: (data, variables) => {
       queryClient.setQueryData(queryKeys.agent.providers, data);
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.agent.providerModels(variables.name),
+      });
     },
   });
 }
@@ -156,9 +157,7 @@ export function useUpdateProviderConfig() {
 export function useTestProvider() {
   return useMutation<AgentProviderTestResult, Error, AgentProviderName>({
     mutationFn: (name) =>
-      apiClient
-        .post<AgentProviderTestResult>(`/agent/providers/${name}/test`)
-        .then((r) => r.data),
+      responseData(apiClient.post<AgentProviderTestResult>(`/agent/providers/${name}/test`)),
   });
 }
 
@@ -167,9 +166,7 @@ export function useStartChatGptLogin() {
   const queryClient = useQueryClient();
   return useMutation<AgentOAuthStartResult, Error, void>({
     mutationFn: () =>
-      apiClient
-        .post<AgentOAuthStartResult>('/agent/providers/chatgpt_sub/oauth/start')
-        .then((r) => r.data),
+      responseData(apiClient.post<AgentOAuthStartResult>('/agent/providers/chatgpt_sub/oauth/start')),
     onSuccess: () => {
       // 清掉上一次登录留下的 completed 缓存,否则轮询会立即误报成功
       queryClient.setQueryData<AgentOAuthStatusResult>(
@@ -194,9 +191,7 @@ export function useChatGptLoginStatus(enabled: boolean) {
   const query = useQuery<AgentOAuthStatusResult>({
     queryKey: queryKeys.agent.chatgptOauth,
     queryFn: () =>
-      apiClient
-        .get<AgentOAuthStatusResult>('/agent/providers/chatgpt_sub/oauth/status')
-        .then((r) => r.data),
+      responseData(apiClient.get<AgentOAuthStatusResult>('/agent/providers/chatgpt_sub/oauth/status')),
     enabled,
     retry: 0,
     refetchInterval: (q) =>
@@ -206,6 +201,11 @@ export function useChatGptLoginStatus(enabled: boolean) {
   useEffect(() => {
     if (status === 'completed' || status === 'failed') {
       queryClient.invalidateQueries({ queryKey: queryKeys.agent.providers });
+      if (status === 'completed') {
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.agent.providerModels('chatgpt_sub'),
+        });
+      }
     }
   }, [status, queryClient]);
   return query;
@@ -216,9 +216,7 @@ export function useLogoutChatGpt() {
   const queryClient = useQueryClient();
   return useMutation<AgentProviderList, Error, void>({
     mutationFn: () =>
-      apiClient
-        .post<AgentProviderList>('/agent/providers/chatgpt_sub/oauth/logout')
-        .then((r) => r.data),
+      responseData(apiClient.post<AgentProviderList>('/agent/providers/chatgpt_sub/oauth/logout')),
     onSuccess: (data) => {
       queryClient.setQueryData(queryKeys.agent.providers, data);
       queryClient.setQueryData<AgentOAuthStatusResult>(
@@ -240,12 +238,10 @@ export function useActiveAgentRun(submissionId: number | undefined) {
   return useQuery<AgentRunDetail>({
     queryKey: queryKeys.agent.run(submissionId),
     queryFn: () =>
-      apiClient
-        .get<AgentRunDetail>(`/agent/runs/by-submission/${submissionId}`, {
+      responseData(apiClient.get<AgentRunDetail>(`/agent/runs/by-submission/${submissionId}`, {
           // 404 是「无活跃 run」的正常信号,轮询中反复弹错误 toast 会误导教师
           skipErrorToast: true,
-        })
-        .then((r) => r.data),
+        })),
     enabled: submissionId !== undefined,
     retry: (failureCount, error) => {
       const status = (error as { response?: { status?: number } }).response?.status;
@@ -258,18 +254,17 @@ export interface CreateAgentRunInput {
   provider?: AgentProviderName;
   model?: string | null;
   reasoning_effort?: string | null;
+  regenerate_code_tests?: boolean;
 }
 
 export function useCreateAgentRun(submissionId: number | undefined) {
   const queryClient = useQueryClient();
   return useMutation<AgentRunDetail, Error, CreateAgentRunInput>({
     mutationFn: (body) =>
-      apiClient
-        .post<AgentRunDetail>('/agent/runs', {
+      responseData(apiClient.post<AgentRunDetail>('/agent/runs', {
           submission_id: submissionId,
           ...body,
-        })
-        .then((r) => r.data),
+        })),
     onSuccess: (data) => {
       queryClient.setQueryData(queryKeys.agent.run(data.run.submission_id), data);
       queryClient.invalidateQueries({ queryKey: queryKeys.submissions.all });
@@ -290,9 +285,7 @@ export function useUpdateAgentRunConfiguration(runId: number | undefined) {
     { model?: string | null; reasoning_effort?: string | null }
   >({
     mutationFn: (body) =>
-      apiClient
-        .patch<AgentRunDetail>(`/agent/runs/${runId}/configuration`, body)
-        .then((r) => r.data),
+      responseData(apiClient.patch<AgentRunDetail>(`/agent/runs/${runId}/configuration`, body)),
     onSuccess: (data) => {
       queryClient.setQueryData(queryKeys.agent.run(data.run.submission_id), data);
       queryClient.invalidateQueries({ queryKey: queryKeys.agent.all });
@@ -303,8 +296,7 @@ export function useUpdateAgentRunConfiguration(runId: number | undefined) {
 export function useCancelAgentRun(runId: number | undefined) {
   const queryClient = useQueryClient();
   return useMutation<{ status: string }, Error, void>({
-    mutationFn: () =>
-      apiClient.post(`/agent/runs/${runId}/cancel`).then((r) => r.data),
+    mutationFn: () => responseData(apiClient.post(`/agent/runs/${runId}/cancel`)),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.agent.all });
     },
@@ -316,10 +308,10 @@ export function useReplyAgentCheckpoint(runId: number | undefined) {
   return useMutation<
     { status: string; verdict: string },
     Error,
-    { verdict: 'consistent' | 'mismatch'; note?: string }
+    | { verdict: 'consistent' | 'mismatch'; note?: string }
+    | { action: 'approve_test_suite' | 'regenerate_test_suite'; note?: string }
   >({
-    mutationFn: (body) =>
-      apiClient.post(`/agent/runs/${runId}/reply`, body).then((r) => r.data),
+    mutationFn: (body) => responseData(apiClient.post(`/agent/runs/${runId}/reply`, body)),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.agent.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.submissions.all });

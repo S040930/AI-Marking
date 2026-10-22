@@ -99,15 +99,15 @@
 | 5 | 目录 `supported_reasoning_levels` 即真值 | `ultra` 声明支持但实测拒绝 | UI effort 选项按实测白名单收敛：`low/medium/high/xhigh/max` |
 | 6 | 可用 `x-request-id` 排障 | 无该头 | 错误落库带 status + message + 时间；不指望 request-id |
 
-## 5. 阶段 7 实装清单（据此收敛）
+## 5. 阶段 7 实装结果
 
-1. `providers/chatgpt_sub.py`：`base_url=https://chatgpt.com/backend-api/codex`，路径 `/responses`；body 强制 `store=false`；复用 `providers/sse.py` 解析；`ProviderTurnCompleted` 里额外带 `turn_state`（新增字段或复用 `provider_state`）。
-2. `agent_state` 增键 `turn_state`：每回合用响应头覆盖；`runner` 续跑/恢复时回传。这是**新的持久化契约**，需迁移无关（JSON 字段已存在）。
-3. `list_models()`：`GET /models?client_version=<codex 版本>`；`ModelOption.efforts` 用实测白名单（`low/medium/high/xhigh/max`），失败回退静态 4 项。
-4. `chatgpt_oauth.py`：PKCE + `127.0.0.1:1455` 回调 + code 交换 + refresh 轮换；刷新失败 → `needs_auth`。
-5. `provider_config.py`：`chatgpt_tokens` 存 `{access, refresh, id_token, account_id, expires_at, plan}`；对外只暴露 `plan` 与账号后四位；`available` 由 `configured && !expired` 决定（去掉硬编码 `False`）。
-6. 设置页订阅卡：显示计划类型、周配额已用百分比与重置时间（来自 `x-codex-primary-*`），登录/退出按钮。
-7. 测试：httpx mock 覆盖目录 400/200、正常回合、工具往返、401、400、429；`test_provider_config` 增加 token 过期判定。
+1. `providers/chatgpt_sub.py` 使用 `https://chatgpt.com/backend-api/codex/responses`，请求强制 `store=false`，并通过响应头 `x-codex-turn-state` 承载跨回合状态。
+2. turn-state 保存在 LangGraph 图状态的 `provider_state` 中，由 Postgres checkpointer 按 run/thread 持久化；`GradingRun.agent_state` 是遗留列，当前不再写入。
+3. `list_models()` 请求 `/models?client_version=<codex 版本>`，effort 按实测白名单过滤。目录响应为空或格式异常时返回空列表，不使用静态模型回退。
+4. `chatgpt_oauth.py` 使用 PKCE、`127.0.0.1:1455` 回调、授权码交换和 refresh token 轮换；不可恢复的认证错误要求重新登录。
+5. `system_config.chatgpt_tokens` 保存 `access_token`、`refresh_token`、`id_token`、`account_id`、`expires_at` 等令牌状态。provider 列表只暴露套餐、账号后四位和令牌有效期等安全摘要。
+6. 设置页显示套餐、账号后四位和访问令牌有效期，提供登录与退出操作；当前不显示周配额使用量或重置时间。
+7. 自动化测试使用 httpx mock 覆盖模型目录、正常回合、工具往返和认证/请求错误；OAuth、令牌刷新与跨进程租约另有测试。
 8. 验收：真实 OAuth 登录一次 + 一份作业批改。✅ **已完成**（2026-10-17）：
    登录 → 通道测试返回 9 个模型 → 作业 #12 批改 run 7 → 检查点答复续跑 →
    `completed`，usage 152,577 in / 10,498 out，建议 95/100 落库、状态

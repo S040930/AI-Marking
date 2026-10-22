@@ -78,7 +78,7 @@ from app.services.events import (
     acquire_sse_slot,
     submission_event_stream,
 )
-from app.services.result_export import (
+from app.services.result_export_workbook import (
     XLSX_MEDIA_TYPE,
     build_results_workbook,
     delete_export_file,
@@ -204,10 +204,7 @@ async def _create_submission_from_zip(
     session_factory,
 ):
     """ZIP 分支:线程池解包分类,再走同一提交事务。"""
-    preflight = await run_in_threadpool(
-        preflight_submission_create, session_factory, question_id
-    )
-    _ = preflight  # 预检即校验;question_text 由解包规则隐式使用(仅 qN 命名)
+    await run_in_threadpool(preflight_submission_create, session_factory, question_id)
     upload_dir = _resolve_upload_dir_or_500()
     upload_dir.mkdir(parents=True, exist_ok=True)
 
@@ -268,12 +265,7 @@ async def retry_submission(
     stored = None
     upload_dir = Path(settings.UPLOAD_DIR).resolve()
     if file is not None:
-        try:
-            upload_dir = resolve_upload_dir()
-        except ValueError as exc:
-            raise HTTPException(
-                status_code=500, detail="UPLOAD_DIR 配置非法,必须位于后端根目录下"
-            ) from exc
+        upload_dir = _resolve_upload_dir_or_500()
         stored = await save_document_as_pdf(file, upload_dir)
     try:
         sub, old_path = await run_in_threadpool(

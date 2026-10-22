@@ -291,7 +291,7 @@ def test_expired_running_lease_is_reclaimed():
 
 
 def _grading_fixture():
-    from app.application.grading_workflow import (
+    from app.application.grading_package import (
         build_context_parts,
         create_workflow_handle,
     )
@@ -367,11 +367,11 @@ def test_concurrent_handle_versions_and_request_replay(identical):
 
 
 def test_finalize_and_new_suggestion_cannot_overwrite_each_other():
-    from app.application.grading_workflow import (
+    from app.application.grading_package import (
         build_context_parts,
         create_workflow_handle,
-        save_assessment,
     )
+    from app.application.grading_workflow import save_assessment
     from app.application.submissions import finalize_submission
 
     question_id, sub_id, requests, resolved = _grading_fixture()
@@ -448,7 +448,7 @@ def test_recovery_and_old_worker_result_serialize():
 
 def test_checkpoint_reply_and_release_serialize():
     from app.agent import run_store as runs
-    from app.application.grading_workflow import build_context_parts
+    from app.application.grading_package import build_context_parts
     from app.domain.grading_run import GradingRunStatus
     from app.models.grading_run import GradingRun
 

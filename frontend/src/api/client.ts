@@ -1,4 +1,4 @@
-import axios, { type AxiosError } from 'axios';
+import axios, { type AxiosError, type AxiosResponse } from 'axios';
 import { QueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { notifyAuthChanged } from '@/lib/auth';
@@ -7,6 +7,10 @@ export const apiClient = axios.create({
   baseURL: '/api',
   timeout: 30000,
 });
+
+export function responseData<T>(request: Promise<AxiosResponse<T>>): Promise<T> {
+  return request.then((response) => response.data);
+}
 
 interface ApiErrorResponse {
   detail?: string;

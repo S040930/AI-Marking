@@ -1,27 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiClient } from './client';
+import { apiClient, responseData } from './client';
 import { queryKeys } from './queryKeys';
+import type { components } from './generated';
 
-// 配置项类型
-export interface ConfigOut {
-  paddleocr_api_url: string;
-  paddleocr_token: string;
-  rubric_definition: {
-    items: { criterion: string; max_score: number; details: string }[];
-    total_max_score: number;
-  } | null;
-}
-
-export type ConfigUpdate = Partial<Omit<ConfigOut, 'rubric_definition'>> & {
-  rubric_definition?: ConfigOut['rubric_definition'] | null;
+export type ConfigOut = components['schemas']['ConfigOut'] & {
+  rubric_definition: components['schemas']['RubricDefinition'] | null;
 };
+export type ConfigUpdate = components['schemas']['ConfigUpdate'];
 
 // hooks
 export function useConfig() {
   return useQuery<ConfigOut>({
     queryKey: queryKeys.config.all,
-    queryFn: () =>
-      apiClient.get<ConfigOut>('/config').then((r) => r.data),
+    queryFn: () => responseData(apiClient.get<ConfigOut>('/config')),
   });
 }
 
@@ -29,7 +20,7 @@ export function useUpdateConfig() {
   const queryClient = useQueryClient();
   return useMutation<ConfigOut, Error, ConfigUpdate>({
     mutationFn: (payload: ConfigUpdate) =>
-      apiClient.put<ConfigOut>('/config', payload).then((r) => r.data),
+      responseData(apiClient.put<ConfigOut>('/config', payload)),
     onSuccess: (data) => {
       queryClient.setQueryData(queryKeys.config.all, data);
       queryClient.invalidateQueries({ queryKey: queryKeys.config.all });

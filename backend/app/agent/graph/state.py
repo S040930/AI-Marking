@@ -126,6 +126,13 @@ class GradingState(TypedDict, total=False):
     teacher: TeacherAnswer | None
     # 注意：``checkpoint_id`` 是 LangGraph 保留 channel 名，不能用作状态字段。
     teacher_checkpoint_id: str | None
+    code_test_fingerprint: str
+    regenerate_code_tests: bool
+    code_test_suite: dict[str, Any]
+    code_test_checkpoint_id: str
+    code_test_decision: dict[str, Any]
+    code_test_action: str
+    code_test_results: dict[str, Any]
     provider_state: Annotated[dict[str, dict], merge_by_key]
     usage: Annotated[dict[str, Any], merge_usage]
     usage_by_agent: Annotated[dict[str, dict], merge_by_key]

@@ -17,10 +17,15 @@ from app.models.grading_run import GradingRun
 
 
 def answer_checkpoint(
-    db: Session, run: GradingRun, *, verdict: str, note: str | None
+    db: Session,
+    run: GradingRun,
+    *,
+    verdict: str | None = None,
+    action: str | None = None,
+    note: str | None = None,
 ) -> bool:
     """锁序 Question -> Submission -> Run，答复只绑定当前检查点。"""
-    from app.application.grading_workflow import build_context_parts
+    from app.application.grading_package import build_context_parts
     from app.application.locking import lock_submission_after_question
 
     sub = lock_submission_after_question(db, run.submission_id)
@@ -32,7 +37,7 @@ def answer_checkpoint(
         or run.checkpoint is None
     ):
         return False
-    _, _, _, current_hash, _ = build_context_parts(db, sub)
+    _, _, _, current_hash, resolved = build_context_parts(db, sub)
     if (
         run.confirmation_revision != sub.grading_revision
         or run.confirmation_context_hash != current_hash
@@ -41,9 +46,44 @@ def answer_checkpoint(
             db,
             run,
             GradingRunStatus.failed,
-            error="评分上下文已变化，请重新发起代码一致性检查",
+            error="评分上下文已变化，请重新发起批改",
         )
-        raise ValueError("评分上下文已变化，请重新发起代码一致性检查")
+        raise ValueError("评分上下文已变化，请重新发起批改")
+    if run.checkpoint.get("type") == "code_test_suite_approval":
+        if action not in {"approve_test_suite", "regenerate_test_suite"}:
+            return False
+        if verdict is not None:
+            return False
+        from app.models.code_test_suite import CodeTestSuite
+        from app.services.code_testing import source_fingerprint
+
+        preview = run.checkpoint.get("preview") or {}
+        suite = db.get(CodeTestSuite, preview.get("suite_id"))
+        if (
+            suite is None
+            or suite.question_id != sub.question_id
+            or suite.status != "draft"
+            or suite.version != preview.get("version")
+            or suite.source_fingerprint != source_fingerprint(sub.question, resolved.snapshot_id)
+        ):
+            raise ValueError("测试集已失效或题目已变化，请重新生成")
+        run.checkpoint_answer = {
+            "type": "code_test_suite_approval",
+            "action": action,
+            "note": note,
+            "checkpoint_id": run.checkpoint_request_id,
+            "suite_id": preview.get("suite_id"),
+            "version": preview.get("version"),
+        }
+        run.checkpoint_answered_at = utc_now_naive()
+        run.checkpoint = None
+        run.checkpoint_expires_at = None
+        if run.worker_id is None:
+            _recover_run(db, run)
+        db.commit()
+        return True
+    if verdict not in {"consistent", "mismatch"}:
+        return False
     run.teacher_verdict = verdict
     run.teacher_note = note
     run.teacher_answered_at = utc_now_naive()

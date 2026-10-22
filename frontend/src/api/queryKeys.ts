@@ -21,6 +21,7 @@ export const queryKeys = {
   agent: {
     all: ['agent'] as const,
     providers: ['agent', 'providers'] as const,
+    providerModels: (name: string) => ['agent', 'provider-models', name] as const,
     chatgptOauth: ['agent', 'oauth', 'chatgpt_sub'] as const,
     run: (id: number | undefined) => ['agent', 'run', id] as const,
     runEvents: (id: number | undefined) => ['agent', 'run-events', id] as const,

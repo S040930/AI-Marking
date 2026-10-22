@@ -32,9 +32,11 @@ class Question(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
     file_path: Mapped[str] = mapped_column(String(512), nullable=False)
-    file_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    file_sha256: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, index=True
+    )
     ocr_text: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # 题目 OCR 阶段由服务端提取并校验的规范 rubric 文本；可信性还需同时满足
+    # 题目 OCR 阶段由 agent 提取、后端校验的 rubric 原文/规范文本；可信性还需满足
     # extracted_rubric_items、OCR hash、version 和时间字段。题目被替换时清空。
     extracted_rubric: Mapped[str | None] = mapped_column(Text, nullable=True)
     extracted_rubric_items: Mapped[list | None] = mapped_column(JSON, nullable=True)
@@ -44,7 +46,9 @@ class Question(Base):
     extracted_rubric_version: Mapped[str | None] = mapped_column(
         String(64), nullable=True
     )
-    extracted_rubric_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    extracted_rubric_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True
+    )
     status: Mapped[QuestionStatus] = mapped_column(
         Enum(QuestionStatus, name="question_status"),
         default=QuestionStatus.pending,

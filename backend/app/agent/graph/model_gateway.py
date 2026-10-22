@@ -100,6 +100,7 @@ class ModelGateway:
         should_cancel: Callable[[], bool] | None = None,
         config_getter: Callable[[], tuple[str | None, str | None]] | None = None,
         cache_key: str | None = None,
+        terminal_tool_names: set[str] | None = None,
         sleep: Callable[[float], Any] = asyncio.sleep,
     ) -> None:
         self.agent = agent
@@ -116,6 +117,7 @@ class ModelGateway:
         self._should_cancel = should_cancel
         self._config_getter = config_getter
         self._prompt_cache_key = cache_key
+        self._terminal_tool_names = {"save_assessment", *(terminal_tool_names or set())}
         self._sleep = sleep
 
     async def run_tool_loop(
@@ -477,7 +479,7 @@ class ModelGateway:
                 {"call_id": call_id, "name": name, "ok": True, "summary": summary},
             )
             history.append(function_call_output(call_id, result.output))
-            if name == "save_assessment":
+            if name in self._terminal_tool_names:
                 saved = True
         if saved:
             return "saved"

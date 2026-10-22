@@ -13,12 +13,10 @@ import {
 } from '@/api/agent';
 import { Button } from '@/components/ui/button';
 import { AgentRunProgress } from '@/components/review/AgentRunProgress';
+import { AgentModelSelector } from '@/components/review/AgentModelSelector';
 import { runStatusLabel } from '@/lib/agentRunStatus';
+import { effortOptionsFor } from '@/lib/effortOptions';
 import { useLanguage } from '@/i18n';
-
-const OPENAI_EFFORT_OPTIONS = ['', 'minimal', 'low', 'medium', 'high'] as const;
-// 订阅端实测只认 low..max(目录里的 ultra 会被 400 拒绝)
-const SUBSCRIPTION_EFFORT_OPTIONS = ['', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
 
 /**
  * awaiting_grading 状态下的批改入口与运行视图。
@@ -30,9 +28,11 @@ const SUBSCRIPTION_EFFORT_OPTIONS = ['', 'low', 'medium', 'high', 'xhigh', 'max'
 export function AgentRunPanel({
   submissionId,
   questionName,
+  hasCode,
 }: {
   submissionId: number;
   questionName?: string | null;
+  hasCode?: boolean;
 }) {
   const {
     data: runDetail,
@@ -62,7 +62,7 @@ export function AgentRunPanel({
   if (run === undefined) {
     return (
       <PanelShell>
-        <AgentStartPanel submissionId={submissionId} questionName={questionName} />
+        <AgentStartPanel submissionId={submissionId} questionName={questionName} hasCode={hasCode} />
       </PanelShell>
     );
   }
@@ -74,6 +74,7 @@ export function AgentRunPanel({
           run={run}
           submissionId={submissionId}
           questionName={questionName}
+          hasCode={hasCode}
         />
       </PanelShell>
     );
@@ -101,9 +102,11 @@ function PanelShell({ children }: { children: ReactNode }) {
 function AgentStartPanel({
   submissionId,
   questionName,
+  hasCode,
 }: {
   submissionId: number;
   questionName?: string | null;
+  hasCode?: boolean;
 }) {
   const { t } = useLanguage();
   const { data: providersData, isLoading } = useAgentProviders();
@@ -111,6 +114,7 @@ function AgentStartPanel({
   const [provider, setProvider] = useState<AgentProviderName | null>(null);
   const [model, setModel] = useState('');
   const [effort, setEffort] = useState('');
+  const [regenerateTests, setRegenerateTests] = useState(false);
 
   const defaultProvider = (providersData?.provider_default ?? 'openai_api') as AgentProviderName;
   const activeProvider = provider ?? defaultProvider;
@@ -118,10 +122,7 @@ function AgentStartPanel({
   const subscription = providersData?.providers['chatgpt_sub'];
   const subscriptionReady = Boolean(subscription?.available);
   const ready = Boolean(status?.available && status?.configured);
-  const effortOptions =
-    activeProvider === 'chatgpt_sub'
-      ? SUBSCRIPTION_EFFORT_OPTIONS
-      : OPENAI_EFFORT_OPTIONS;
+  const effortOptions = effortOptionsFor(activeProvider);
 
   const start = () => {
     createMutation.mutate(
@@ -129,6 +130,7 @@ function AgentStartPanel({
         provider: activeProvider,
         model: model.trim() || null,
         reasoning_effort: effort || null,
+        regenerate_code_tests: hasCode ? regenerateTests : false,
       },
       {
         onSuccess: () => toast.success(t('批改已启动')),
@@ -168,6 +170,7 @@ function AgentStartPanel({
               disabled={false}
               onSelect={() => {
                 setProvider('openai_api');
+                setModel('');
                 setEffort('');
               }}
             />
@@ -182,23 +185,38 @@ function AgentStartPanel({
               disabled={!subscriptionReady}
               onSelect={() => {
                 setProvider('chatgpt_sub');
+                setModel('');
                 setEffort('');
               }}
             />
           </div>
 
+          {hasCode ? (
+            <label className="mt-4 flex cursor-pointer items-start gap-2 text-sm text-muted-foreground">
+              <input
+                type="checkbox"
+                className="mt-1 accent-primary"
+                checked={regenerateTests}
+                disabled={createMutation.isPending}
+                onChange={(event) => setRegenerateTests(event.target.checked)}
+              />
+              <span>
+                <span className="font-medium text-foreground">{t('重新生成此题的自动测试集')}</span>
+                <span className="mt-0.5 block text-xs leading-relaxed">
+                  {t('默认复用已批准版本；勾选后会生成新版本并在运行前请你审核。')}
+                </span>
+              </span>
+            </label>
+          ) : null}
+
           {/* 模型与思考强度 */}
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-              {t('模型 ID(留空用默认)')}
-              <input
-                className="h-9 rounded-lg border border-slate-200 bg-white px-2.5 text-sm outline-none focus:ring-2 focus:ring-primary/30"
-                placeholder={status?.default_model || t('默认模型')}
-                value={model}
-                aria-label={t('模型 ID')}
-                onChange={(e) => setModel(e.target.value)}
-              />
-            </label>
+            <AgentModelSelector
+              provider={activeProvider}
+              defaultModel={status?.default_model ?? ''}
+              value={model}
+              onChange={setModel}
+            />
             <label className="flex flex-col gap-1 text-xs text-muted-foreground">
               {t('思考强度')}
               <select
@@ -275,10 +293,12 @@ function AgentFinishedPanel({
   run,
   submissionId,
   questionName,
+  hasCode,
 }: {
   run: AgentRun;
   submissionId: number;
   questionName?: string | null;
+  hasCode?: boolean;
 }) {
   const { t } = useLanguage();
   const description =
@@ -294,7 +314,7 @@ function AgentFinishedPanel({
         <p className="mt-2 text-sm text-muted-foreground">{description}</p>
       </div>
       {run.status !== 'completed' ? (
-        <AgentStartPanel submissionId={submissionId} questionName={questionName} />
+        <AgentStartPanel submissionId={submissionId} questionName={questionName} hasCode={hasCode} />
       ) : null}
     </div>
   );

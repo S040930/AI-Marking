@@ -30,8 +30,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useLanguage } from '@/i18n';
 import { IconBadge } from '@/components/common/IconBadge';
-
-const EFFORT_OPTIONS = ['', 'minimal', 'low', 'medium', 'high'] as const;
+import { OPENAI_EFFORT_OPTIONS } from '@/lib/effortOptions';
 
 /**
  * 模型通道设置:官方 OpenAI API(主通道)与 ChatGPT 订阅登录。
@@ -47,6 +46,7 @@ export function AgentProviderSettings() {
   const [defaultModel, setDefaultModel] = useState('');
   const [effort, setEffort] = useState('');
   const [loginPending, setLoginPending] = useState(false);
+  const [authorizeUrl, setAuthorizeUrl] = useState('');
   const updateMutation = useUpdateProviderConfig();
   const testMutation = useTestProvider();
   const defaultMutation = useSetDefaultProvider();
@@ -128,9 +128,11 @@ export function AgentProviderSettings() {
     if (!loginPending) return;
     if (loginState === 'completed') {
       setLoginPending(false);
+      setAuthorizeUrl('');
       toast.success(t('ChatGPT 订阅登录成功'));
     } else if (loginState === 'failed') {
       setLoginPending(false);
+      setAuthorizeUrl('');
       toast.error(loginDetail ?? t('登录失败，请重试'));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -139,12 +141,19 @@ export function AgentProviderSettings() {
   const startChatGptLogin = () => {
     startLogin.mutate(undefined, {
       onSuccess: (result) => {
+        setAuthorizeUrl(result.authorize_url);
         window.open(result.authorize_url, '_blank', 'noopener,noreferrer');
         setLoginPending(true);
         toast.info(t('已打开浏览器，请完成 ChatGPT 登录'));
       },
       onError: (err) => toast.error(err.message),
     });
+  };
+
+  // 弹窗被拦截时不再只能干等:解除"等待中"并保留授权链接入口
+  const cancelChatGptLogin = () => {
+    setLoginPending(false);
+    setAuthorizeUrl('');
   };
 
   const logoutChatGpt = () => {
@@ -216,7 +225,7 @@ export function AgentProviderSettings() {
                 aria-label={t('默认思考强度')}
                 onChange={(e) => setEffort(e.target.value)}
               >
-                {EFFORT_OPTIONS.map((option) => (
+                {OPENAI_EFFORT_OPTIONS.map((option) => (
                   <option key={option} value={option}>
                     {option || t('模型默认')}
                   </option>
@@ -328,6 +337,30 @@ export function AgentProviderSettings() {
               </span>
             ) : null}
           </div>
+
+          {loginPending ? (
+            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              <span>{t('没有自动打开？')}</span>
+              {authorizeUrl ? (
+                <a
+                  className="font-medium text-primary underline underline-offset-2"
+                  href={authorizeUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {t('点击打开授权页')}
+                </a>
+              ) : null}
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs"
+                onClick={cancelChatGptLogin}
+              >
+                {t('取消登录')}
+              </Button>
+            </div>
+          ) : null}
 
           <p className="rounded-xl bg-muted/60 p-3 text-xs leading-relaxed text-muted-foreground">
             {t(

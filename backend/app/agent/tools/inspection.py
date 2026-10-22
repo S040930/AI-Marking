@@ -12,6 +12,7 @@ from typing import Any
 
 from app.agent.models import ToolResult, ToolSpec
 from app.agent.tools import ToolRegistry
+from app.services.code_testing import evidence_quote
 
 MAX_SLICE_CHARS = 8_000
 MAX_SEARCH_RESULTS = 20
@@ -223,6 +224,36 @@ def _read_teacher_answer(ctx: InspectionContext, args: dict[str, Any]) -> ToolRe
     )
 
 
+def _read_code_test_result(ctx: InspectionContext, args: dict[str, Any]) -> ToolResult:
+    payload = ctx.artifact.get("test_results") or {}
+    test_id = str(args.get("test_case_id") or "")
+    for result in payload.get("results", []):
+        if not isinstance(result, dict) or result.get("id") != test_id:
+            continue
+        return ToolResult(
+            ok=True,
+            output={
+                "test_case_id": test_id,
+                "suite_version": payload.get("version"),
+                "question_number": result.get("question_number"),
+                "title": result.get("title"),
+                "status": result.get("status"),
+                "output": result.get("output"),
+                "isolation": result.get("isolation"),
+                "quote": evidence_quote(result),
+            },
+        )
+    available = [
+        {"test_case_id": result.get("id"), "title": result.get("title"), "status": result.get("status")}
+        for result in payload.get("results", [])
+        if isinstance(result, dict)
+    ]
+    return ToolResult(
+        ok=False,
+        error=f"测试结果 {test_id!r} 不属于当前 run；可用结果: {available}",
+    )
+
+
 def build_inspection_tools(ctx: InspectionContext) -> ToolRegistry:
     """构建只读工具集；每个 run 一份，handler 闭包持有 artifact。"""
     registry = ToolRegistry()
@@ -233,6 +264,7 @@ def build_inspection_tools(ctx: InspectionContext) -> ToolRegistry:
     registry.register(_READ_RUBRIC_SPEC, lambda args: _read_rubric_item(ctx, args))
     registry.register(_READ_QUESTION_SPEC, lambda args: _read_question_ocr(ctx, args))
     registry.register(_READ_TEACHER_SPEC, lambda args: _read_teacher_answer(ctx, args))
+    registry.register(_READ_CODE_TEST_RESULT_SPEC, lambda args: _read_code_test_result(ctx, args))
     return registry
 
 
@@ -337,4 +369,18 @@ _READ_TEACHER_SPEC = ToolSpec(
     name="read_teacher_answer",
     description="读取教师检查点答复（verdict/note）；没有答复时 available=false。",
     parameters={"type": "object", "properties": {}, "additionalProperties": False},
+)
+
+_READ_CODE_TEST_RESULT_SPEC = ToolSpec(
+    name="read_code_test_result",
+    description=(
+        "读取一个由服务端保存的真实测试结果。请用返回的 test_case_id、suite_version 与 quote "
+        "构造 test_case 证据引用；不得改写 quote 或引用其他 run 的测试。"
+    ),
+    parameters={
+        "type": "object",
+        "properties": {"test_case_id": {"type": "string"}},
+        "required": ["test_case_id"],
+        "additionalProperties": False,
+    },
 )

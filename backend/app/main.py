@@ -30,7 +30,7 @@ from app.core.errors import (
     ValidationError,
 )
 from app.db.session import engine as _engine
-from app.services.code_runner import sandbox_readiness
+from app.services.code_runner_runtime import sandbox_readiness
 from app.services.ocr import close_client as close_ocr_client
 
 logger = logging.getLogger(__name__)

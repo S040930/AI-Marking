@@ -17,6 +17,14 @@ from sqlalchemy.orm import sessionmaker
 from app.agent import run_store as run_repo
 from app.agent.graph.budget import ProviderPool, RunBudget, gate_for
 from app.agent.graph.checkpointer import create_memory_checkpointer, thread_id_for_run
+from app.agent.graph.code_tests import (
+    build_code_test_nodes,
+    route_after_code_test_apply,
+    route_after_code_test_ask,
+    route_after_code_test_generate,
+    route_after_code_test_prepare,
+    route_after_code_test_run,
+)
 from app.agent.graph.finalize import build_finalize_node
 from app.agent.graph.package import PackageRuntime, ingest_package
 from app.agent.graph.routing import (
@@ -137,6 +145,20 @@ def build_graph(
         should_cancel=should_cancel,
         config_getter=config_getter,
     )
+    code_tests = build_code_test_nodes(
+        session_factory=session_factory,
+        run_id=run_id,
+        submission_id=submission_id,
+        claim_token=claim_token,
+        provider_pool=provider_pool,
+        gate=gate,
+        budget=budget,
+        runtime=runtime,
+        model=model,
+        reasoning_effort=reasoning_effort,
+        should_cancel=should_cancel,
+        config_getter=config_getter,
+    )
 
     def fail(state: GradingState) -> dict[str, Any]:
         error = "；".join(state.get("errors") or ["批改运行失败"])
@@ -154,6 +176,12 @@ def build_graph(
     builder.add_node("package_ingest", package_ingest)
     builder.add_node("rubric_extract", rubric["rubric_extract"])
     builder.add_node("supervisor_rubric", rubric["supervisor_rubric"])
+    builder.add_node("code_test_prepare", code_tests["prepare"])
+    builder.add_node("code_test_generate", code_tests["generate"])
+    builder.add_node("code_test_ask", code_tests["ask"])
+    builder.add_node("code_test_wait", code_tests["wait"])
+    builder.add_node("code_test_apply", code_tests["apply"])
+    builder.add_node("code_test_run", code_tests["run"])
     builder.add_node("teacher_ask", teacher_ask)
     builder.add_node("teacher_wait", teacher_wait)
     builder.add_node("teacher_apply", teacher_apply)
@@ -171,27 +199,47 @@ def build_graph(
     builder.add_node("finalize", finalize)
 
     builder.add_edge(START, "plan")
-    builder.add_conditional_edges(
-        "plan",
-        route_after_plan,
-        {"package_ingest": "package_ingest", "fail": "fail"},
-    )
-    builder.add_conditional_edges(
+    def add_routes(source: str, router, *destinations: str) -> None:
+        builder.add_conditional_edges(
+            source, router, {destination: destination for destination in destinations}
+        )
+
+    add_routes("plan", route_after_plan, "package_ingest", "fail")
+    add_routes(
         "package_ingest",
         route_after_ingest,
-        {
-            "rubric_extract": "rubric_extract",
-            "teacher_ask": "teacher_ask",
-            "ensure_handles": "ensure_handles",
-            "fail": "fail",
-        },
+        "rubric_extract",
+        "code_test_prepare",
+        "ensure_handles",
+        "fail",
     )
     builder.add_edge("rubric_extract", "supervisor_rubric")
-    builder.add_conditional_edges(
-        "supervisor_rubric",
-        route_after_rubric,
-        {"package_ingest": "package_ingest", "fail": "fail"},
+    add_routes("supervisor_rubric", route_after_rubric, "package_ingest", "fail")
+    add_routes(
+        "code_test_prepare",
+        route_after_code_test_prepare,
+        "code_test_generate",
+        "code_test_ask",
+        "code_test_run",
+        "fail",
     )
+    add_routes(
+        "code_test_generate",
+        route_after_code_test_generate,
+        "code_test_ask",
+        "fail",
+        "finalize",
+    )
+    add_routes("code_test_ask", route_after_code_test_ask, "code_test_wait", "fail")
+    builder.add_edge("code_test_wait", "code_test_apply")
+    add_routes(
+        "code_test_apply",
+        route_after_code_test_apply,
+        "code_test_generate",
+        "code_test_run",
+        "fail",
+    )
+    add_routes("code_test_run", route_after_code_test_run, "teacher_ask", "fail", "finalize")
     builder.add_edge("teacher_ask", "teacher_wait")
     builder.add_edge("teacher_wait", "teacher_apply")
     builder.add_edge("teacher_apply", "ensure_handles")
@@ -200,28 +248,24 @@ def build_graph(
         "prepare_briefs", fan_out, ["score_item"]
     )
     builder.add_edge("score_item", "assemble")
-    builder.add_conditional_edges(
+    add_routes(
         "assemble",
         route_after_assemble,
-        {
-            "rescore_missing": "rescore_missing",
-            "verify_prepare": "verify_prepare",
-            "finalize": "finalize",
-            "fail": "fail",
-        },
+        "rescore_missing",
+        "verify_prepare",
+        "finalize",
+        "fail",
     )
     builder.add_conditional_edges(
         "rescore_missing", fan_out, ["score_item"]
     )
-    builder.add_conditional_edges(
+    add_routes(
         "verify_prepare",
         route_after_verify,
-        {
-            "evidence_verify": "evidence_verify",
-            "supervisor_finalize": "supervisor_finalize",
-            "finalize": "finalize",
-            "fail": "fail",
-        },
+        "evidence_verify",
+        "supervisor_finalize",
+        "finalize",
+        "fail",
     )
     builder.add_conditional_edges(
         "evidence_verify", fan_out, ["score_item"]
@@ -279,11 +323,13 @@ async def execute_graph(
         "phase": "plan",
     }
 
-    def teacher_resume_payload() -> dict[str, Any]:
+    def checkpoint_resume_payload() -> dict[str, Any]:
         with session_factory() as db:
             run = db.get(GradingRun, run_id)
         if run is None:
             return {}
+        if run.checkpoint_answer is not None:
+            return run.checkpoint_answer
         return {
             "verdict": run.teacher_verdict,
             "note": run.teacher_note,
@@ -295,6 +341,30 @@ async def execute_graph(
             run = db.get(GradingRun, run_id)
         return run is not None and run.teacher_answered_at is not None
 
+    def checkpoint_answered() -> bool:
+        with session_factory() as db:
+            run = db.get(GradingRun, run_id)
+        return run is not None and run.checkpoint_answered_at is not None
+
+    def is_teacher_checkpoint(snapshot) -> bool:
+        return "teacher_wait" in snapshot.next
+
+    def is_code_test_checkpoint(snapshot) -> bool:
+        return "code_test_wait" in snapshot.next
+
+    async def resume_if_answered(snapshot):
+        if is_teacher_checkpoint(snapshot):
+            if not teacher_answered():
+                release_if_waiting()
+                return None
+            return await graph.ainvoke(Command(resume=checkpoint_resume_payload()), config)
+        if is_code_test_checkpoint(snapshot):
+            if not checkpoint_answered():
+                release_if_waiting()
+                return None
+            return await graph.ainvoke(Command(resume=checkpoint_resume_payload()), config)
+        return await graph.ainvoke(None, config)
+
     def release_if_waiting() -> bool:
         """检查点驻留：释放租约并保持 waiting_for_teacher。"""
         with session_factory() as db:
@@ -304,27 +374,19 @@ async def execute_graph(
     try:
         snapshot = await graph.aget_state(config)
         if snapshot.next:
-            if "teacher_wait" in snapshot.next:
-                if not teacher_answered():
-                    release_if_waiting()
-                    return GradingRunStatus.waiting_for_teacher
-                result = await graph.ainvoke(
-                    Command(resume=teacher_resume_payload()), config
-                )
-            else:
-                result = await graph.ainvoke(None, config)
+            result = await resume_if_answered(snapshot)
+            if result is None:
+                return GradingRunStatus.waiting_for_teacher
         elif snapshot.values:
             result = dict(snapshot.values)
         else:
             result = await graph.ainvoke(initial, config)
             snapshot = await graph.aget_state(config)
-            if "teacher_wait" in snapshot.next:
-                if not teacher_answered():
-                    release_if_waiting()
+            if is_teacher_checkpoint(snapshot) or is_code_test_checkpoint(snapshot):
+                resumed = await resume_if_answered(snapshot)
+                if resumed is None:
                     return GradingRunStatus.waiting_for_teacher
-                result = await graph.ainvoke(
-                    Command(resume=teacher_resume_payload()), config
-                )
+                result = resumed
     except Exception as exc:  # noqa: BLE001 - 图边界统一转 failed
         with session_factory() as db:
             run = db.get(GradingRun, run_id)

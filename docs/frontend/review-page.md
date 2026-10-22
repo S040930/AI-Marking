@@ -25,7 +25,9 @@
 
 - `frontend/src/pages/ReviewPage.tsx`
 - `frontend/src/components/review/AgentRunPanel.tsx`
-- `frontend/src/components/review/AgentRunProgress.tsx`
+- `frontend/src/components/review/AgentRunProgress.tsx`（运行状态、配置与检查点）
+- `frontend/src/components/review/AgentRunCodeTests.tsx`（测试集审批与结果）
+- `frontend/src/components/review/AgentRunTranscript.tsx`（事件转录与分组）
 - `frontend/src/components/PdfViewer.tsx`
 - `frontend/src/components/ManualReviewPanel.tsx`
 
@@ -55,10 +57,11 @@
   点击「开始批改」创建 run（`POST /api/agent/runs`）。
 - **运行中**（含 `waiting_for_teacher`）：`AgentRunProgress` 展示状态头、
   运行配置热切换（model/effort，下一回合生效）、执行转录（按事件 `agent` 标签
-  分组并显示徽标：主管分支为「主管」，评分项分支为「评分项 <rubric_item_id>」；
-  UI 侧最多保留最近 300 条事件）；`waiting_for_teacher`
-  时替换为检查点表单（自愿确认：可先在本地运行学生代码后核对，或直接确认；
-  "不一致"必填说明），否则显示「取消批改」。
+  分组并显示徽标：主管分支为「主管」，评分项分支显示对应的 rubric item ID；
+  UI 侧最多保留最近 300 条事件）。`waiting_for_teacher` 时按检查点类型展示：
+  `code_test_suite_approval` 显示测试集预览，并提供「批准并运行测试」和「重新生成」；
+  代码与报告一致性检查点显示教师答复表单（可先在本地运行学生代码后核对，或直接确认；
+  选择“不一致”必须填写说明）。其他运行状态显示「取消批改」。
 - **终态**：`completed` 提示自动进入复核；`failed`/`cancelled` 展示错误与
   可重新配置发起的面板。
 
@@ -70,10 +73,13 @@
 
 ### CodeEvidencePanel
 
-- 左侧证据切换「报告」与「代码」；代码存在时展示 `submission_code_files`：
-  题号、文件名、SHA-256，可展开查看提交源代码。
-- 明确提示：后端只保存源码与 SHA-256，不保存运行产物；代码由教师或模型在
-  受控范围内核对。
+- 左侧证据切换「报告」与「代码」；代码存在时展示题号、文件名与提交源代码，
+  数据集区域展示输入文件名和大小。当前组件不展示源码 SHA-256。
+- `submission_code_files` 保存源码文本、源码路径和 SHA-256；
+  `submission_code_input_files` 保存数据集文件路径、大小和 SHA-256。
+  题目级测试集版本保存在 `code_test_suites`；每次 run 使用的测试集快照与
+  测试结果（状态、摘要及受限输出）保存在 `grading_run_artifacts`，并由运行面板展示。
+  测试结束后清理临时工作目录，不保留学生程序生成的任意文件。
 
 ### ManualReviewPanel
 

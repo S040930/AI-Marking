@@ -15,6 +15,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.services.rubric_text import has_grade_band_scale
+
 RUBRIC_VERSION = "rubric-definition-v2"
 QUESTION_RUBRIC_VERSION = "question-rubric-v1"
 RUBRIC_PRIORITY: tuple[str, ...] = (
@@ -32,8 +34,8 @@ class RubricItem(BaseModel):
     rubric_item_id: str | None = Field(default=None, min_length=5, max_length=100)
     criterion: str = Field(min_length=1, max_length=200)
     max_score: float = Field(gt=0)
-    details: str = Field(min_length=1, max_length=2_000)
-    source_quote: str | None = Field(default=None, max_length=4_000)
+    details: str = Field(min_length=1, max_length=20_000)
+    source_quote: str | None = Field(default=None, max_length=20_000)
 
 
 class RubricDefinition(BaseModel):
@@ -109,6 +111,12 @@ def normalize_definition(raw: Any) -> RubricDefinition:
 
 
 def canonical_text(definition: RubricDefinition) -> str:
+    if (
+        len(definition.items) == 1
+        and definition.items[0].source_quote
+        and has_grade_band_scale(definition.items[0].source_quote)
+    ):
+        return definition.items[0].source_quote
     lines = [
         f"[{item.rubric_item_id}] {item.criterion} ({item.max_score:g}分): {item.details}"
         for item in definition.items
@@ -123,24 +131,44 @@ def snapshot_id(source: str, definition: RubricDefinition) -> str:
         "definition": definition.model_dump(exclude_none=True),
     }
     digest = hashlib.sha256(
-        json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+        json.dumps(
+            payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        ).encode()
     ).hexdigest()
     return "rubric_" + digest[:32]
 
 
 DEFAULT_DEFINITION = RubricDefinition(
     items=[
-        RubricItem(criterion="内容理解", max_score=30, details="准确理解题目要求与核心概念"),
-        RubricItem(criterion="论证分析", max_score=30, details="论证清晰、逻辑严密并体现批判性思考"),
-        RubricItem(criterion="结构组织", max_score=20, details="结构合理、段落清晰、过渡自然"),
-        RubricItem(criterion="语言表达", max_score=10, details="语言准确流畅、术语使用恰当"),
-        RubricItem(criterion="规范性", max_score=10, details="格式规范、引用符合学术规范"),
+        RubricItem(
+            criterion="内容理解", max_score=30, details="准确理解题目要求与核心概念"
+        ),
+        RubricItem(
+            criterion="论证分析",
+            max_score=30,
+            details="论证清晰、逻辑严密并体现批判性思考",
+        ),
+        RubricItem(
+            criterion="结构组织", max_score=20, details="结构合理、段落清晰、过渡自然"
+        ),
+        RubricItem(
+            criterion="语言表达", max_score=10, details="语言准确流畅、术语使用恰当"
+        ),
+        RubricItem(
+            criterion="规范性", max_score=10, details="格式规范、引用符合学术规范"
+        ),
     ],
     total_max_score=100,
 )
 DEFAULT_DEFINITION = RubricDefinition(
     items=[
-        item.model_copy(update={"rubric_item_id": _stable_item_id(item.criterion, item.max_score, item.details)})
+        item.model_copy(
+            update={
+                "rubric_item_id": _stable_item_id(
+                    item.criterion, item.max_score, item.details
+                )
+            }
+        )
         for item in DEFAULT_DEFINITION.items
     ],
     total_max_score=DEFAULT_DEFINITION.total_max_score,
@@ -159,24 +187,41 @@ def _trusted_question_definition(question: Any) -> RubricDefinition | None:
     try:
         raw = {
             "items": question.extracted_rubric_items,
-            "total_max_score": sum(float(item["max_score"]) for item in question.extracted_rubric_items),
+            "total_max_score": sum(
+                float(item["max_score"]) for item in question.extracted_rubric_items
+            ),
         }
         definition = _canonical_definition(raw)
     except (KeyError, TypeError, ValueError, json.JSONDecodeError):
         return None
     # 结构化字段才是权威；历史自由文本即使格式不同也不参与解析。
-    for item in question.extracted_rubric_items:
-        quote = " ".join(unicodedata.normalize("NFKC", str(item.get("source_quote", ""))).split()).casefold()
-        ocr = " ".join(unicodedata.normalize("NFKC", question.ocr_text).split()).casefold()
+    items = question.extracted_rubric_items
+    allows_inferred_holistic_total = (
+        len(items) == 1
+        and float(items[0].get("max_score", 0)) == 100
+        and has_grade_band_scale(str(items[0].get("source_quote", "")))
+    )
+    for item in items:
+        quote = " ".join(
+            unicodedata.normalize("NFKC", str(item.get("source_quote", ""))).split()
+        ).casefold()
+        ocr = " ".join(
+            unicodedata.normalize("NFKC", question.ocr_text).split()
+        ).casefold()
         if not quote or quote not in ocr:
             return None
         score = format(float(item.get("max_score", 0)), "g")
-        if not re.search(rf"(?<![\d.]){re.escape(score)}(?:\.0+)?(?![\d.])", quote):
+        if (
+            not re.search(rf"(?<![\d.]){re.escape(score)}(?:\.0+)?(?![\d.])", quote)
+            and not allows_inferred_holistic_total
+        ):
             return None
     return definition
 
 
-def resolve_rubric(question: Any | None, config: dict[str, Any] | None) -> ResolvedRubric:
+def resolve_rubric(
+    question: Any | None, config: dict[str, Any] | None
+) -> ResolvedRubric:
     """按固定优先级解析 rubric；失败只回退，不把不可信缓存当标准。"""
     config = config or {}
     question_definition = _trusted_question_definition(question)
@@ -199,7 +244,12 @@ def resolve_rubric(question: Any | None, config: dict[str, Any] | None) -> Resol
     return ResolvedRubric(
         definition=definition,
         source=source,
-        text=canonical_text(definition),
+        text=(
+            str(question.extracted_rubric)
+            if source == "question_extracted"
+            and getattr(question, "extracted_rubric", None)
+            else canonical_text(definition)
+        ),
         snapshot_id=snapshot_id(source, definition),
     )
 
@@ -220,7 +270,9 @@ def validate_assessment_details(
     expected = {item.rubric_item_id: item for item in resolved.definition.items}
     seen: set[str] = set()
     for detail in details:
-        item_id = getattr(detail, "rubric_item_id", None) or detail.get("rubric_item_id")
+        item_id = getattr(detail, "rubric_item_id", None) or detail.get(
+            "rubric_item_id"
+        )
         if item_id is None and not require_full_coverage:
             continue
         criterion = getattr(detail, "criterion", None) or detail.get("criterion")

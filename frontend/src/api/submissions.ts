@@ -6,7 +6,7 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
-import { apiClient } from './client';
+import { apiClient, responseData } from './client';
 import { queryKeys } from './queryKeys';
 import {
   type BatchDeleteResponse,
@@ -138,12 +138,10 @@ export function useSubmissions({ page, pageSize }: { page: number; pageSize: num
   return useQuery<PaginatedSubmissions>({
     queryKey: queryKeys.submissions.list(page, pageSize),
     queryFn: () =>
-      apiClient
-        .get<PaginatedSubmissions>('/submissions', {
+      responseData(apiClient.get<PaginatedSubmissions>('/submissions', {
           // 轮询场景跳过 count 查询,总数由独立的 useSubmissionsCount 提供
           params: { skip, limit: pageSize, include_count: false },
-        })
-        .then((r) => r.data),
+        })),
     placeholderData: (prev) => prev,
     // 历史列表只承担状态摘要展示，低频刷新避免放大数据库压力。
     refetchInterval: (query) => {
@@ -164,8 +162,7 @@ export function useSubmissions({ page, pageSize }: { page: number; pageSize: num
 export function useSubmissionsCount() {
   return useQuery<{ total: number }>({
     queryKey: queryKeys.submissions.count,
-    queryFn: () =>
-      apiClient.get<{ total: number }>('/submissions/count').then((r) => r.data),
+    queryFn: () => responseData(apiClient.get<{ total: number }>('/submissions/count')),
     staleTime: 30_000,
     refetchInterval: false,
     refetchIntervalInBackground: false,
@@ -187,8 +184,7 @@ export function useSubmission(
     // 状态变化时切换详情 key，避免 fallback 轮询更新 status 后仍复用
     // 旧状态的建议；同时保留 ['submission', id] 前缀供 SSE 失效缓存。
     queryKey: queryKeys.submissions.detail(id, status ?? 'detail'),
-    queryFn: () =>
-      apiClient.get<SubmissionDetail>(`/submissions/${id}`).then((r) => r.data),
+    queryFn: () => responseData(apiClient.get<SubmissionDetail>(`/submissions/${id}`)),
     enabled: id !== undefined && !isNaN(id) && enabled,
     refetchInterval: (query) =>
       query.state.data?.status === 'ready_for_review' ? 30_000 : false,
@@ -262,9 +258,7 @@ export function useSubmissionStatus(id: number | undefined) {
   const query = useQuery<SubmissionStatusOut>({
     queryKey: queryKeys.submissions.status(id),
     queryFn: () =>
-      apiClient
-        .get<SubmissionStatusOut>(`/submissions/${id}/status`)
-        .then((r) => r.data),
+      responseData(apiClient.get<SubmissionStatusOut>(`/submissions/${id}/status`)),
     enabled: id !== undefined && !isNaN(id),
     // 兜底轮询:SSE 断开时仍能更新;30s 远小于原 2s 的请求量
     refetchInterval: (query) => {
@@ -284,16 +278,12 @@ export function useRetrySubmission(submissionId: number) {
     mutationFn: (file) => {
       const form = new FormData();
       if (file) form.append('file', file);
-      return apiClient
-        .post<SubmissionCreateResponse>(
-          `/submissions/${submissionId}/retry`,
-          form,
-          {
+      return responseData(apiClient.post<SubmissionCreateResponse>(
+        `/submissions/${submissionId}/retry`, form, {
             headers: { 'Content-Type': 'multipart/form-data' },
             skipErrorToast: true,
           },
-        )
-        .then((response) => response.data);
+      ));
     },
     onSuccess: () => {
       queryClient.removeQueries({ queryKey: queryKeys.submissions.detailPrefix(submissionId) });
@@ -309,11 +299,9 @@ export function useFinalizeSubmission(submissionId: number) {
   const queryClient = useQueryClient();
   return useMutation<SubmissionDetail, Error, FinalizePayload>({
     mutationFn: (payload) =>
-      apiClient
-        .post<SubmissionDetail>(`/submissions/${submissionId}/finalize`, payload, {
+      responseData(apiClient.post<SubmissionDetail>(`/submissions/${submissionId}/finalize`, payload, {
           skipErrorToast: true,
-        })
-        .then((r) => r.data),
+        })),
     onError: async (error) => {
       if (isAxiosError(error) && error.response?.status === 409) {
         await Promise.all([
@@ -350,12 +338,10 @@ export function useBatchDeleteSubmissions() {
   const queryClient = useQueryClient();
   return useMutation<BatchDeleteResponse, Error, number[]>({
     mutationFn: (ids) =>
-      apiClient
-        .delete<BatchDeleteResponse>('/submissions', {
+      responseData(apiClient.delete<BatchDeleteResponse>('/submissions', {
           data: { ids },
           skipErrorToast: true,
-        })
-        .then((r) => r.data),
+        })),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.submissions.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.submissions.count });

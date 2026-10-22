@@ -5,12 +5,17 @@
 > `docs/architecture/chatgpt-sub-spike.md`）。
 >
 > **后续架构升级（2026-10-17）**：LangGraph P0–P4 已完成，运行时改为
-> `plan → package_ingest → teacher interrupt → Send fan-out → assemble →
-> verify → supervisor_finalize`；评分包正文存 `grading_run_artifacts`，
+> `plan → package_ingest → 可选 rubric 提取 → 可选代码测试生成/审批/运行 →
+> 可选教师一致性检查点 → Send fan-out → assemble → verify → supervisor_finalize`；评分包正文存 `grading_run_artifacts`，
 > checkpoint 只留摘要；每个评分分支独立 provider，订阅并发默认 2。
 > 迁移见 `alembic/versions/c177625dbb36_langgraph_grading_artifacts.py`。
-> `app/agent/engine.py` 仍作为 `ModelGateway` 的内部循环保留（P5 清理项）。
+> 当前模型回合循环位于 `app/agent/graph/model_gateway.py`；订阅 turn-state 通过
+> LangGraph checkpointer 的 `provider_state` 按分支持久化，`GradingRun.agent_state` 为遗留列。
 > 基线：`a092830`（v12 契约 + 并发修复已冻结，见文末「基线记录」）
+
+> 本文保留实施前的设计快照、阶段计划与验收记录。历史模块布局和 API 草案不作为
+> 当前实现规范；当前运行时以 [langgraph-grading.md](langgraph-grading.md) 和
+> [code-testing.md](code-testing.md) 为准。
 
 ## Context
 
@@ -160,7 +165,8 @@ backend/app/schemas/agent.py / api/agent.py / grading_worker.py(替代 acp_worke
 `client_version` 且订阅侧模型为 `gpt-6.*` 系列；除 `Authorization` 外请求头均可省；`store`
 必须显式 `false`；**端点不返回 reasoning item**（encrypted reasoning 回传不可用，续会话改用
 `x-codex-turn-state`）；目录声明的 `ultra` 被拒，实测 effort 白名单为
-`low/medium/high/xhigh/max`；无 `x-request-id`。B 段待人工登录补跑。
+`low/medium/high/xhigh/max`；无 `x-request-id`。B 段随后经应用内 OAuth 完成，
+登录、令牌轮换和真实作业验收记录见 [spike 报告](chatgpt-sub-spike.md)。
 
 ## 实施阶段
 
@@ -210,8 +216,8 @@ backend/app/schemas/agent.py / api/agent.py / grading_worker.py(替代 acp_worke
 | 3 | `c0d0706` | 契约改名（Migration B `f7a9b1c3d5e7`：表/约束/索引/序列/枚举值 RENAME；句柄 TTL 24h；`agent_metadata` 键+兼容读；删 skills/依赖；402 passed） |
 | 4 | `d393f64` | 前端切换（AgentRunPanel/AgentProviderSettings/api/agent.ts；acp-chat/助手/prefill/grading-prompt 全链删除；130 tests；oxlint/tsc/build/api:check 通过） |
 | 5 | （本文档更新） | 文档重写（langgraph-grading.md 新增、acp/mcp-grading.md 删除、schema/review-page/PROJECT/README/env/启动脚本/bootstrap 同步）+ 验收清单移交用户 |
-| 6 | （spike 脚本 + 报告） | A 段 38 次调用全过：模型目录需 `client_version`、头可极简、`store` 必须 false、reasoning 不回传（改 `x-codex-turn-state`）、effort 白名单 `low..max`；B 段待人工登录 |
-| 7 | （订阅通道实装） | `providers/chatgpt_sub.py` + `chatgpt_oauth.py` + OAuth 三端点 + token 落库/刷新轮换 + turn-state 进 `agent_state` + 设置页登录卡 + 前端通道可选；真实登录与作业 run 7 验收通过；修掉检查点缺 `function_call_output` 导致续跑被订阅端拒绝的问题；新增 23 个后端测试 |
+| 6 | （spike 脚本 + 报告） | A/B 段均完成：模型目录需 `client_version`、`store` 必须 false、reasoning 不回传（使用 `x-codex-turn-state`）、effort 白名单为 `low..max`；详见 spike 报告 |
+| 7 | （订阅通道实装） | `providers/chatgpt_sub.py` + `chatgpt_oauth.py` + OAuth 三端点 + token 落库/刷新轮换 + LangGraph checkpointer 中按分支持久化 turn-state + 设置页登录卡 + 前端通道可选；真实登录与作业 run 7 验收通过；修掉检查点缺 `function_call_output` 导致续跑被订阅端拒绝的问题；新增 23 个后端测试 |
 
 ### 阶段 5 真实 key 验收清单（需用户执行）
 

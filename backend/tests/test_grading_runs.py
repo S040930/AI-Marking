@@ -273,7 +273,7 @@ def test_checkpoint_roundtrip(factory):
         run_repo.transition_run(db, run, GradingRunStatus.running)
         run = db.get(GradingRun, run_id)
         sub = db.get(Submission, sid)
-        from app.application.grading_workflow import build_context_parts
+        from app.application.grading_package import build_context_parts
 
         run_repo.save_checkpoint(
             db,
@@ -315,6 +315,58 @@ def test_answer_checkpoint_requires_waiting(factory):
         )
 
 
+@pytest.mark.parametrize("action", ["approve_test_suite", "regenerate_test_suite"])
+def test_code_test_checkpoint_persists_teacher_action(factory, action):
+    from app.application.grading_package import build_context_parts
+    from app.models.code_test_suite import CodeTestSuite
+    from app.services.code_testing import source_fingerprint
+
+    sid = _submission_id(factory)
+    run_id = _make_run(factory, sid)
+    with factory() as db:
+        run = db.get(GradingRun, run_id)
+        run_repo.claim_next_run(db, worker_id="w1", lease_seconds=90, max_concurrent=1)
+        run = db.get(GradingRun, run_id)
+        run_repo.transition_run(db, run, GradingRunStatus.running)
+        sub = db.get(Submission, sid)
+        _, _, _, context_hash, resolved = build_context_parts(db, sub)
+        suite = CodeTestSuite(
+            question_id=sub.question_id,
+            version=1,
+            source_fingerprint=source_fingerprint(sub.question, resolved.snapshot_id),
+            status="draft",
+            tests=[{"id": "q1-t1"}],
+            generated_by_run_id=run_id,
+        )
+        db.add(suite)
+        db.flush()
+        checkpoint_id = "checkpoint-tests-1"
+        run_repo.save_checkpoint(
+            db,
+            run,
+            checkpoint={
+                "type": "code_test_suite_approval",
+                "preview": {"suite_id": suite.id, "version": suite.version},
+            },
+            dwell_seconds=1800,
+            confirmation_revision=sub.grading_revision,
+            confirmation_context_hash=context_hash,
+            checkpoint_request_id=checkpoint_id,
+        )
+        assert checkpoint_repo.answer_checkpoint(db, run, action=action)
+        assert run.checkpoint_answer == {
+            "type": "code_test_suite_approval",
+            "action": action,
+            "note": None,
+            "checkpoint_id": checkpoint_id,
+            "suite_id": suite.id,
+            "version": suite.version,
+        }
+        assert run.checkpoint_answered_at is not None
+        assert run.checkpoint is None
+        assert suite.status == "draft"
+
+
 def test_terminal_statuses():
     assert TERMINAL_RUN_STATUSES == frozenset(
         {
@@ -338,7 +390,7 @@ def test_terminal_statuses():
 def test_waiting_recovery_uses_one_policy(factory, source, answered, attempts, target):
     from datetime import timedelta
 
-    from app.application.grading_workflow import build_context_parts
+    from app.application.grading_package import build_context_parts
     from app.core.time import utc_now_naive
 
     sid = _submission_id(factory)
@@ -464,7 +516,7 @@ def test_scan_repairs_exhausted_queue_and_ownerless_cancel(factory):
 
 
 def test_reply_rejects_changed_context_and_frees_run(factory):
-    from app.application.grading_workflow import build_context_parts
+    from app.application.grading_package import build_context_parts
 
     sid = _submission_id(factory)
     _make_run(factory, sid)
@@ -494,7 +546,7 @@ def test_reply_rejects_changed_context_and_frees_run(factory):
 
 
 def test_reply_then_release_and_release_then_reply_both_resume(factory):
-    from app.application.grading_workflow import build_context_parts
+    from app.application.grading_package import build_context_parts
 
     sid = _submission_id(factory)
     for reply_first in (True, False):

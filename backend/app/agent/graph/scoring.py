@@ -15,19 +15,23 @@ from uuid import UUID
 
 from sqlalchemy.orm import sessionmaker
 
-from app.agent import run_store as run_repo
 from app.agent.graph.budget import ConcurrencyGate, ProviderPool, RunBudget
+from app.agent.graph.code_tests import _attach_test_results
 from app.agent.graph.limits import (
     CHUNK_SIZE,
     FANOUT_ITEMS,
     HARD_ITEM_LIMIT,
     MAX_BRIEF_CHARS,
 )
-from app.agent.graph.model_gateway import ModelGateway, prompt_cache_key
-from app.agent.graph.package import PackageRuntime, ingest_package
+from app.agent.graph.node_runtime import (
+    build_model_gateway,
+    graph_event_sink,
+    run_model_tool_loop,
+)
+from app.agent.graph.package import PackageRuntime, ensure_package_artifact
 from app.agent.graph.state import GradingState
 from app.agent.graph.tool_guard import build_node_tools
-from app.agent.models import EngineEvent, user_message
+from app.agent.models import user_message
 from app.agent.prompts.loader import (
     evidence_instructions,
     item_scorer_instructions,
@@ -41,13 +45,12 @@ from app.agent.tools.scoring import (
     add_evidence_tool,
     add_scoring_tool,
 )
-from app.application.grading_workflow import (
-    resolve_submission_rubric,
-    validate_assessment_payload,
-)
+from app.application.grading_package import resolve_submission_rubric
+from app.application.grading_validation import validate_assessment_payload
 from app.core.errors import ValidationError
 from app.models.submission import Submission
 from app.schemas.grading import GradingAssessmentRequest
+from app.services.code_testing import load_run_results, test_evidence_map
 
 MAX_RESCORE_ROUNDS = 1
 MAX_VERIFY_ROUNDS = 2
@@ -106,6 +109,17 @@ def _build_brief(
             {"filename": entry.get("filename"), "line_count": entry.get("line_count")}
             for entry in artifact.get("code_files", [])
             if isinstance(entry, dict)
+        ],
+        "code_test_results": [
+            {
+                "test_case_id": result.get("id"),
+                "question_number": result.get("question_number"),
+                "title": result.get("title"),
+                "status": result.get("status"),
+                "suite_version": (artifact.get("test_results") or {}).get("version"),
+            }
+            for result in ((artifact.get("test_results") or {}).get("results") or [])
+            if isinstance(result, dict)
         ],
     }
     text = json.dumps(payload, ensure_ascii=False, indent=2)
@@ -287,27 +301,19 @@ def build_scoring_nodes(
 ):
     scorer_instructions = item_scorer_instructions()
 
-    def _emit(agent: str):
-        async def emit(event: EngineEvent) -> None:
-            with session_factory() as db:
-                run_repo.append_event(
-                    db, run_id, kind=event.kind, payload=dict(event.payload)
-                )
-
-        return emit
+    emit = graph_event_sink(session_factory, run_id)
 
     def _ensure_artifact() -> dict[str, Any] | None:
         """resume 后进程内 artifact 丢失时，重开评分包恢复。"""
-        if runtime.artifact is not None:
-            return runtime.artifact
-        with session_factory() as db:
-            sub = db.get(Submission, submission_id)
-            if sub is None:
-                return None
-            result = ingest_package(db, sub, run_id, runtime)
-        if not result.get("ok"):
-            return None
-        return runtime.artifact
+        artifact = ensure_package_artifact(
+            session_factory, submission_id, run_id, runtime
+        )
+        if artifact and artifact.get("has_code") and not artifact.get("test_results"):
+            with session_factory() as db:
+                test_results = load_run_results(db, run_id)
+            if test_results:
+                _attach_test_results(artifact, test_results)
+        return artifact
 
     def prepare_briefs(state: GradingState) -> dict[str, Any]:
         artifact = _ensure_artifact()
@@ -356,24 +362,25 @@ def build_scoring_nodes(
                 InspectionContext(artifact=artifact, teacher=None)
             )
         )
-        gateway = ModelGateway(
-            provider_pool.get(agent),
-            tools,
-            instructions=scorer_instructions,
+        gateway = build_model_gateway(
+            provider_pool,
+            run_id=run_id,
             agent=agent,
+            tools=tools,
+            instructions=scorer_instructions,
             model=model,
             reasoning_effort=reasoning_effort,
             max_rounds=4,
             should_cancel=should_cancel,
             config_getter=config_getter,
-            cache_key=prompt_cache_key(run_id, scorer_instructions + agent),
         )
-        async with gate.slot():
-            result = await gateway.run_tool_loop(
-                [user_message(task.get("brief") or "")],
-                _emit(agent),
-            )
-        budget.record(result.usage)
+        result = await run_model_tool_loop(
+            gateway,
+            [user_message(task.get("brief") or "")],
+            emit,
+            budget=budget,
+            gate=gate,
+        )
         if result.status == "cancelled":
             return {"phase": "done", "final": {"status": "cancelled"}}
         parsed = _parse_submissions(result.items, item_ids)
@@ -460,7 +467,12 @@ def build_scoring_nodes(
                 return {"errors": ["提交记录不存在"]}
             try:
                 resolved = resolve_submission_rubric(db, sub)
-                validate_assessment_payload(sub, payload, resolved)
+                validate_assessment_payload(
+                    sub,
+                    payload,
+                    resolved,
+                    test_evidence=test_evidence_map(db, run_id),
+                )
             except ValidationError as exc:
                 messages = _flatten_validation(exc)
         if messages is None:
@@ -525,23 +537,21 @@ def build_scoring_nodes(
         )
         agent = "evidence"
         instructions = evidence_instructions()
-        gateway = ModelGateway(
-            provider_pool.get(agent),
-            tools,
-            instructions=instructions,
+        gateway = build_model_gateway(
+            provider_pool,
+            run_id=run_id,
             agent=agent,
+            tools=tools,
+            instructions=instructions,
             model=model,
             reasoning_effort=reasoning_effort,
             max_rounds=3,
             should_cancel=should_cancel,
             config_getter=config_getter,
-            cache_key=prompt_cache_key(run_id, instructions + agent),
         )
-        async with gate.slot():
-            result = await gateway.run_tool_loop(
-                [user_message(brief)], _emit(agent)
-            )
-        budget.record(result.usage)
+        result = await run_model_tool_loop(
+            gateway, [user_message(brief)], emit, budget=budget, gate=gate
+        )
         update: dict[str, Any] = {
             "usage": result.usage,
             "provider_state": {agent: result.provider_state},
@@ -583,23 +593,26 @@ def build_scoring_nodes(
         )
         agent = "supervisor"
         instructions = supervisor_instructions()
-        gateway = ModelGateway(
-            provider_pool.get(agent),
-            tools,
-            instructions=instructions,
+        gateway = build_model_gateway(
+            provider_pool,
+            run_id=run_id,
             agent=agent,
+            tools=tools,
+            instructions=instructions,
             model=model,
             reasoning_effort=reasoning_effort,
             max_rounds=2,
             should_cancel=should_cancel,
             config_getter=config_getter,
-            cache_key=prompt_cache_key(run_id, instructions),
+            cache_scope="",
         )
-        result = await gateway.run_tool_loop(
+        result = await run_model_tool_loop(
+            gateway,
             [user_message(_summary_brief(state))],
-            _emit(agent),
+            emit,
+            budget=budget,
+            gate=None,
         )
-        budget.record(result.usage)
         update: dict[str, Any] = {
             "usage": result.usage,
             "provider_state": {agent: result.provider_state},

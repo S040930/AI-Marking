@@ -11,8 +11,9 @@ import json
 import pytest
 from pydantic import ValidationError as PydanticValidationError
 
+from app.application import grading_package
 from app.application import grading_workflow as workflow
-from app.application.grading_workflow import build_grading_policy
+from app.application.grading_package import build_grading_policy
 from app.core.config import settings
 from app.core.errors import ConflictError, ValidationError
 from app.models.question import Question, QuestionStatus
@@ -115,7 +116,7 @@ def test_package_policy_covers_code_without_visual_assets(db_session):
     _configure_default_rubric(db_session)
     db_session.commit()
 
-    package = workflow.open_grading_package(db_session, sub, None)
+    package = grading_package.open_grading_package(db_session, sub, None)
     assert "运行表现" in package.content
     assert package.context_complete is True
     assert package.grading_handle
@@ -132,11 +133,11 @@ def test_package_paginates_and_compact_save_enforces_handle(db_session):
     _configure_default_rubric(db_session)
     sub = _add_submission(db_session, question, ocr_text="证据 " * 25_000)
 
-    first = workflow.open_grading_package(db_session, sub, None)
+    first = grading_package.open_grading_package(db_session, sub, None)
     assert first.context_complete is False
     assert first.grading_handle is None
     assert first.continuation_token
-    second = workflow.open_grading_package(db_session, sub, first.continuation_token)
+    second = grading_package.open_grading_package(db_session, sub, first.continuation_token)
     assert second.context_complete is True
     assert second.grading_handle
 
@@ -175,7 +176,7 @@ def test_package_hard_limit_raises_actionable_error(db_session, monkeypatch):
     sub = _add_submission(db_session, question)
     monkeypatch.setattr(settings, "GRADING_MAX_CONTEXT_CHARS", 1)
     with pytest.raises(ValidationError) as excinfo:
-        workflow.open_grading_package(db_session, sub, None)
+        grading_package.open_grading_package(db_session, sub, None)
     assert "拆分作业或缩减提交内容" in str(excinfo.value.detail)
 
 
@@ -190,7 +191,7 @@ def test_save_derives_totals_and_rejects_bad_details(db_session):
     )
     _configure_default_rubric(db_session)
     sub = _add_submission(db_session, question)
-    package = workflow.open_grading_package(db_session, sub, None)
+    package = grading_package.open_grading_package(db_session, sub, None)
     resolved = _header_of(package)["grading_policy"]["resolved_rubric"]
     item_id = resolved["items"][0]["rubric_item_id"]
     item_max = resolved["items"][0]["max_score"]
@@ -267,7 +268,7 @@ def test_package_returns_needs_rubric_with_single_use_handle(db_session):
     )
     sub = _add_submission(db_session, question)
 
-    first = workflow.open_grading_package(db_session, sub, None)
+    first = grading_package.open_grading_package(db_session, sub, None)
     assert first.needs_rubric is True
     assert first.question_id == question.id
     assert first.question_ocr_text == question.ocr_text
@@ -275,7 +276,7 @@ def test_package_returns_needs_rubric_with_single_use_handle(db_session):
     assert first.content is None
 
     # 再次打开:旧提取句柄被撤销,返回新句柄
-    second = workflow.open_grading_package(db_session, sub, None)
+    second = grading_package.open_grading_package(db_session, sub, None)
     assert second.needs_rubric is True
     assert second.rubric_handle != first.rubric_handle
 
@@ -302,7 +303,7 @@ def test_save_question_rubric_complete_persists_authoritative_snapshot(db_sessio
     )
     sub = _add_submission(db_session, question)
 
-    package = workflow.open_grading_package(db_session, sub, None)
+    package = grading_package.open_grading_package(db_session, sub, None)
     body = workflow.save_question_rubric(
         db_session,
         question.id,
@@ -333,13 +334,64 @@ def test_save_question_rubric_complete_persists_authoritative_snapshot(db_sessio
     assert len(question.extracted_rubric_items) == 2
 
     # 保存后再次打开:不再 needs_rubric,评分包使用题目提取快照
-    again = workflow.open_grading_package(db_session, sub, None)
+    again = grading_package.open_grading_package(db_session, sub, None)
     assert again.needs_rubric is False
     assert body["rubric_snapshot_id"] in again.content
 
 
+def test_save_question_rubric_accepts_grade_band_with_inferred_total(db_session):
+    question = Question(
+        name="等级制题目",
+        original_filename="grade-bands.pdf",
+        file_path="/tmp/grade-bands.pdf",
+        ocr_text=(
+            "Generic Marking Criteria: Grade A 81+ Excellent work; "
+            "Grade B 70 - 80 Very good work."
+        ),
+        status=QuestionStatus.ready,
+    )
+    sub = _add_submission(db_session, question)
+    package = grading_package.open_grading_package(db_session, sub, None)
+
+    result = workflow.save_question_rubric(
+        db_session,
+        question.id,
+        package.rubric_handle,
+        status_value="complete",
+        items=[
+            {
+                "criterion": "Generic Marking Criteria",
+                "max_score": 100,
+                "details": (
+                    "Generic Marking Criteria: Grade A 81+ Excellent work; "
+                    "Grade B 70 - 80 Very good work."
+                ),
+                "source_quote": (
+                    "Generic Marking Criteria: Grade A 81+ Excellent work; "
+                    "Grade B 70 - 80 Very good work."
+                ),
+            }
+        ],
+        total_max_score=100,
+    )
+
+    assert result["status"] == "complete"
+    db_session.refresh(question)
+    assert question.extracted_rubric_items[0]["max_score"] == 100
+    assert question.extracted_rubric_items[0]["source_quote"].startswith(
+        "Generic Marking Criteria"
+    )
+    assert (
+        question.extracted_rubric == question.extracted_rubric_items[0]["source_quote"]
+    )
+    assert (
+        resolve_rubric(question, None).text
+        == question.extracted_rubric_items[0]["source_quote"]
+    )
+
+
 def test_save_question_rubric_rejects_invalid_quote(db_session):
-    """source_quote 不是 OCR 原文子串或未含满分时,确定性校验拒绝写入。"""
+    """source_quote 不是 OCR 原文子串时,确定性校验拒绝写入。"""
     question = Question(
         name="作文题",
         original_filename="q.pdf",
@@ -348,7 +400,7 @@ def test_save_question_rubric_rejects_invalid_quote(db_session):
         status=QuestionStatus.ready,
     )
     sub = _add_submission(db_session, question)
-    package = workflow.open_grading_package(db_session, sub, None)
+    package = grading_package.open_grading_package(db_session, sub, None)
 
     with pytest.raises(ValidationError):
         workflow.save_question_rubric(
@@ -381,7 +433,7 @@ def test_save_question_rubric_absent_avoids_repeat_extraction(db_session):
         status=QuestionStatus.ready,
     )
     sub = _add_submission(db_session, question)
-    package = workflow.open_grading_package(db_session, sub, None)
+    package = grading_package.open_grading_package(db_session, sub, None)
 
     body = workflow.save_question_rubric(
         db_session,
@@ -399,7 +451,7 @@ def test_save_question_rubric_absent_avoids_repeat_extraction(db_session):
     assert question.extracted_rubric_version is not None
 
     # 再次打开直接走内置默认 rubric,不再 needs_rubric
-    again = workflow.open_grading_package(db_session, sub, None)
+    again = grading_package.open_grading_package(db_session, sub, None)
     assert again.needs_rubric is False
     assert "built_in_default" in again.content
 
@@ -414,7 +466,7 @@ def test_save_question_rubric_rejects_after_ocr_change(db_session):
         status=QuestionStatus.ready,
     )
     sub = _add_submission(db_session, question)
-    package = workflow.open_grading_package(db_session, sub, None)
+    package = grading_package.open_grading_package(db_session, sub, None)
 
     db_session.get(Question, question.id).ocr_text = "新的题目内容 80分"
     db_session.commit()
@@ -466,7 +518,7 @@ def _prepare_reviewed_suggestion(db):
     _configure_two_item_rubric(db)
     sub = _add_submission(db, question)
 
-    package = workflow.open_grading_package(db, sub, None)
+    package = grading_package.open_grading_package(db, sub, None)
     resolved = _header_of(package)["grading_policy"]["resolved_rubric"]
     _save(
         db,
@@ -483,7 +535,7 @@ def _prepare_reviewed_suggestion(db):
         ],
     )
     # 保存建议后 revision 递增,复核者需重新打开作业获取绑定当前 revision 的句柄
-    reopen = workflow.open_grading_package(db, sub, None)
+    reopen = grading_package.open_grading_package(db, sub, None)
     return sub, resolved, reopen.grading_handle
 
 
@@ -530,7 +582,7 @@ def test_save_assessment_review_persists_verdict(db_session):
 def test_save_assessment_review_rejects_stale_handle(db_session):
     """保存建议前的旧句柄 revision 不匹配,复核被拒绝。"""
     sub, resolved, _ = _prepare_reviewed_suggestion(db_session)
-    stale_pkg = workflow.open_grading_package(db_session, sub, None)
+    stale_pkg = grading_package.open_grading_package(db_session, sub, None)
     handle = stale_pkg.grading_handle
 
     # 模拟建议更新:直接递增 revision(等价于保存了新建议)
@@ -572,7 +624,9 @@ def test_save_assessment_review_rejects_bad_items(db_session):
             verdict="partial",
             summary="只复核了第一项。",
             confidence="0.5",
-            items=[{"rubric_item_id": first_id, "verdict": "agree", "comment": "合理。"}],
+            items=[
+                {"rubric_item_id": first_id, "verdict": "agree", "comment": "合理。"}
+            ],
             client=None,
         )
     assert "未完整覆盖" in str(missing.value.detail)
@@ -676,7 +730,7 @@ def test_purge_expired_handles_removes_only_expired_rows(db_session):
     """批量清理删除过期句柄、保留未过期句柄；force 时必须全部完成。"""
     from datetime import timedelta
 
-    from app.application.grading_workflow import purge_expired_handles
+    from app.application.grading_package import purge_expired_handles
     from app.core.time import utc_now_naive
     from app.models.grading_handle import GradingHandle
 
@@ -711,21 +765,19 @@ def test_purge_expired_handles_removes_only_expired_rows(db_session):
 
 def test_purge_expired_handles_is_probabilistic(db_session, monkeypatch):
     """默认非 force 调用按 1/16 概率触发；低随机值时执行清理。"""
-    from app.application import grading_workflow
-
     calls = {"count": 0}
 
     def count_execute(*_args, **_kwargs):
         calls["count"] += 1
         return None
 
-    monkeypatch.setattr(grading_workflow.random, "random", lambda: 0.99)
+    monkeypatch.setattr(grading_package.random, "random", lambda: 0.99)
     monkeypatch.setattr(db_session, "execute", count_execute)
-    grading_workflow.purge_expired_handles(db_session)
+    grading_package.purge_expired_handles(db_session)
     assert calls["count"] == 0
 
-    monkeypatch.setattr(grading_workflow.random, "random", lambda: 0.0)
-    grading_workflow.purge_expired_handles(db_session)
+    monkeypatch.setattr(grading_package.random, "random", lambda: 0.0)
+    grading_package.purge_expired_handles(db_session)
     assert calls["count"] == 1
 
 
@@ -740,7 +792,7 @@ def test_build_assessment_summary_bridges_legacy_metadata_key():
             "mcp_metadata": {"source": "mcp"},
         }
     )
-    summary = workflow.build_assessment_summary(legacy)
+    summary = grading_package.build_assessment_summary(legacy)
     assert summary["agent_metadata"] == {"source": "mcp"}
     assert "mcp_metadata" not in summary
     assert summary["score"] == 80
@@ -748,13 +800,13 @@ def test_build_assessment_summary_bridges_legacy_metadata_key():
     current = SimpleNamespace(
         assessment_suggestion={"agent_metadata": {"source": "agent"}}
     )
-    assert workflow.build_assessment_summary(current)["agent_metadata"] == {
+    assert grading_package.build_assessment_summary(current)["agent_metadata"] == {
         "source": "agent"
     }
     empty = SimpleNamespace(assessment_suggestion=None)
-    assert workflow.build_assessment_summary(empty) is None
+    assert grading_package.build_assessment_summary(empty) is None
 
 
 def test_handle_ttl_covers_overnight_checkpoints():
     """句柄 TTL 为 24h:检查点驻留可跨夜,教师隔日答复仍有效。"""
-    assert workflow.HANDLE_TTL_SECONDS == 24 * 60 * 60
+    assert grading_package.HANDLE_TTL_SECONDS == 24 * 60 * 60

@@ -50,6 +50,12 @@ def rubric_instructions() -> str:
 
 
 @lru_cache(maxsize=4)
+def code_test_instructions() -> str:
+    """题目级代码测试生成指令。"""
+    return load_prompt("code_tests")
+
+
+@lru_cache(maxsize=4)
 def review_instructions() -> str:
     """独立复核 agent 的系统指令（当前未接入 run）。"""
     return load_prompt("review")

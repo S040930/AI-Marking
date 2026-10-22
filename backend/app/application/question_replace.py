@@ -12,6 +12,7 @@ from app.core.time import utc_now_naive
 from app.db.session import SessionLocal
 from app.models.question import Question, QuestionReplacementStatus
 from app.models.submission import Submission
+from app.services.code_testing import invalidate_question_suites
 from app.services.config import get_config_dict
 from app.services.document_storage import remove_document_if_unreferenced
 from app.services.events import notify_question_status
@@ -129,6 +130,7 @@ async def run_question_replace(question_id: str) -> None:
         old_paths = [question.file_path, *[sub.file_path for sub in submissions]]
         for submission in submissions:
             db.delete(submission)
+        invalidate_question_suites(db, question_id)
         question.original_filename = staged_name
         question.file_path = staged_path
         question.file_sha256 = staged_sha256

@@ -14,7 +14,6 @@ FLUSH_INTERVAL_SECONDS = 0.25
 FLUSH_INTERVAL_CHARS = 4 * 1024
 
 _TOOL_OUTPUT_MAX_CHARS = 4_000
-_TOOL_SUMMARY_MAX_CHARS = 400
 
 
 class TextDeltaBuffer:
@@ -89,11 +88,3 @@ def tool_output_summary(output: object) -> str:
     if len(text) <= _TOOL_OUTPUT_MAX_CHARS:
         return text
     return text[:_TOOL_OUTPUT_MAX_CHARS] + "\n[截断]"
-
-
-def tool_arguments_summary(arguments: str, limit: int = _TOOL_SUMMARY_MAX_CHARS) -> str:
-    """工具入参摘要:脱敏并按需截断。"""
-    text = redact_text(arguments)
-    if len(text) <= limit:
-        return text
-    return text[:limit] + "..."

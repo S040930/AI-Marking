@@ -30,7 +30,7 @@ from app.agent.tools.scoring import (
     add_rubric_tool,
     add_scoring_tool,
 )
-from app.application.grading_workflow import build_grading_policy
+from app.application.grading_package import build_grading_policy
 from app.services.rubric import resolve_rubric
 
 LEGACY_TOOL_NAMES = (

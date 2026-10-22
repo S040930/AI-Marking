@@ -10,7 +10,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.services import code_runner
+from app.services import (
+    code_runner,
+    code_runner_case,
+    code_runner_errors,
+    code_runner_inputs,
+    code_runner_results,
+    code_runner_runtime,
+)
 from app.services.sandbox import SandboxPolicy, build_sandbox_argv
 
 
@@ -57,13 +64,15 @@ def _runtimes(tmp_path: Path) -> dict:
 
 
 def test_code_tests_fail_closed_without_running_student_process(monkeypatch):
-    monkeypatch.setattr(code_runner, "sandbox_readiness", lambda: (False, "Seatbelt 被禁用"))
+    monkeypatch.setattr(
+        code_runner_runtime, "sandbox_readiness", lambda: (False, "Seatbelt 被禁用")
+    )
 
     def no_host_run(*_args, **_kwargs):
         raise AssertionError("student program must not run without Seatbelt")
 
-    monkeypatch.setattr(code_runner.subprocess, "Popen", no_host_run)
-    with pytest.raises(code_runner.CodeRunnerInfrastructureError, match="Seatbelt 被禁用"):
+    monkeypatch.setattr(code_runner_case.subprocess, "Popen", no_host_run)
+    with pytest.raises(code_runner_errors.CodeRunnerInfrastructureError, match="Seatbelt 被禁用"):
         code_runner.run_submission_tests(
             _submission("Q1.py", "print('ok')"), [_io_case()], run_id=1
         )
@@ -71,12 +80,12 @@ def test_code_tests_fail_closed_without_running_student_process(monkeypatch):
 
 def test_notebook_is_not_executed_or_used_as_automatic_evidence(monkeypatch):
     monkeypatch.setattr(
-        code_runner,
+        code_runner_runtime,
         "sandbox_readiness",
         lambda: (_ for _ in ()).throw(AssertionError("Notebook must not start a runtime")),
     )
     monkeypatch.setattr(
-        code_runner.subprocess,
+        code_runner_case.subprocess,
         "Popen",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(
             AssertionError("Notebook code must not execute")
@@ -92,19 +101,21 @@ def test_notebook_is_not_executed_or_used_as_automatic_evidence(monkeypatch):
 
 
 def test_result_row_preserves_reference_bounds_output_and_reports_policy():
-    row = code_runner._result_row(
+    from app.services.code_testing import MAX_CASE_OUTPUT_BYTES
+
+    row = code_runner_results.build_result_row(
         2,
         3,
         {"id": "q2-t3", "title": "boundary", "mode": "program_io", "language": "r"},
         "failed",
-        "x" * (code_runner.MAX_CASE_OUTPUT_BYTES + 100),
+        "x" * (MAX_CASE_OUTPUT_BYTES + 100),
         measurements={"elapsed_ms": 12},
     )
 
     assert row["id"] == "q2-t3"
     assert row["status"] == "failed"
     assert row["isolation"] == "seatbelt:partial"
-    assert len(row["output"].encode("utf-8")) == code_runner.MAX_CASE_OUTPUT_BYTES
+    assert len(row["output"].encode("utf-8")) == MAX_CASE_OUTPUT_BYTES
     assert row["execution"] == {
         "elapsed_ms": 12,
         "policy_version": "seatbelt-v1",
@@ -151,7 +162,7 @@ def test_uploaded_data_is_stream_staged_once_and_read_only(monkeypatch, tmp_path
     uploaded = upload_root / "dataset.csv"
     uploaded.write_bytes(b"group,value\na,1\n")
     uploaded.chmod(0o400)
-    monkeypatch.setattr(code_runner.settings, "UPLOAD_DIR", str(upload_root))
+    monkeypatch.setattr(code_runner_inputs.settings, "UPLOAD_DIR", str(upload_root))
     submission = SimpleNamespace(
         code_input_files=[
             SimpleNamespace(
@@ -162,15 +173,15 @@ def test_uploaded_data_is_stream_staged_once_and_read_only(monkeypatch, tmp_path
             )
         ]
     )
-    shared = code_runner._stage_data_inputs(tmp_path, submission)
+    shared = code_runner_inputs.stage_data_inputs(tmp_path, submission)
     q1 = tmp_path / "q1"
     q2 = tmp_path / "q2"
     q1.mkdir()
     q2.mkdir()
     code = [SimpleNamespace(original_filename="Q1.py", source_text="print('ok')")]
 
-    bindings1 = code_runner._stage_inputs(q1, code, shared)
-    bindings2 = code_runner._stage_inputs(q2, code, shared)
+    bindings1 = code_runner_inputs.stage_code_inputs(q1, code, shared)
+    bindings2 = code_runner_inputs.stage_code_inputs(q2, code, shared)
     staged1 = q1 / "assets" / "asset-1"
     staged2 = q2 / "assets" / "asset-1"
 
@@ -217,9 +228,11 @@ def test_supervisor_request_contains_program_but_never_expected_output(monkeypat
                 }
             ), ""
 
-    monkeypatch.setattr(code_runner, "sandbox_readiness", lambda: (True, "ready"))
-    monkeypatch.setattr(code_runner, "_runtime_set", lambda: runtimes)
-    monkeypatch.setattr(code_runner.subprocess, "Popen", lambda *_args, **_kwargs: FakeProcess())
+    monkeypatch.setattr(code_runner_runtime, "sandbox_readiness", lambda: (True, "ready"))
+    monkeypatch.setattr(code_runner_runtime, "load_runtimes", lambda: runtimes)
+    monkeypatch.setattr(
+        code_runner_case.subprocess, "Popen", lambda *_args, **_kwargs: FakeProcess()
+    )
     result = code_runner.run_submission_tests(
         _submission("Q1.py", "print('ok')"), [_io_case()], run_id=42
     )[0]

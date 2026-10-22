@@ -13,7 +13,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.application.grading_workflow import (
+from app.application.grading_package import (
     build_context_parts,
     iter_code_files,
 )

@@ -21,7 +21,7 @@ def route_after_ingest(state: GradingState) -> str:
         return "fail"
     if state.get("rubric_status") == "needs_extraction":
         return "rubric_extract"
-    return "teacher_ask" if state.get("has_code") else "ensure_handles"
+    return "code_test_prepare" if state.get("has_code") else "ensure_handles"
 
 
 def route_after_rubric(state: GradingState) -> str:

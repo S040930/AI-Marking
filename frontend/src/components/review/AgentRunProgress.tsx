@@ -2,9 +2,9 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 import { Loader2, Square } from 'lucide-react';
 import {
-  MAX_AGENT_EVENTS,
   isTerminalAgentRun,
   useCancelAgentRun,
+  useAgentProviders,
   useReplyAgentCheckpoint,
   useUpdateAgentRunConfiguration,
   type AgentRun,
@@ -14,9 +14,10 @@ import { Button } from '@/components/ui/button';
 import { useLanguage } from '@/i18n';
 import { cn } from '@/lib/utils';
 import { runStatusLabel } from '@/lib/agentRunStatus';
-
-/** 常用思考强度档位(Responses API reasoning.effort);空串表示用默认。 */
-const EFFORT_OPTIONS = ['', 'minimal', 'low', 'medium', 'high'] as const;
+import { effortOptionsFor } from '@/lib/effortOptions';
+import { CodeTestResultsPanel, CodeTestSuiteCheckpoint } from '@/components/review/AgentRunCodeTests';
+import { AgentTranscript } from '@/components/review/AgentRunTranscript';
+import { AgentModelSelector } from '@/components/review/AgentModelSelector';
 
 /**
  * 批改运行进行中的公共视图:状态头 + 运行配置切换 + 取消/检查点操作 + 转录。
@@ -41,8 +42,17 @@ export function AgentRunProgress({
       {isTerminalAgentRun(run.status) || run.status === 'cancelling' ? null : (
         <RunConfigSwitcher run={run} pending={Boolean(pendingConfig)} />
       )}
+      {run.code_test_results ? <CodeTestResultsPanel data={run.code_test_results} /> : null}
       {run.status === 'waiting_for_teacher' && run.checkpoint ? (
-        <AgentCheckpointForm runId={run.id} message={run.checkpoint.message} />
+        run.checkpoint.type === 'code_test_suite_approval' && run.checkpoint.preview ? (
+          <CodeTestSuiteCheckpoint
+            runId={run.id}
+            message={run.checkpoint.message}
+            preview={run.checkpoint.preview}
+          />
+        ) : (
+          <AgentCheckpointForm runId={run.id} message={run.checkpoint.message} />
+        )
       ) : (
         <AgentCancelButton runId={run.id} />
       )}
@@ -104,6 +114,10 @@ function RunConfigSwitcher({
   const [model, setModel] = useState(run.model ?? '');
   const [effort, setEffort] = useState(run.reasoning_effort ?? '');
   const updateMutation = useUpdateAgentRunConfiguration(run.id);
+  const provider = run.provider as 'openai_api' | 'chatgpt_sub';
+  const effortOptions = effortOptionsFor(provider);
+  const { data: providersData } = useAgentProviders();
+  const defaultModel = providersData?.providers[provider]?.default_model ?? '';
 
   const apply = () => {
     const body: { model?: string | null; reasoning_effort?: string | null } = {};
@@ -132,12 +146,13 @@ function RunConfigSwitcher({
         {t('运行配置')}
       </p>
       <div className="mt-2 flex flex-wrap items-center gap-2">
-        <input
-          className="h-8 min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2 text-xs outline-none focus:ring-2 focus:ring-primary/30"
-          placeholder={t('模型 ID(留空用默认)')}
+        <AgentModelSelector
+          provider={provider}
+          defaultModel={defaultModel}
           value={model}
-          aria-label={t('模型 ID')}
-          onChange={(e) => setModel(e.target.value)}
+          currentModel={run.model}
+          compact
+          onChange={setModel}
         />
         <select
           className="h-8 rounded-lg border border-slate-200 bg-white px-2 text-xs outline-none focus:ring-2 focus:ring-primary/30"
@@ -145,7 +160,7 @@ function RunConfigSwitcher({
           aria-label={t('思考强度')}
           onChange={(e) => setEffort(e.target.value)}
         >
-          {EFFORT_OPTIONS.map((option) => (
+          {effortOptions.map((option) => (
             <option key={option} value={option}>
               {option || t('默认思考强度')}
             </option>
@@ -240,89 +255,4 @@ export function AgentCheckpointForm({
       </div>
     </div>
   );
-}
-
-/**
- * 转录事件在 UI 侧的上限,防止长 run 拖慢渲染(与 SSE 侧保留上限一致)。
- * 事件按产出它的 agent 分组:主管分支与各评分项分支分别成组并带徽标。
- */
-export function AgentTranscript({ events }: { events: AgentRunEvent[] }) {
-  const { t } = useLanguage();
-  const visible = events.slice(-MAX_AGENT_EVENTS);
-  const groups = groupEventsByAgent(visible);
-  if (groups.length === 0) return null;
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4">
-      <div className="flex items-center justify-between gap-2">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          {t('执行转录')}
-        </h3>
-        {events.length > visible.length ? (
-          <span className="text-[10px] text-slate-400">
-            {t('仅显示最近 300 条事件')}
-          </span>
-        ) : null}
-      </div>
-      <div className="mt-2 max-h-72 space-y-3 overflow-y-auto">
-        {groups.map((group) => (
-          <section key={group.agent}>
-            <span
-              data-testid="agent-badge"
-              className={cn(
-                'inline-flex items-center rounded-md px-1.5 py-0.5 font-mono text-[10px]',
-                group.agent === 'supervisor'
-                  ? 'bg-primary/10 text-primary'
-                  : 'bg-slate-100 text-slate-600',
-              )}
-            >
-              {agentLabel(group.agent, t)}
-            </span>
-            <ul className="mt-1 space-y-1.5 text-sm">
-              {group.events.map((event) => (
-                <li key={event.seq} className="leading-relaxed text-slate-700">
-                  <span className="mr-1.5 font-mono text-[10px] uppercase text-slate-400">
-                    {event.kind}
-                  </span>
-                  {eventText(event)}
-                </li>
-              ))}
-            </ul>
-          </section>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function eventText(event: AgentRunEvent): string {
-  return (
-    (event.payload.text as string | undefined) ??
-    (event.payload.title as string | undefined) ??
-    ''
-  );
-}
-
-/** 按产出事件的 agent 分组(保持首次出现顺序);无文本事件不展示。 */
-function groupEventsByAgent(events: AgentRunEvent[]) {
-  const groups = new Map<string, AgentRunEvent[]>();
-  for (const event of events) {
-    if (!eventText(event)) continue;
-    const agent = (event.payload.agent as string | undefined) ?? 'supervisor';
-    const bucket = groups.get(agent);
-    if (bucket) bucket.push(event);
-    else groups.set(agent, [event]);
-  }
-  return [...groups.entries()].map(([agent, grouped]) => ({
-    agent,
-    events: grouped,
-  }));
-}
-
-/** agent 徽标文案:`item:<rubric_item_id>` 显示为「评分项 <id>」。 */
-function agentLabel(agent: string, t: (key: string) => string): string {
-  const ITEM_PREFIX = 'item:';
-  if (agent.startsWith(ITEM_PREFIX)) {
-    return `${t('评分项')} ${agent.slice(ITEM_PREFIX.length)}`;
-  }
-  return agent === 'supervisor' ? t('主管') : agent;
 }

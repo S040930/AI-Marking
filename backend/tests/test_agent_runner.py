@@ -135,10 +135,10 @@ def _claim_run(factory, submission_id: int, worker: str = "test-worker") -> tupl
 
 def _prepare_save_arguments(db_session, submission) -> dict:
     """通过真实 workflow 打开评分包,构造合法 save_assessment 参数。"""
-    from app.application import grading_workflow as workflow
+    from app.application import grading_package
 
-    package = workflow.open_grading_package(db_session, submission, None)
-    header = json.loads(package.content.split("\n", 1)[1].split("\n\n", 1)[0])
+    grading_package_response = grading_package.open_grading_package(db_session, submission, None)
+    header = json.loads(grading_package_response.content.split("\n", 1)[1].split("\n\n", 1)[0])
     item = header["grading_policy"]["resolved_rubric"]["items"][0]
     return {
         "assessment": {
@@ -160,10 +160,10 @@ def _prepare_save_arguments(db_session, submission) -> dict:
 
 def _prepare_item_arguments(db_session, submission) -> dict:
     """通过真实 workflow 打开评分包,构造逐项提交参数。"""
-    from app.application import grading_workflow as workflow
+    from app.application import grading_package
 
-    package = workflow.open_grading_package(db_session, submission, None)
-    header = json.loads(package.content.split("\n", 1)[1].split("\n\n", 1)[0])
+    grading_package_response = grading_package.open_grading_package(db_session, submission, None)
+    header = json.loads(grading_package_response.content.split("\n", 1)[1].split("\n\n", 1)[0])
     item = header["grading_policy"]["resolved_rubric"]["items"][0]
     return {
         "rubric_item_id": item["rubric_item_id"],
@@ -224,11 +224,31 @@ async def test_runner_completes_after_open_and_save(db_session, monkeypatch):
 
 
 async def test_runner_checkpoint_then_resume(db_session, monkeypatch):
-    """含代码作业：图结构教师门 → waiting → 答复续跑 → 保存完成。"""
+    """代码作业先审批测试集、运行测试，再过代码一致性门并保存。"""
     env = _make_env(db_session, with_code=True)
     item_args = _prepare_item_arguments(db_session, env.submission)
     provider = ScriptedProvider(
         [
+            [
+                _turn(
+                    _function_call(
+                        "tests-1",
+                        "submit_code_test_suite",
+                        {
+                            "tests": [
+                                {
+                                    "question_number": 1,
+                                    "title": "打印结果",
+                                    "mode": "program_io",
+                                    "language": "python",
+                                    "input": "",
+                                    "expected_stdout": "1\\n",
+                                }
+                            ]
+                        },
+                    )
+                )
+            ],
             [_turn(_function_call("c1", "submit_item_score", item_args))],
             [_turn()],
             [
@@ -243,6 +263,20 @@ async def test_runner_checkpoint_then_resume(db_session, monkeypatch):
         ]
     )
     _patch_provider(monkeypatch, provider)
+    monkeypatch.setattr(
+        "app.services.code_runner.run_submission_tests",
+        lambda *_args, **_kwargs: [
+            {
+                "id": "q1-t1",
+                "question_number": 1,
+                "title": "打印结果",
+                "mode": "program_io",
+                "language": "python",
+                "status": "passed",
+                "output": "标准输出与预期一致",
+            }
+        ],
+    )
     run_id, token = _claim_run(env.factory, env.submission.id)
 
     status = await runner.execute_run(
@@ -252,23 +286,27 @@ async def test_runner_checkpoint_then_resume(db_session, monkeypatch):
         question_name="Runner 题",
         claim_token=token,
     )
-    assert status == GradingRunStatus.waiting_for_teacher
-    # 教师门在模型之前：第一轮不应调用 provider。
-    assert provider.requests == []
+    with env.factory() as db:
+        run = db.get(GradingRun, run_id)
+        assert status == GradingRunStatus.waiting_for_teacher, run.error_message
+    assert len(provider.requests) == 1
+    generation_message = provider.requests[0].items[0]["content"]
+    assert "Task" in generation_message
+    assert "print(1)" not in generation_message
     with env.factory() as db:
         run = db.get(GradingRun, run_id)
         assert run.status == GradingRunStatus.waiting_for_teacher
         assert run.checkpoint is not None
-        assert "一致" in run.checkpoint["message"]
+        assert run.checkpoint["type"] == "code_test_suite_approval"
         assert run.checkpoint_request_id
         # 图驱动已在返回前释放所有权，worker 无需再次释放。
         assert run.worker_id is None
 
-    # 教师答复(worker_id 已释放 → 恢复为 queued 等待续跑)
+    # 教师批准测试集(worker_id 已释放 → 恢复为 queued 等待续跑)
     with env.factory() as db:
         run = db.get(GradingRun, run_id)
         assert checkpoint_repo.answer_checkpoint(
-            db, run, verdict="consistent", note=None
+            db, run, action="approve_test_suite"
         )
         assert run.status == GradingRunStatus.queued
 
@@ -286,11 +324,44 @@ async def test_runner_checkpoint_then_resume(db_session, monkeypatch):
         question_name="Runner 题",
         claim_token=token2,
     )
+    assert status == GradingRunStatus.waiting_for_teacher
+    assert len(provider.requests) == 1
+    with env.factory() as db:
+        run = db.get(GradingRun, run_id)
+        assert run.checkpoint["type"] == "code_consistency", (
+            run.checkpoint,
+            run.error_message,
+            run.checkpoint_answer,
+        )
+        assert run.worker_id is None
+
+    # 教师确认代码与报告一致后，run 才继续评分。
+    with env.factory() as db:
+        run = db.get(GradingRun, run_id)
+        assert checkpoint_repo.answer_checkpoint(
+            db, run, verdict="consistent", note=None
+        )
+        assert run.status == GradingRunStatus.queued
+    with env.factory() as db:
+        claimed = run_repo.claim_next_run(
+            db, worker_id="final-worker", lease_seconds=90, max_concurrent=1
+        )
+        token3 = claimed.claim_token
+    status = await runner.execute_run(
+        run_id,
+        session_factory=env.factory,
+        submission_id=env.submission.id,
+        question_name="Runner 题",
+        claim_token=token3,
+    )
     assert status == GradingRunStatus.completed, "评分或最终提交未完成"
-    assert len(provider.requests) == 3
+    assert len(provider.requests) == 4
     with env.factory() as db:
         run = db.get(GradingRun, run_id)
         assert run.status == GradingRunStatus.completed
+        from app.services.code_testing import load_run_results
+
+        assert load_run_results(db, run_id)["results"][0]["status"] == "passed"
         sub = db.get(Submission, env.submission.id)
         assert sub.status == SubmissionStatus.ready_for_review
 
@@ -365,3 +436,36 @@ async def test_runner_provider_missing_key_fails(db_session, monkeypatch):
         assert "API key" in (run.error_message or "") or "未配置" in (
             run.error_message or ""
         )
+
+
+async def test_build_provider_wires_cross_process_refresh_lease(db_session):
+    """订阅通道必须拿到租约回调,官方通道不注入。"""
+    from app.services.provider_config import save_chatgpt_tokens, set_provider_config
+
+    save_chatgpt_tokens(
+        db_session,
+        {
+            "access_token": "access-1",
+            "refresh_token": "refresh-1",
+            "account_id": "acct-1234",
+            "plan": "plus",
+            "expires_at": 4102444800,
+        },
+    )
+    set_provider_config(db_session, {"openai_api_key": "sk-test"})
+    factory = sessionmaker(bind=db_session.bind, expire_on_commit=False)
+
+    provider = runner._build_provider(factory, "chatgpt_sub", None, None)
+    try:
+        assert provider._lease_acquire is not None
+        assert provider._lease_release is not None
+        # SQLite 下租约退化为放行,但仍走真实服务层
+        assert provider._lease_acquire(60.0) is True
+    finally:
+        await provider.aclose()
+
+    official = runner._build_provider(factory, "openai_api", None, None)
+    try:
+        assert getattr(official, "_lease_acquire", None) is None
+    finally:
+        await official.aclose()

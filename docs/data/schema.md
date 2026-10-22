@@ -8,11 +8,13 @@
 |---|---|---|
 | `questions` | 题目 PDF、`file_sha256`、OCR 文本、服务端校验通过的题目提取 rubric 快照（`extracted_rubric*`）与新版替换状态 | 可被多份作业复用；新版成功后切换 |
 | `submissions` | 学生 PDF 路径、`file_sha256`、作业 OCR、批改 agent 评分建议与人工审核结果 | 必须关联一个题目；终态记录可单独删除 |
-| `submission_code_files` | 多语言小题源码与 SHA-256（不保存运行产物） | 随 submission 级联删除 |
-| `submission_code_input_files` | 历史数据：旧代码运行输入文件，仅只读保留 | 随 submission 级联删除 |
+| `submission_code_files` | 多语言小题源码与 SHA-256 | 随 submission 级联删除 |
+| `submission_code_input_files` | 学生 ZIP 中的数据集；Seatbelt 测试输入目录只读暂存 | 随 submission 级联删除 |
+| `code_test_suites` | 按题目版本保存 AI 生成、教师批准的自动测试项与来源指纹 | 题目版本或可信 rubric 改变时标记失效；历史版本保留 |
 | `background_jobs` | 待执行、运行中或死信的题目 OCR/题目替换/作业 OCR 任务 | 成功后删除；随业务实体级联删除 |
 | `system_config` | OCR、结构化 `rubric_definition` 与模型通道配置（含 API key，只写不读） | 独立于业务记录长期保留 |
-| `grading_runs` | 批改运行（状态机 8 态、provider/model/effort、`agent_state`（检查点对话项与句柄）、`applied_config`/`pending_config`、`usage`、租约与重试计数） | 终态永久保留；非终态由租约与恢复扫描管理 |
+| `grading_runs` | 批改运行（状态机 8 态、provider/model/effort、测试集重生成开关、两类教师检查点答复、`applied_config`/`pending_config`、`usage`、租约与重试计数） | 终态永久保留；非终态由租约与恢复扫描管理 |
+| `grading_run_artifacts` | 评分包、实际使用的完整测试集快照、逐项运行结果与摘要 | 随 run 保留；删除作业时级联删除 |
 | `grading_run_events` | run 事件转录（seq 单调递增，SSE 回放与 NOTIFY 推送） | 随 run 保留 |
 | `grading_handles` | 评分包句柄（续页、revision/context 绑定）与题目 rubric 提取句柄 | 保存或提取完成后删除，TTL 24h 过期清理 |
 | `grading_assessment_receipts` | 批改 agent 成功保存的请求哈希与响应 | 用于跨 revision、重启的精确幂等重放 |
@@ -22,22 +24,23 @@
 
 `submissions.assessment_review` 存储独立复核任务对当前建议的结论（总体 `verdict` agree/partial/disagree、`summary`、逐项 `items` 含服务端补全的 criterion/max_score 与可选 `suggested_score`、`reviewed_revision`、复核客户端与时间）。复核结论由 `save_assessment_review` 函数写入（v1 仅保留函数与数据字段，无前端发起入口）：不修改建议本身、不改变状态；`reviewed_revision` 与当前 `grading_revision` 不一致时界面标记为过期，重试批改时随建议一起清空。
 
-`questions.extracted_rubric*` 只有在 rubric item 的 OCR 原文引用、分值和总分通过后端确定性校验且 OCR SHA-256 匹配时才构成可信 `question_extracted` 快照；快照由批改 agent 经 `save_question_rubric` 工具提取、服务端校验后写入，历史旧文本没有来源标记时不参与 rubric 选择。
+`questions.extracted_rubric*` 只有在 rubric item 的 OCR 原文引用、分项总分和条目唯一性通过后端确定性校验且 OCR SHA-256 匹配时才构成可信 `question_extracted` 快照；普通分项的满分必须在引用中出现，若 OCR 明确含多个字母等级区间，则允许 AI 推断整体满分为 100。等级表的 `source_quote` 原文直接保存并进入评分上下文，不把等级描述拆分或改写。快照由批改 agent 经 `save_question_rubric` 工具提取、服务端校验后写入，历史旧文本没有来源标记时不参与 rubric 选择。
 
 `grading_handles` 同时承载两类句柄：评分包句柄（绑定 submission、revision 与 context hash，用于 `save_assessment`）与题目 rubric 提取句柄（绑定 `question_id` 与 `ocr_hash`，用于 `save_question_rubric`）；保存成功后句柄即失效删除，避免重复提取覆盖快照。TTL 为 24h（含代码检查点可跨夜驻留）。
 
-代码联动字段：新提交只写入 `submission_code_files` 中的题号、入口标记、规范化源文本和 SHA-256。后端不编译或执行代码，不保存运行输入、日志、Notebook 新输出或代码产物；含代码作业运行时核对由教师在批改检查点环节在本地完成，运行输出不作为服务端证据。`submission_code_input_files`、执行状态、产物和 `visual_reviews` 仅作为历史数据只读保留，新评分上下文不会读取它们。
+代码联动字段：新提交写入 `submission_code_files` 中的题号、入口标记、规范化源文本和 SHA-256；ZIP 数据集写入 `submission_code_input_files`。批改时仅在 macOS Seatbelt profile 中运行，输入只读、每测试项单独工作目录、禁网且禁止子进程；内存和磁盘为采样终止阈值，资源边界见 [代码测试说明](../architecture/code-testing.md)。测试集版本保存在 `code_test_suites`，run 的完整测试集和结果 JSON 快照保存在 `grading_run_artifacts`；旧字段 `execution_status`、`execution_result`、`artifacts` 与 `visual_reviews` 仅为历史兼容字段。
 
 ## 关系
 
 ```text
 questions 1 ────── N submissions 1 ────── N submission_code_files
     │                    │
+    ├──── 0..N code_test_suites
     └──── 0..1 background_jobs 0..1 ─────┘
 ```
 
 - `submissions.question_id → questions.id` 使用 `ON DELETE RESTRICT`，题目危险操作由应用层锁定记录、检查处理状态并在事务内显式删除关联作业。
-- `submission_code_files.submission_id → submissions.id` 使用 `ON DELETE CASCADE`。
+- `submission_code_files.submission_id → submissions.id` 使用 `ON DELETE CASCADE`；`code_test_suites.question_id → questions.id` 使用 `ON DELETE CASCADE`，生成 run 被删除时 `generated_by_run_id` 置空；run 的测试集与结果快照随 run 清理。
 - `background_jobs` 每行只允许关联一个题目或一份作业；两个外键均使用 `ON DELETE CASCADE`。
 - `conversations` 表已随后端 Agent 链路删除，不存在教师—AI 对话数据。
 

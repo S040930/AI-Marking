@@ -57,6 +57,9 @@ class GradingRun(Base):
     )
     model: Mapped[str | None] = mapped_column(String(128), nullable=True)
     reasoning_effort: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    regenerate_code_tests: Mapped[bool] = mapped_column(
+        nullable=False, default=False, server_default="false"
+    )
     applied_config: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     pending_config: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     # 遗留列:图架构下续跑状态由 LangGraph checkpointer 承载,本列已不再写入
@@ -98,6 +101,12 @@ class GradingRun(Base):
     error_message: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     attempts: Mapped[int] = mapped_column(
         Integer, default=0, server_default="0", nullable=False
+    )
+    # Generalized teacher checkpoint answer used by code-test approval. Existing
+    # teacher_verdict fields remain the durable code/report consistency record.
+    checkpoint_answer: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    checkpoint_answered_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True
     )
     # 事件转录合并去重游标
     transcript_bytes: Mapped[int] = mapped_column(

@@ -184,6 +184,7 @@ function ReviewContent({ data }: { data: SubmissionDetail }) {
             <AgentRunPanel
               submissionId={data.id}
               questionName={data.question_name}
+              hasCode={data.code_files?.length > 0}
             />
           ) : (
             <>

@@ -1,7 +1,9 @@
 """题目 rubric 提取：模型读草稿（rubric_extract）→ 确定性落库（supervisor_rubric）。
 
-题目只有 OCR、还没有可信 rubric 时，图内闭环：模型只负责从 OCR 逐字提取，提交
-工具在服务端按“引用必须是 OCR 子串且含满分、分项和等于总分”预校验；校验通过后
+题目只有 OCR、还没有可信 rubric 时，图内闭环：模型只负责从 OCR 提取结构，提交
+工具在服务端按“引用必须是 OCR 子串、分项和等于总分、条目不重复”预校验；只有
+明确等级区间允许推断百分制总分；等级制原文会原样进入评分上下文，不做拆分或改写；
+校验通过后
 由 ``supervisor_rubric`` 调用 ``save_question_rubric`` 落库。写决定不交给模型，
 任一环节失败都 fail-closed。
 """
@@ -9,14 +11,22 @@
 from __future__ import annotations
 
 import json
+import math
 from typing import Any, Callable
 
 from sqlalchemy.orm import sessionmaker
 
-from app.agent import run_store as run_repo
 from app.agent.graph.budget import ConcurrencyGate, ProviderPool, RunBudget
-from app.agent.graph.model_gateway import ModelGateway, prompt_cache_key
-from app.agent.graph.package import PackageRuntime, ingest_package
+from app.agent.graph.node_runtime import (
+    build_model_gateway,
+    graph_event_sink,
+    run_model_tool_loop,
+)
+from app.agent.graph.package import (
+    PackageRuntime,
+    ensure_package_artifact,
+    ingest_package,
+)
 from app.agent.graph.state import GradingState
 from app.agent.models import user_message
 from app.agent.prompts.loader import rubric_instructions
@@ -33,17 +43,39 @@ RUBRIC_BRIEF = (
     "题目还没有可信 rubric。请从题目 OCR 提取评分标准，逐项给出 "
     "criterion/max_score/details/source_quote，并用 submit_question_rubric 提交。"
 )
+OCR_PAGE_CHARS = 8_000
+MIN_RUBRIC_ROUNDS = 8
+MAX_RUBRIC_ROUNDS = 24
 
 
 def _parse_rubric_draft(items: list[dict[str, Any]]) -> dict[str, Any] | None:
-    """从 function_call 参数收集 rubric 草稿；后写覆盖，取最后一次提交。"""
+    """只收集服务端已校验接受的 rubric 提交。"""
+    accepted_call_ids: set[str] = set()
+    for item in items:
+        if item.get("type") != "function_call_output":
+            continue
+        output = item.get("output")
+        if isinstance(output, str):
+            try:
+                output = json.loads(output)
+            except ValueError:
+                continue
+        if isinstance(output, dict) and output.get("accepted") is True:
+            accepted_call_ids.add(str(item.get("call_id") or ""))
+
     for item in reversed(items):
         if item.get("type") != "function_call":
             continue
         if item.get("name") != TOOL_SUBMIT_QUESTION_RUBRIC:
             continue
+        call_id = str(item.get("call_id") or "")
+        if not call_id or call_id not in accepted_call_ids:
+            continue
+        raw_args = item.get("arguments")
         try:
-            args = json.loads(item.get("arguments") or "{}")
+            args = (
+                raw_args if isinstance(raw_args, dict) else json.loads(raw_args or "{}")
+            )
         except (TypeError, ValueError):
             continue
         if not isinstance(args, dict):
@@ -58,6 +90,11 @@ def _parse_rubric_draft(items: list[dict[str, Any]]) -> dict[str, Any] | None:
             "total_max_score": args.get("total_max_score"),
         }
     return None
+
+
+def _rubric_max_rounds(ocr_chars: int) -> int:
+    pages = math.ceil(max(0, ocr_chars) / OCR_PAGE_CHARS)
+    return min(MAX_RUBRIC_ROUNDS, max(MIN_RUBRIC_ROUNDS, pages + 4))
 
 
 def build_rubric_nodes(
@@ -76,26 +113,12 @@ def build_rubric_nodes(
 ):
     instructions = rubric_instructions()
 
-    def _emit(agent: str):
-        async def emit(event) -> None:
-            with session_factory() as db:
-                run_repo.append_event(
-                    db, run_id, kind=event.kind, payload=dict(event.payload)
-                )
-
-        return emit
+    emit = graph_event_sink(session_factory, run_id)
 
     def _ensure_artifact() -> dict[str, Any] | None:
-        if runtime.artifact is not None:
-            return runtime.artifact
-        with session_factory() as db:
-            sub = db.get(Submission, submission_id)
-            if sub is None:
-                return None
-            result = ingest_package(db, sub, run_id, runtime)
-        if not result.get("ok"):
-            return None
-        return runtime.artifact
+        return ensure_package_artifact(
+            session_factory, submission_id, run_id, runtime
+        )
 
     async def rubric_extract(state: GradingState) -> dict[str, Any]:
         if state.get("final"):
@@ -110,29 +133,30 @@ def build_rubric_nodes(
         if not ocr_text:
             return {"errors": ["题目 OCR 为空，无法提取 rubric"]}
         tools = add_rubric_tool(
-            build_inspection_tools(
-                InspectionContext(artifact=artifact, teacher=None)
-            ),
+            build_inspection_tools(InspectionContext(artifact=artifact, teacher=None)),
             ocr_text=ocr_text,
         )
         agent = "rubric"
-        gateway = ModelGateway(
-            provider_pool.get(agent),
-            tools,
-            instructions=instructions,
+        gateway = build_model_gateway(
+            provider_pool,
+            run_id=run_id,
             agent=agent,
+            tools=tools,
+            instructions=instructions,
             model=model,
             reasoning_effort=reasoning_effort,
-            max_rounds=4,
+            max_rounds=_rubric_max_rounds(len(ocr_text)),
             should_cancel=should_cancel,
             config_getter=config_getter,
-            cache_key=prompt_cache_key(run_id, instructions + agent),
+            terminal_tool_names={TOOL_SUBMIT_QUESTION_RUBRIC},
         )
-        async with gate.slot():
-            result = await gateway.run_tool_loop(
-                [user_message(RUBRIC_BRIEF)], _emit(agent)
-            )
-        budget.record(result.usage)
+        result = await run_model_tool_loop(
+            gateway,
+            [user_message(RUBRIC_BRIEF)],
+            emit,
+            budget=budget,
+            gate=gate,
+        )
         update: dict[str, Any] = {
             "usage": result.usage,
             "provider_state": {agent: result.provider_state},
@@ -142,7 +166,7 @@ def build_rubric_nodes(
             return update
         draft = _parse_rubric_draft(result.items)
         if draft is None:
-            update["errors"] = [result.error or "rubric 提取未提交结果"]
+            update["errors"] = [result.error or "rubric 提取未提交通过服务端校验的结果"]
             return update
         update.update(
             {

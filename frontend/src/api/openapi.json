@@ -31,6 +31,18 @@
             "title": "Message",
             "type": "string"
           },
+          "preview": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preview"
+          },
           "type": {
             "title": "Type",
             "type": "string"
@@ -119,6 +131,11 @@
               }
             ],
             "title": "Reasoning Effort"
+          },
+          "regenerate_code_tests": {
+            "default": false,
+            "title": "Regenerate Code Tests",
+            "type": "boolean"
           },
           "submission_id": {
             "title": "Submission Id",
@@ -219,6 +236,30 @@
               }
             ]
           },
+          "code_test_results": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code Test Results"
+          },
+          "code_test_suite": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code Test Suite"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -291,6 +332,11 @@
             ],
             "title": "Reasoning Effort"
           },
+          "regenerate_code_tests": {
+            "default": false,
+            "title": "Regenerate Code Tests",
+            "type": "boolean"
+          },
           "status": {
             "enum": [
               "queued",
@@ -361,6 +407,21 @@
       "AgentRunReplyRequest": {
         "additionalProperties": false,
         "properties": {
+          "action": {
+            "anyOf": [
+              {
+                "enum": [
+                  "approve_test_suite",
+                  "regenerate_test_suite"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Action"
+          },
           "note": {
             "anyOf": [
               {
@@ -374,17 +435,21 @@
             "title": "Note"
           },
           "verdict": {
-            "enum": [
-              "consistent",
-              "mismatch"
+            "anyOf": [
+              {
+                "enum": [
+                  "consistent",
+                  "mismatch"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
             ],
-            "title": "Verdict",
-            "type": "string"
+            "title": "Verdict"
           }
         },
-        "required": [
-          "verdict"
-        ],
         "title": "AgentRunReplyRequest",
         "type": "object"
       },
@@ -1850,7 +1915,7 @@
             "type": "string"
           },
           "details": {
-            "maxLength": 2000,
+            "maxLength": 20000,
             "minLength": 1,
             "title": "Details",
             "type": "string"
@@ -1876,7 +1941,7 @@
           "source_quote": {
             "anyOf": [
               {
-                "maxLength": 4000,
+                "maxLength": 20000,
                 "type": "string"
               },
               {
@@ -3059,8 +3124,53 @@
         ]
       }
     },
+    "/api/agent/providers/{name}/models": {
+      "get": {
+        "description": "返回当前通道可用的模型,供批改配置选择。",
+        "operationId": "list_provider_models_api_agent_providers__name__models_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderTestResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Provider Models",
+        "tags": [
+          "agent",
+          "agent"
+        ]
+      }
+    },
     "/api/agent/providers/{name}/test": {
       "post": {
+        "description": "测试通道连接并返回可用模型列表。",
         "operationId": "test_provider_api_agent_providers__name__test_post",
         "parameters": [
           {

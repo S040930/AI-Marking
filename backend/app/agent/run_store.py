@@ -41,6 +41,7 @@ def create_run(
     workspace_path: str = "",
     model: str | None = None,
     reasoning_effort: str | None = None,
+    regenerate_code_tests: bool = False,
 ) -> GradingRun:
     """创建 run;已有活跃 run 时返回 409 语义由调用方处理。"""
     run = GradingRun(
@@ -49,6 +50,7 @@ def create_run(
         graph_version=1,
         model=model,
         reasoning_effort=reasoning_effort,
+        regenerate_code_tests=regenerate_code_tests,
         status=GradingRunStatus.queued,
         workspace_path=workspace_path,
     )
@@ -422,6 +424,8 @@ def save_checkpoint(
     run.teacher_verdict = None
     run.teacher_note = None
     run.teacher_answered_at = None
+    run.checkpoint_answer = None
+    run.checkpoint_answered_at = None
     run.checkpoint = checkpoint
     run.checkpoint_asked_at = now
     run.checkpoint_expires_at = now + timedelta(seconds=dwell_seconds)
@@ -490,24 +494,6 @@ def mark_configuration_applied(
     run = _worker_run(db, run, claim_token)
     run.applied_config = dict(config)
     run.pending_config = None
-    db.commit()
-
-
-def mark_configuration_failed(
-    db: Session, run: GradingRun, *, claim_token: str | None = None
-) -> None:
-    """Clear a pending update while retaining the last applied snapshot."""
-    run = _worker_run(db, run, claim_token)
-    run.pending_config = None
-    db.commit()
-
-
-def update_usage(db: Session, run_id: int, usage: dict[str, Any]) -> None:
-    """持久化跨回合累计 usage(整字典覆盖,由 runner 维护累计)。"""
-    run = db.get(GradingRun, run_id)
-    if run is None:
-        return
-    run.usage = dict(usage)
     db.commit()
 
 

@@ -11,10 +11,7 @@ import {
   X,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import {
-  useCreateSubmission,
-  type SubmissionCodeInput,
-} from '@/api/submissions';
+import { useCreateSubmission, type SubmissionCodeInput } from '@/api/submissions';
 import { useQuestions } from '@/api/questions';
 import { Button } from '@/components/ui/button';
 import {
@@ -38,22 +35,12 @@ import {
 import { errorMessage } from '@/lib/questionErrors';
 import { useLanguage } from '@/i18n';
 import { PageHeader } from '@/components/common/PageHeader';
-
-// 镜像后端 code_manifest.auto_question_number：文件名 q<N>.<ext> 自动推导小题号
-function autoQuestionNumber(filename: string): number | null {
-  const match = /q(\d+)\.[A-Za-z0-9_.-]+$/i.exec(filename);
-  return match ? Number(match[1]) : null;
-}
-
-function formatZipSize(bytes: number): string {
-  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
-}
-
-interface CodeEntry {  id: string;
-  file: File;
-  questionNumber: string;
-}
+import {
+  autoQuestionNumber,
+  buildSubmissionCodeInputs,
+  formatZipSize,
+  type CodeEntry,
+} from '@/lib/submissionUpload';
 
 export default function UploadSubmissionPage() {
   const { t } = useLanguage();
@@ -188,32 +175,33 @@ export default function UploadSubmissionPage() {
     setEntrypointIds({});
   };
 
-  const validateCodeInputs = (): SubmissionCodeInput[] | null => {
-    if (codeEntries.length === 0) return [];
-    for (const entry of codeEntries) {
-      const questionNumber = Number(entry.questionNumber);
-      if (!Number.isInteger(questionNumber) || questionNumber < 1) {
+  const validateCodeInputs = () => {
+    const result = buildSubmissionCodeInputs(codeEntries, entrypointIds);
+    if (result.ok === false) {
+      const error = result.error;
+      if (error.type === 'invalid_question') {
         toast.error(
-          `${t('「')}${entry.file.name}${t('」的小题号必须是正整数')}`,
+          `${t('「')}${error.filename}${t('」的小题号必须是正整数')}`,
         );
-        return null;
-      }
-    }
-    const inputs: SubmissionCodeInput[] = [];
-    for (const entry of codeEntries) {
-      const questionNumber = Number(entry.questionNumber);
-      // 小题号还没填的文件先不要求入口;上面已拦截非法题号,这里必然有效
-      if (entrypointIds[questionNumber] === undefined) {
+      } else {
         toast.error(t('每道小题需各选一个入口文件'));
-        return null;
       }
-      inputs.push({
-        file: entry.file,
-        questionNumber,
-        entrypoint: entrypointIds[questionNumber] === entry.id,
-      });
+      return null;
     }
-    return inputs;
+    return result.inputs;
+  };
+
+  const submit = (file: File, codeInputs?: SubmissionCodeInput[]) => {
+    createMutation.mutate(
+      { file, questionId, codeInputs: codeInputs?.length ? codeInputs : undefined },
+      {
+        onSuccess: (res) => {
+          toast.success(t('作业已上传，正在进入批改流程'));
+          navigate(`/review/${res.id}`);
+        },
+        onError: (error) => toast.error(errorMessage(error)),
+      },
+    );
   };
 
   const handleSubmit = () => {
@@ -227,31 +215,12 @@ export default function UploadSubmissionPage() {
     }
     if (zipMode) {
       // ZIP:后端解包自动分类,不带散装代码清单
-      createMutation.mutate(
-        { file: pdf, questionId },
-        {
-          onSuccess: (res) => {
-            toast.success(t('作业已上传，正在进入批改流程'));
-            navigate(`/review/${res.id}`);
-          },
-          onError: (error) => toast.error(errorMessage(error)),
-        },
-      );
+      submit(pdf);
       return;
     }
     const codeInputs = validateCodeInputs();
     if (codeInputs === null) return;
-
-    createMutation.mutate(
-      { file: pdf, questionId, codeInputs: codeInputs.length > 0 ? codeInputs : undefined },
-      {
-        onSuccess: (res) => {
-          toast.success(t('作业已上传，正在进入批改流程'));
-          navigate(`/review/${res.id}`);
-        },
-        onError: (error) => toast.error(errorMessage(error)),
-      },
-    );
+    submit(pdf, codeInputs);
   };
 
   return (

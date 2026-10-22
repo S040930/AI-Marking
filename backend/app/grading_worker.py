@@ -24,7 +24,7 @@ from app.agent.workspace import cleanup_expired_workspaces, materialize_workspac
 from app.db.session import SessionLocal, engine
 from app.domain.grading_run import GradingRunStatus
 from app.models.grading_run import GradingRun
-from app.services.code_runner import sandbox_readiness
+from app.services.code_runner_runtime import sandbox_readiness
 
 logger = logging.getLogger(__name__)
 

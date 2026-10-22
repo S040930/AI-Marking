@@ -9,14 +9,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.agent.artifacts import (
     build_package_artifact,
     make_package_digest,
     store_package_artifact,
 )
-from app.application import grading_workflow as workflow
+from app.application import grading_package as grading_package
 from app.core.errors import ApplicationError
 from app.models.submission import Submission
 
@@ -30,6 +30,28 @@ class PackageRuntime:
     context_hash: str | None = None
     rubric_handle: str | None = None
     rubric_ocr_text: str | None = None
+
+
+def ensure_package_artifact(
+    session_factory: sessionmaker[Session],
+    submission_id: int,
+    run_id: int,
+    runtime: PackageRuntime,
+    *,
+    allow_missing_rubric: bool = True,
+) -> dict[str, Any] | None:
+    if runtime.artifact is not None:
+        return runtime.artifact
+    with session_factory() as db:
+        submission = db.get(Submission, submission_id)
+        if submission is None:
+            return None
+        result = ingest_package(db, submission, run_id, runtime)
+    if not result.get("ok") or (
+        result.get("needs_rubric") and not allow_missing_rubric
+    ):
+        return None
+    return runtime.artifact
 
 
 def ingest_package(
@@ -50,7 +72,7 @@ def ingest_package(
     needs_rubric = False
     try:
         while True:
-            response = workflow.open_grading_package(db, sub, continuation)
+            response = grading_package.open_grading_package(db, sub, continuation)
             if response.needs_rubric:
                 runtime.rubric_handle = response.rubric_handle
                 runtime.rubric_ocr_text = response.question_ocr_text or ""

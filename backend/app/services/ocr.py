@@ -306,6 +306,20 @@ async def _request_with_retry(
     )
 
 
+def _job_response_data(response: httpx.Response, action: str) -> dict:
+    try:
+        body = response.json()
+        if body.get("code") != 0:
+            raise BusinessError(
+                f"PaddleOCR-VL {action}失败: {body.get('msg', body)}"
+            )
+        return body["data"]
+    except (BusinessError, OCRError):
+        raise
+    except (KeyError, TypeError, ValueError) as exc:
+        raise BusinessError(f"PaddleOCR-VL {action}失败: {exc}") from exc
+
+
 def _combine_page_texts(pages: list[dict]) -> str:
     """按页序拼接 layoutParsingResults 的 markdown 文本;结构异常页跳过。"""
     texts: list[str] = []
@@ -397,12 +411,8 @@ async def _ocr_via_async_jobs(
             ),
             "提交任务",
         )
-        submitted = response.json()
-        if submitted.get("code") != 0:
-            raise BusinessError(
-                f"PaddleOCR-VL 提交任务失败: {submitted.get('msg', submitted)}"
-            )
-        job_id = submitted["data"]["jobId"]
+        submitted = _job_response_data(response, "提交任务")
+        job_id = submitted["jobId"]
     except (BusinessError, OCRError):
         raise
     except (KeyError, TypeError, ValueError) as exc:
@@ -416,13 +426,7 @@ async def _ocr_via_async_jobs(
                 lambda: client.get(f"{job_url}/{job_id}", headers=headers),
                 "查询任务",
             )
-            status_data = response.json()
-            if status_data.get("code") != 0:
-                raise BusinessError(
-                    f"PaddleOCR-VL 查询任务失败: "
-                    f"{status_data.get('msg', status_data)}"
-                )
-            job = status_data["data"]
+            job = _job_response_data(response, "查询任务")
             state = job["state"]
         except (BusinessError, OCRError):
             raise

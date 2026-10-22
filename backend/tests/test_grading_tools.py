@@ -59,7 +59,7 @@ def grading_env(db_session):
 
 
 def _rubric_item_id(db, sub) -> str:
-    from app.application.grading_workflow import resolve_submission_rubric
+    from app.application.grading_package import resolve_submission_rubric
 
     return resolve_submission_rubric(db, sub).definition.items[0].rubric_item_id
 

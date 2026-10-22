@@ -12,6 +12,7 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import update
 
+from app.application import grading_package
 from app.application import grading_workflow as workflow
 from app.application.locking import lock_submission_after_question
 from app.core.errors import ConflictError
@@ -24,7 +25,7 @@ from app.services.config import upsert_config
 
 @pytest.fixture
 def assignment(db_session):
-    workflow._package_cache.clear()
+    grading_package._package_cache.clear()
     question = Question(
         id="version-regression",
         name="Version test",
@@ -44,7 +45,7 @@ def assignment(db_session):
     db_session.commit()
     configure(db_session, 100)
     yield sub
-    workflow._package_cache.clear()
+    grading_package._package_cache.clear()
 
 
 def configure(db, maximum):
@@ -62,7 +63,7 @@ def configure(db, maximum):
 
 
 def open_package(db, sub, token=None):
-    return workflow.open_grading_package(db, sub, token)
+    return grading_package.open_grading_package(db, sub, token)
 
 
 def assessment(package, score=10, *, not_found=False) -> GradingSaveAssessmentRequest:
@@ -135,7 +136,7 @@ def test_code_confirmation_does_not_allow_stale_handle(db_session, assignment):
     first = open_package(db_session, assignment)
     second = open_package(db_session, assignment)
     for package in (first, second):
-        handle = workflow.load_workflow_handle(
+        handle = grading_package.load_workflow_handle(
             db_session, package.grading_handle, kind="grading"
         )
         handle.visual_confirmation = "consistent"
@@ -199,7 +200,7 @@ def test_lock_refreshes_preloaded_submission_and_question(
 
 
 def test_handle_lock_refreshes_preloaded_confirmation(db_session, assignment):
-    token = workflow.create_workflow_handle(
+    token = grading_package.create_workflow_handle(
         db_session,
         {
             "kind": "grading",
@@ -210,7 +211,7 @@ def test_handle_lock_refreshes_preloaded_confirmation(db_session, assignment):
         },
     )
     db_session.commit()
-    handle = workflow.load_workflow_handle(db_session, token, kind="grading")
+    handle = grading_package.load_workflow_handle(db_session, token, kind="grading")
     db_session.execute(
         update(GradingHandle)
         .where(GradingHandle.id == handle.id)
@@ -219,7 +220,7 @@ def test_handle_lock_refreshes_preloaded_confirmation(db_session, assignment):
     )
     db_session.commit()
     assert (
-        workflow.load_workflow_handle(
+        grading_package.load_workflow_handle(
             db_session, token, kind="grading", lock=True
         ).grading_revision
         == 2

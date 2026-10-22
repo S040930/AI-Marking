@@ -45,6 +45,7 @@ FastAPI API（本机固定单进程）
 PostgreSQL
   ├─ questions             ├─ grading_runs / grading_run_events（批改运行与事件）
   ├─ submissions           ├─ grading_handles（评分句柄与 rubric 提取句柄）
+  ├─ code_test_suites       ├─ grading_run_artifacts（评分包与代码测试快照）
   ├─ background_jobs       ├─ grading_assessment_receipts（保存幂等回执）
   └─ system_config
            ↑
@@ -55,6 +56,7 @@ PostgreSQL
            ↑
 独立批改 worker（python -m app.grading_worker，并发 1）
   ├─ 领取 grading_runs 租约并驱动内嵌 agent 引擎
+  ├─ 生成/审批题目测试集，在 macOS Seatbelt 中按项隔离运行学生代码
   ├─ 引擎回合内直接调用模型与进程内工具（评分包/rubric/证据回环/保存）
   ├─ 检查点驻留（waiting_for_teacher）与教师答复续跑
   └─ 运行中配置热切换（model/effort 下一回合生效）
@@ -63,7 +65,7 @@ PostgreSQL
 ### 核心业务边界
 
 - **题目域**：题目 PDF 上传（专门的批量上传页）、题目 OCR、题目复用、替换与删除。
-- **批改域**：网页上传学生作业、失败原记录重试、作业 OCR、`awaiting_grading` 等待批改、教师发起 AI 批改、人工复核与最终确认。
+- **批改域**：网页上传学生作业、失败原记录重试、作业 OCR、`awaiting_grading` 等待批改、题目级自动测试审批、教师发起 AI 批改、人工复核与最终确认。
 - **模型通道域**：官方 OpenAI API 通道配置（密钥只写不读）、连接测试与默认通道；ChatGPT 订阅通道通过 OAuth 登录授权（令牌自动刷新，可退出）。
 - **配置域**：OCR 与 rubric 配置。
 - **运维域**：运行摘要（`/api/admin/runtime`）与死信任务管理（`/api/admin/dead-jobs`），均受访问令牌保护。
@@ -104,6 +106,7 @@ OCR 在内部对超时 / 限流 / 5xx 进行最多 3 次短暂重试；网络重
 
 - **OCR**：单次 HTTP 尝试超时 120s，可重试错误最多 3 次并指数退避；异步任务最长等待 10 分钟。PDF 单文件上限 50MB，单任务预计峰值 200–250MB，worker 默认并发 2，目标峰值低于 1GB。
 - **批改 run**：单回合超时 900s，取消轮询 2s，`max_rounds=40`；租约 90s、心跳为租约 1/3；评分上下文硬上限 `GRADING_MAX_CONTEXT_CHARS=200000`（评分包每页 ≤40,000 字符）；句柄 TTL 24h。
+- **代码测试**：macOS Seatbelt 每项独立 profile；单项墙钟 10 秒、每份作业 180 秒、标准输出与错误输出合计 16 KiB、每进程 256 个文件描述符。内存每 100ms 采样并在 1 GiB 时终止，工作目录每 500ms 采样并在 256 MiB / 10,000 条目时终止；这是监测阈值，不是硬配额。worker 并发 1；宿主机暂存最多约 200 MiB/作业，数据按 1 MiB 块流式处理，不整体读入内存。
 - **uploads 清理**：时间为 O(F)（F 为上传目录文件数），只保留 250 个候选路径的内存批次；每批执行 4 次受路径集合约束的引用查询，不全表加载。批改工作区（`uploads/grading-workspaces`）由 `cleanup_expired_workspaces` 单独管理生命周期。
 - **Excel 成绩导出**：按题目以 500 行游标批次读取已审阅记录，时间为 O(N + D)（N 为作业数、D 为评分项明细数）；XlsxWriter 使用 constant-memory 写入。
 
@@ -120,18 +123,19 @@ OCR 在内部对超时 / 限流 / 5xx 进行最多 3 次短暂重试；网络重
 9. **题目新版暂存切换**：新版文档统一生成 PDF 后进入持久化 OCR 队列；成功后原子切换，失败时旧题目继续可用。
 10. **最终评分单一入口**：批改 agent 只保存待确认建议；只有教师显式确认才写入 `reviewed`。`POST /submissions/{id}/finalize` 是写入最终评分的唯一入口，必填 `expected_revision`；锁内校验失败返回 409。
 11. **测试显式建模题目关系**：测试不得自动为 `Submission` 注入默认题目；凡是创建作业记录，都必须显式创建 `Question` 并通过 `question` 或 `question_id` 关联，以避免绕过生产约束。
-12. **批改发起单一入口**：批改 run 只能由教师在评审页 `AgentRunPanel` 发起（`POST /api/agent/runs`，须 `awaiting_grading` 且无活跃 run）；上传页与题目页不再有预填/复制提示词等旁路。含代码作业在 run 内触发教师检查点（自愿确认：可先在本地运行学生代码后核对）。
+12. **批改发起单一入口**：批改 run 只能由教师在评审页 `AgentRunPanel` 发起（`POST /api/agent/runs`，须 `awaiting_grading` 且无活跃 run）；上传页与题目页不再有预填/复制提示词等旁路。含代码作业先审批题目级自动测试，再运行测试并经过代码与报告一致性检查点。
 13. **运行与检查点的持久化所有权**：run 由独立 worker 以租约领取，检查点驻留时释放租约并可跨夜（句柄 TTL 24h）；恢复策略（过期租约、worker 关闭、检查点释放）统一为 `_recover_run`，失效 worker 不得覆盖恢复后的记录。运行中允许切 model/effort（下一回合生效），不允许切 provider（会话绑定）。
 14. **本地 API 代理固定 IPv4**：Vite 将 `/api` 转发到 `127.0.0.1:8000`，避免 `localhost` 被优先解析为 IPv6 `::1` 而后端只监听 IPv4 时产生"网络连接异常"。
-15. **报告—代码联动证据**：网页上传页支持一份 ZIP 作业（报告 PDF + 文件名以小题号结尾的代码 + 数据集，如 `task3.py`/`q3.py`），后端解包自动分类，数据集落库 `submission_code_input_files` 并随批改物化到隔离工作区；前端上传前仅读中央目录做只读预览。后端只保存源码与 SHA-256，不执行学生代码。
+15. **报告—代码联动证据**：网页上传页支持一份 ZIP 作业（报告 PDF + 文件名以小题号结尾的代码 + 数据集，如 `task3.py`/`q3.py`），后端解包自动分类，数据集落库 `submission_code_input_files` 并只读暂存到每个小题的 Seatbelt 输入目录；前端上传前仅读中央目录做只读预览。
 16. **统一 rubric 解析**：题目可信 OCR 提取快照（agent 提交、服务端确定性校验）优先，其次配置的结构化 rubric，最后是内置默认；网页与批改 agent 使用同一 Resolver、snapshot ID 和逐项校验。
 17. **证据化评分**：agent 按权威 rubric 对每个评分项一次完成证据化评分（证据可定位、零分且无内容可用 `not_found` 免证据）；独立复核是保留的数据能力，教师审核才是最终安全阀。
-18. **agent 工具契约收敛**：模型可见工具固定为 5 个（打开评分包、保存题目 rubric、确认代码一致性、保存评分、请求教师确认）；`request_id`、句柄、submission/run 身份一律服务端注入，模型不可见；评分包不包含后端执行信息，评分政策只由评分包提供。题目 rubric 由 agent 在 `needs_rubric` 分支从题目 OCR 提取，服务端以"引用必须是 OCR 原文子串且包含满分、各项满分之和等于总分、评分项不重复"确定性校验后写入权威快照。
-19. **本地文件按内容寻址**：PDF 使用 SHA-256 作为共享实体路径，原始文件名只作为记录元数据保留；清理和题目替换删除前会查询题目、作业及替换引用，永不删除仍被引用的文件。开发依赖由 `scripts/clean-local` 和 `scripts/bootstrap` 按需清理、恢复（uv 锁文件为唯一事实源）。
+18. **agent 工具契约收敛**：工具按图节点白名单开放；评分分支可读取当前 run 经服务端验证的代码测试结果，题目测试生成分支只开放测试集提交工具。`request_id`、句柄、submission/run 身份一律服务端注入，模型不可见；评分包不包含后端执行信息，评分政策只由评分包提供。题目 rubric 由 agent 在 `needs_rubric` 分支从题目 OCR 提取，服务端校验原文引用、分项总分与条目唯一性后写入权威快照；等级制 rubric 保留原文表格并原样交给评分 agent，只有明确的多个等级区间可支持推断其百分制总分。
+19. **本地文件按内容寻址**：PDF 使用 SHA-256 作为共享实体路径，原始文件名只作为记录元数据保留；清理和题目替换删除前会查询题目、作业及替换引用，永不删除仍被引用的文件。开发依赖由 `scripts/clean-local` 和 `scripts/bootstrap` 按需清理、恢复；`uv.lock` 是唯一事实源，`requirements-dev.txt` 与 `requirements-prod.txt` 是供 pip 部署工具使用的精确版本及哈希导出。
 20. **题目 ID 为文件名 slug**：`questions.id` 由上传文件名去扩展名生成稳定 slug 字符串（如 `DTS208TC_CW1_Paper`），不再使用自增整数；id 在创建时确定且不随替换/重试 OCR 变化，同名重复上传返回 409 拒绝，避免 ID 跳号与删除复用歧义。
 21. **成绩导出只读快照**：`GET /api/submissions/export.xlsx` 只读取指定题目的 `reviewed` 最终成绩，以用户输入的及格线和当前界面语言生成三表 Excel；不读取 OCR/PDF/代码、不写数据库、不持久化导出文件，响应结束即删除临时文件。得分率和达标状态保留为工作簿公式，统计文字不调用模型。
 22. **分层依赖单向向内**：`api → agent → application → services → core/domain`，由 `tests/test_architecture_boundaries.py` 强制（含 agent 四组 AST 规则：agent 不得引用 api；providers 只许标准库/httpx/core/agent；application/services 不得引用 agent）。错误类型统一在 `app/core/errors.py`；跨实体写事务必须位于 application 用例函数，API 层只做参数解析与序列化。
 23. **评分来源可审计**：建议元数据记录通道、rubric 来源与快照、context hash、revision、request/payload hash 与生成时间（`agent_metadata` 键；v12 及更早历史数据为 `mcp_metadata`，读侧兼容）。教师页展示"AI 批改"来源与 rubric 来源徽标。
+24. **代码测试版本与执行隔离**：测试集只根据题目 OCR 和可信 rubric 生成，按题目版本存储并由教师批准；每次 run 保存实际套件与逐项结果快照，agent 的测试证据由服务端按 run/version/quote 核验。Python 3.12.13、R 4.5.2 和 Java 11.0.28 仅在 macOS Seatbelt profile 下运行；profile 默认拒绝、禁网、禁止子进程，并把写入限制到每项工作目录。Notebook 不自动执行。内存和磁盘采用采样阈值，不承诺硬配额；Seatbelt 或运行时自检失败时批改 fail-closed。
 
 评分句柄按绑定版本校验，评分包缓存包含权威 rubric 快照；批改 run 的租约过期、优雅关闭与检查点释放共享恢复规则，详细状态与资源边界见 agent-grading 文档。
 
@@ -139,9 +143,10 @@ OCR 在内部对超时 / 限流 / 5xx 进行最多 3 次短暂重试；网络重
 
 | 主题 | 路径 | 说明 |
 |---|---|---|
-| 模块化单体架构 | [docs/architecture/modular-monolith.md](docs/architecture/modular-monolith.md) | 分层边界、事务与锁、运行模型、SSE、契约及资源边界 |
+| 模块化单体架构 | [docs/architecture/modular-monolith.md](docs/architecture/modular-monolith.md) | 分层边界、批改用例模块职责、事务与锁、运行模型、SSE、契约及资源边界 |
 | 内嵌批改 agent | [docs/architecture/langgraph-grading.md](docs/architecture/langgraph-grading.md) | 图拓扑、工具契约、检查点跨夜、通道配置、API 一览与恢复规则 |
-| agent 改造计划与记录 | [docs/architecture/agent-refactor.md](docs/architecture/agent-refactor.md) | 阶段 0-7 计划、默认决策、迁移与验收记录 |
+| AI 代码自动测试 | [docs/architecture/code-testing.md](docs/architecture/code-testing.md) | 测试集生成与审批、版本快照、macOS Seatbelt 隔离与采样资源阈值 |
+| agent 改造历史记录 | [docs/architecture/agent-refactor.md](docs/architecture/agent-refactor.md) | 阶段 0-7 的计划与实施记录；当前图运行设计以 langgraph-grading.md 为准 |
 | 历史架构升级 P0-P5 | [docs/architecture/upgrade-p0-p5.md](docs/architecture/upgrade-p0-p5.md) | 早期演进记录；当前决策以模块化单体文档为准 |
 | 协同评分页设计 | [docs/frontend/review-page.md](docs/frontend/review-page.md) | 两栏布局、AgentRunPanel、表单式人工改分、finalize 确认流程 |
 | 前端 i18n 约定 | [docs/frontend/i18n.md](docs/frontend/i18n.md) | 「中文即 key」的单字典机制、增删改规则、常见误判与最小验证路由 |
@@ -149,8 +154,8 @@ OCR 在内部对超时 / 限流 / 5xx 进行最多 3 次短暂重试；网络重
 
 ## 快速开始
 
-- **首次使用**：先在「系统设置」配置 PaddleOCR 与模型通道（官方 OpenAI API key），再上传题目并等待 OCR 完成。
-- **批改一份作业**：作业上传页提交报告 PDF（或含全部文件的 ZIP）→ 自动跳转评审页 → 选择模型与思考强度 → 「开始批改」→ 含代码作业按提示完成教师检查点 → 建议生成后人工复核并确认最终成绩。
+- **首次使用**：先在「系统设置」配置 PaddleOCR，并配置官方 OpenAI API key 或登录 ChatGPT 订阅通道，再上传题目并等待 OCR 完成。
+- **批改一份作业**：作业上传页提交报告 PDF（或含全部文件的 ZIP）→ 自动跳转评审页 → 选择模型与思考强度 → 「开始批改」→ 含代码作业首次先批准自动测试集，再完成代码与报告检查点 → 建议生成后人工复核并确认最终成绩。
 - **本地开发**：配置好数据库后运行 `./start.sh`（自动校验依赖（uv）、迁移数据库、校验后端身份并启动前端、后端、任务 worker 与批改 worker，热重载）。前端严格使用 `5173`，后端严格使用 `8000`；端口被占用时直接报错，避免误连到错误应用。
 - **生产部署**：运行 `./start.prod.sh`（单 API 进程、单任务 worker、单批改 worker、无 reload、前端生产构建预览）；`WORKERS` 仅允许为 1。
 
@@ -166,7 +171,7 @@ OCR 在内部对超时 / 限流 / 5xx 进行最多 3 次短暂重试；网络重
 | 批改 agent `backend/app/agent/**` | `cd backend && pytest -q tests/test_agent_runner.py tests/test_grading_tools.py tests/test_model_gateway.py tests/test_prompt_policy_sync.py` | 全部通过（含图/网关/提示词-工具契约同步测试） | 任一失败时停止；提示词契约失败必须同步 `app/agent/prompts/*.md` 与节点白名单（`graph/tool_guard.py`） |
 | 前端 `frontend/` | `cd frontend && npm run lint`；组件/交互改动追加 `npm run test:run`；构建或路由改动追加 `npm run build` | 各命令退出码为 0；build 完成且无 TypeScript/Vite 错误 | 任一 lint、test 或 build 失败时停止，不以 dev server 或人工点选结果替代 |
 | 数据库迁移 `backend/` | `cd backend && .venv/bin/alembic upgrade head`，随后 `.venv/bin/alembic current` | upgrade 退出码为 0；current 能输出当前迁移版本 | 数据库不可连接、迁移失败或版本未更新时停止，不继续运行依赖新 schema 的服务检查 |
-| API 契约变更 | `cd backend && PYTHONPATH=. .venv/bin/python scripts/export_openapi.py ../frontend/src/api/openapi.json` → `cd frontend && npm run api:generate && npm run api:check` | `api:check` 退出码为 0（生成物与提交一致） | 契约漂移或生成失败时停止 |
+| API 契约变更 | `cd backend && PYTHONPATH=. .venv/bin/python scripts/export_openapi.py ../frontend/src/api/openapi.json` → `cd frontend && npm run api:generate && npm run api:check` | `api:check` 退出码为 0（当前 OpenAPI 与工作树中的生成类型一致） | 契约漂移或生成失败时停止 |
 | 前端 i18n 字典（仅 `src/i18n/index.tsx` 条目增删，未触碰任何 `t()` 调用点与组件逻辑） | `cd frontend && npm run lint` | 退出码为 0 | 一旦改动涉及 `t()` 调用点或语言切换逻辑，即回归「前端 `frontend/`」行的完整检查；详见 [docs/frontend/i18n.md](docs/frontend/i18n.md) |
 
 选择完最小集合后，记录实际命令、工作目录、最终修订和结果；跨域改动必须合并各涉及行，并在最后一次代码或迁移改动后重跑整组检查。

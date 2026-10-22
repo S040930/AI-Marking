@@ -64,19 +64,23 @@ def new_submission_ocr_job(submission_id: int) -> BackgroundJob:
     )
 
 
-def reset_question_ocr_job(db: Session, question_id: str) -> None:
-    """失败题目重新入队；已有死信任务复用同一行。"""
-    job = (
-        db.execute(
-            select(BackgroundJob)
-            .where(BackgroundJob.question_id == question_id)
-            .with_for_update()
-        )
-    ).scalar_one_or_none()
+def _reset_job(
+    db: Session,
+    *,
+    owner_column,
+    owner_id: str | int,
+    job_type: BackgroundJobType,
+    create_job,
+) -> None:
+    job = db.scalar(
+        select(BackgroundJob)
+        .where(owner_column == owner_id)
+        .with_for_update()
+    )
     if job is None:
-        db.add(new_question_ocr_job(question_id))
+        db.add(create_job(owner_id))
         return
-    job.job_type = BackgroundJobType.question_ocr
+    job.job_type = job_type
     job.status = BackgroundJobStatus.queued
     job.attempts = 0
     job.available_at = utc_now_naive()
@@ -84,50 +88,39 @@ def reset_question_ocr_job(db: Session, question_id: str) -> None:
     job.worker_id = None
     job.claim_token = None
     job.last_error = None
+
+
+def reset_question_ocr_job(db: Session, question_id: str) -> None:
+    """失败题目重新入队；已有死信任务复用同一行。"""
+    _reset_job(
+        db,
+        owner_column=BackgroundJob.question_id,
+        owner_id=question_id,
+        job_type=BackgroundJobType.question_ocr,
+        create_job=new_question_ocr_job,
+    )
 
 
 def reset_question_replace_job(db: Session, question_id: str) -> None:
     """新版题目 OCR 入队；复用该题目的死信任务。"""
-    job = (
-        db.execute(
-            select(BackgroundJob)
-            .where(BackgroundJob.question_id == question_id)
-            .with_for_update()
-        )
-    ).scalar_one_or_none()
-    if job is None:
-        db.add(new_question_replace_job(question_id))
-        return
-    job.job_type = BackgroundJobType.question_replace
-    job.status = BackgroundJobStatus.queued
-    job.attempts = 0
-    job.available_at = utc_now_naive()
-    job.lease_expires_at = None
-    job.worker_id = None
-    job.claim_token = None
-    job.last_error = None
+    _reset_job(
+        db,
+        owner_column=BackgroundJob.question_id,
+        owner_id=question_id,
+        job_type=BackgroundJobType.question_replace,
+        create_job=new_question_replace_job,
+    )
 
 
 def reset_submission_ocr_job(db: Session, submission_id: int) -> None:
     """失败作业在原记录上重新入队。"""
-    job = (
-        db.execute(
-            select(BackgroundJob)
-            .where(BackgroundJob.submission_id == submission_id)
-            .with_for_update()
-        )
-    ).scalar_one_or_none()
-    if job is None:
-        db.add(new_submission_ocr_job(submission_id))
-        return
-    job.job_type = BackgroundJobType.submission_ocr
-    job.status = BackgroundJobStatus.queued
-    job.attempts = 0
-    job.available_at = utc_now_naive()
-    job.lease_expires_at = None
-    job.worker_id = None
-    job.claim_token = None
-    job.last_error = None
+    _reset_job(
+        db,
+        owner_column=BackgroundJob.submission_id,
+        owner_id=submission_id,
+        job_type=BackgroundJobType.submission_ocr,
+        create_job=new_submission_ocr_job,
+    )
 
 
 def claim_next_job(

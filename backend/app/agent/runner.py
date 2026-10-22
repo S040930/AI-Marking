@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+import uuid
 from contextlib import suppress
 from typing import Any
 
@@ -98,11 +99,30 @@ def _build_provider(
             with session_factory() as db:
                 return load_chatgpt_tokens(db)
 
+        # 跨进程单飞:本进程与 API 进程共用同一个 refresh_token,只能一方去刷新
+        lease_owner = uuid.uuid4().hex
+
+        def _acquire_lease(ttl_seconds: float) -> bool:
+            from app.services.chatgpt_refresh_lease import acquire_refresh_lease
+
+            with session_factory() as db:
+                return acquire_refresh_lease(
+                    db, owner=lease_owner, ttl_seconds=ttl_seconds
+                )
+
+        def _release_lease() -> None:
+            from app.services.chatgpt_refresh_lease import release_refresh_lease
+
+            with session_factory() as db:
+                release_refresh_lease(db, owner=lease_owner)
+
         return create_provider(
             provider_name,
             tokens=tokens,
             token_sink=_save_tokens,
             token_loader=_load_tokens,
+            refresh_lease_acquire=_acquire_lease,
+            refresh_lease_release=_release_lease,
             default_model=model or config.get(CHATGPT_DEFAULT_MODEL_KEY) or None,
             reasoning_effort=reasoning_effort or None,
             session_id=session_id,

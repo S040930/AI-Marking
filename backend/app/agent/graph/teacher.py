@@ -15,7 +15,7 @@ from sqlalchemy.orm import sessionmaker
 from app.agent import run_store as run_repo
 from app.agent.graph.package import PackageRuntime, ingest_package
 from app.agent.graph.state import GradingState
-from app.application.grading_workflow import build_context_parts
+from app.application.grading_package import build_context_parts
 from app.models.grading_run import GradingRun
 from app.models.submission import Submission
 

@@ -195,6 +195,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agent/providers/{name}/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Provider Models
+         * @description 返回当前通道可用的模型,供批改配置选择。
+         */
+        get: operations["list_provider_models_api_agent_providers__name__models_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agent/providers/{name}/test": {
         parameters: {
             query?: never;
@@ -204,7 +224,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Test Provider */
+        /**
+         * Test Provider
+         * @description 测试通道连接并返回可用模型列表。
+         */
         post: operations["test_provider_api_agent_providers__name__test_post"];
         delete?: never;
         options?: never;
@@ -822,6 +845,10 @@ export interface components {
             expires_at?: string | null;
             /** Message */
             message: string;
+            /** Preview */
+            preview?: {
+                [key: string]: unknown;
+            } | null;
             /** Type */
             type: string;
         };
@@ -846,6 +873,11 @@ export interface components {
             provider?: string | null;
             /** Reasoning Effort */
             reasoning_effort?: string | null;
+            /**
+             * Regenerate Code Tests
+             * @default false
+             */
+            regenerate_code_tests: boolean;
             /** Submission Id */
             submission_id: number;
         };
@@ -890,6 +922,14 @@ export interface components {
              */
             attempts: number;
             checkpoint?: components["schemas"]["AgentCheckpointOut"] | null;
+            /** Code Test Results */
+            code_test_results?: {
+                [key: string]: unknown;
+            } | null;
+            /** Code Test Suite */
+            code_test_suite?: {
+                [key: string]: unknown;
+            } | null;
             /**
              * Created At
              * Format: date-time
@@ -919,6 +959,11 @@ export interface components {
             /** Reasoning Effort */
             reasoning_effort?: string | null;
             /**
+             * Regenerate Code Tests
+             * @default false
+             */
+            regenerate_code_tests: boolean;
+            /**
              * Status
              * @enum {string}
              */
@@ -936,13 +981,12 @@ export interface components {
         };
         /** AgentRunReplyRequest */
         AgentRunReplyRequest: {
+            /** Action */
+            action?: ("approve_test_suite" | "regenerate_test_suite") | null;
             /** Note */
             note?: string | null;
-            /**
-             * Verdict
-             * @enum {string}
-             */
-            verdict: "consistent" | "mismatch";
+            /** Verdict */
+            verdict?: ("consistent" | "mismatch") | null;
         };
         /** AssessmentReviewItemOut */
         AssessmentReviewItemOut: {
@@ -2061,6 +2105,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProviderListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_provider_models_api_agent_providers__name__models_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProviderTestResponse"];
                 };
             };
             /** @description Validation Error */

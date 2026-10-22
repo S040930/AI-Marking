@@ -22,6 +22,8 @@ from sqlalchemy.orm import sessionmaker
 
 from app.agent.models import ToolResult, ToolSpec
 from app.agent.tools import ToolRegistry
+from app.agent.tools.scoring import QUESTION_RUBRIC_PARAMETERS
+from app.application import grading_package
 from app.application import grading_workflow as workflow
 from app.models.submission import Submission
 from app.schemas.grading import (
@@ -96,8 +98,8 @@ def _open_package(ctx: GradingToolContext, args: dict[str, Any]) -> ToolResult:
     if continuation_token is not None and not isinstance(continuation_token, str):
         return ToolResult(ok=False, error="continuation_token 必须是字符串")
     with ctx.session_factory() as db:
-        sub = workflow.get_submission_or_404(db, ctx.submission_id)
-        response = workflow.open_grading_package(db, sub, continuation_token)
+        sub = grading_package.get_submission_or_404(db, ctx.submission_id)
+        response = grading_package.open_grading_package(db, sub, continuation_token)
     if response.rubric_handle:
         ctx.rubric_handle = response.rubric_handle
     if response.grading_handle:
@@ -206,9 +208,7 @@ def _save_assessment(ctx: GradingToolContext, args: dict[str, Any]) -> ToolResul
     if not isinstance(raw, dict):
         return ToolResult(ok=False, error="assessment 必须是对象")
     if "request_id" in raw:
-        return ToolResult(
-            ok=False, error="request_id 由服务端生成,请不要提交"
-        )
+        return ToolResult(ok=False, error="request_id 由服务端生成,请不要提交")
     try:
         payload = GradingAssessmentRequest.model_validate(
             {**raw, "request_id": str(uuid.UUID(int=0))}
@@ -216,9 +216,7 @@ def _save_assessment(ctx: GradingToolContext, args: dict[str, Any]) -> ToolResul
     except ValueError as exc:
         return ToolResult(ok=False, error=f"评分明细格式错误: {exc}")
     payload_hash = workflow.assessment_payload_hash(payload)
-    request_id = uuid.uuid5(
-        _REQUEST_ID_NAMESPACE, f"{ctx.run_id}:{payload_hash}"
-    )
+    request_id = uuid.uuid5(_REQUEST_ID_NAMESPACE, f"{ctx.run_id}:{payload_hash}")
     payload = payload.model_copy(update={"request_id": request_id})
     with ctx.session_factory() as db:
         response = workflow.save_assessment(
@@ -229,6 +227,7 @@ def _save_assessment(ctx: GradingToolContext, args: dict[str, Any]) -> ToolResul
                 assessment=payload,
                 client=ctx.client,
             ),
+            run_id=ctx.run_id,
         )
     return ToolResult(ok=True, output=response.model_dump(mode="json"))
 
@@ -265,36 +264,13 @@ _SAVE_RUBRIC_SPEC = ToolSpec(
     description=(
         "在 open_grading_package 返回 needs_rubric=true 后,保存从题目 OCR"
         "提取的 rubric。status=complete 时逐项提交 criterion/max_score/"
-        "details/source_quote(引用必须是 OCR 原文子串且包含该项满分),"
+        "details/source_quote(引用必须是 OCR 原文子串且包含分项满分;多个明确等级区间"
+        "组成的整体 rubric 可推断为 100 分),"
         "total_max_score 等于各项满分之和;status=absent_or_ambiguous 时题目"
-        "没有明确 rubric,items 留空。保存后需重新打开评分包。"
+        "没有明确 rubric,items 留空。整体等级制 rubric 用一个整体评分项表示。"
+        "保存后需重新打开评分包。"
     ),
-    parameters={
-        "type": "object",
-        "properties": {
-            "status": {
-                "type": "string",
-                "enum": ["complete", "absent_or_ambiguous"],
-            },
-            "items": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "criterion": {"type": "string"},
-                        "max_score": {"type": "number"},
-                        "details": {"type": "string"},
-                        "source_quote": {"type": "string"},
-                    },
-                    "required": ["criterion", "max_score", "details", "source_quote"],
-                    "additionalProperties": False,
-                },
-            },
-            "total_max_score": {"type": "number"},
-        },
-        "required": ["status"],
-        "additionalProperties": False,
-    },
+    parameters=QUESTION_RUBRIC_PARAMETERS,
     writes=True,
 )
 

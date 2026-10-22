@@ -80,17 +80,3 @@ def ensure_run_transition(current: GradingRunStatus, target: GradingRunStatus) -
     allowed = GRADING_RUN_TRANSITIONS[current]
     if target not in allowed:
         raise ValueError(f"批改运行状态不可从 {current.value} 迁移到 {target.value}")
-
-
-class CheckpointVerdict(str, enum.Enum):
-    """教师检查点答复。"""
-
-    consistent = "consistent"
-    mismatch = "mismatch"
-
-
-class RunProvider(str, enum.Enum):
-    """模型通道。"""
-
-    openai_api = "openai_api"
-    chatgpt_sub = "chatgpt_sub"

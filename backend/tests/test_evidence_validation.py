@@ -5,7 +5,7 @@ from uuid import UUID
 
 import pytest
 
-from app.application.grading_workflow import validate_evidence_refs
+from app.application.grading_validation import validate_evidence_refs
 from app.core.errors import ValidationError
 from app.schemas.grading import GradingAssessmentRequest
 
@@ -228,6 +228,60 @@ def test_report_only_submission_accepts_locatable_report_quote():
         submission,
         _assessment_with_report_quote("The report shows 95% accuracy."),
     )
+
+
+def test_test_case_evidence_requires_current_run_result_and_exact_server_quote():
+    submission = _code_submission()
+    quote = "Q1 passed: square — 标准输出与预期一致"
+    request = _request(
+        [
+            _detail(
+                evidence_refs=[
+                    {
+                        "type": "test_case",
+                        "test_case_id": "q1-t1",
+                        "suite_version": 3,
+                        "quote": quote,
+                    }
+                ]
+            )
+        ]
+    )
+    evidence = {"q1-t1": {"suite_version": 3, "quote": quote}}
+
+    validate_evidence_refs(submission, request, test_evidence=evidence)
+
+    with pytest.raises(ValidationError, match="不属于当前批改 run"):
+        validate_evidence_refs(submission, request, test_evidence={})
+
+
+def test_test_case_evidence_rejects_forged_quote_or_suite_version():
+    submission = _code_submission()
+    request = _request(
+        [
+            _detail(
+                evidence_refs=[
+                    {
+                        "type": "test_case",
+                        "test_case_id": "q1-t1",
+                        "suite_version": 2,
+                        "quote": "Q1 passed: square — fabricated",
+                    }
+                ]
+            )
+        ]
+    )
+    evidence = {
+        "q1-t1": {
+            "suite_version": 3,
+            "quote": "Q1 passed: square — 标准输出与预期一致",
+        }
+    }
+
+    with pytest.raises(ValidationError) as caught:
+        validate_evidence_refs(submission, request, test_evidence=evidence)
+
+    assert "版本与本次运行结果不匹配" in str(caught.value.detail)
 
 
 def test_source_line_rejected_on_report_only_submission():

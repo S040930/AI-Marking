@@ -16,7 +16,11 @@ FastAPI /api/agent/*
 独立 grading_worker（python -m app.grading_worker，并发 1）
     ↓ LangGraph 主图 + Postgres checkpointer（每 run 一个 thread）
 plan → package_ingest →[缺 rubric]→ rubric_extract → supervisor_rubric → package_ingest
-     →[含代码]→ teacher_ask → teacher_wait(interrupt) → teacher_apply
+     →[含代码]→ code_test_prepare
+          →[需生成]→ code_test_generate
+          →[草稿待审批]→ code_test_ask → code_test_wait(interrupt) → code_test_apply
+          →[已批准]→ code_test_run
+          → teacher_ask → teacher_wait(interrupt) → teacher_apply
      → ensure_handles → prepare_briefs →(Send 逐项) score_item → assemble
      →[缺项]→ rescore_missing →(Send 重评) score_item
      → verify_prepare →[证据存疑]→ evidence_verify(独立模型) →(Send 重评) score_item
@@ -24,8 +28,8 @@ plan → package_ingest →[缺 rubric]→ rubric_extract → supervisor_rubric 
 （任一 fail-closed 分支 → fail → finalize）
     ↓ 每分支独立 Provider（订阅通道 turn-state 隔离）
 AgentProvider.openai_api / chatgpt_sub
-    ↓ 只读 inspection + submit_* 工具；写库仅 supervisor_rubric / supervisor_finalize
-grading_workflow / rubric / 句柄与回执（PostgreSQL）
+    ↓ 节点白名单工具；rubric/assessment 写工具仅 supervisor 节点执行，测试与检查点由受控图节点持久化
+grading_package / grading_validation / grading_workflow / rubric（PostgreSQL）
 ```
 
 ## 1.1 图运行时约束
@@ -38,8 +42,9 @@ grading_workflow / rubric / 句柄与回执（PostgreSQL）
   不能改分数网格。
 - **写权限三层**：`ToolSpec.writes` + 节点白名单（`graph/tool_guard.py`）+
   `GradingToolContext.allow_write`。评分/证据/rubric 提取分支永远拿不到写工具；
-  写决定只交给确定性节点（`supervisor_rubric` 落 rubric、`supervisor_finalize`
-  存整份评分）。
+  模型发起的 rubric 与 assessment 写工具只开放给确定性 supervisor 节点
+  （`supervisor_rubric` 落 rubric、`supervisor_finalize` 存整份评分）。测试套件、
+  run 快照与教师检查点由代码测试和检查点图节点按服务端规则持久化。
 - **教师门是结构节点**：`teacher_ask` 写库，`teacher_wait` 只 `interrupt()`，
   `teacher_apply` 校验答复；resume 从 wait 重跑，不会重复写 checkpoint。
   检查点是图节点而非模型工具，模型不再持有 `request_teacher_confirmation`。
@@ -52,9 +57,10 @@ grading_workflow / rubric / 句柄与回执（PostgreSQL）
   不静默记 0 分。
 
 - **无外部协议进程**：评分不再外包给编程助手或 codex-acp；工具调用由
-  `app/agent/tools/` 在进程内执行，业务函数复用原 MCP 时代沉淀的
-  `app/application/grading_workflow.py`（评分包、rubric 校验、证据回环、
-  回执幂等全部保留）。
+  `app/agent/tools/` 在进程内执行。application 层由
+  `grading_package.py` 管理评分包、上下文与句柄，`grading_validation.py` 统一
+  评分与证据校验，`grading_workflow.py` 负责事务性写入、锁序和幂等回执。
+  `graph/node_runtime.py` 统一节点的模型网关构造、事件落库与预算内工具循环。
 - **模型双通道**：`openai_api`（官方 Responses API）与 `chatgpt_sub`（ChatGPT
   订阅，OAuth PKCE 登录，复用同一套工具契约）；两条通道都由
   `AgentProvider.create_turn` 抽象，runner 按 run 的 `provider` 构造。
@@ -127,7 +133,7 @@ submission 状态由批改结果驱动（保存成功 → `ready_for_review`）�
 
 ## 4. 检查点与续跑
 
-含代码作业在评分前由**图节点**（不是模型工具）触发检查点：
+含代码作业在评分前先经过代码测试工作流：没有已批准版本时，测试生成节点只读取题目 OCR 与可信 rubric，教师预览并批准后，worker 在 macOS Seatbelt 中运行测试；Notebook 不自动执行。完整流程见[代码测试说明](code-testing.md)。随后再由**图节点**（不是模型工具）触发代码与报告一致性检查点：
 
 1. `teacher_ask` 把 run 落为 `waiting_for_teacher` 并写 `checkpoint_request_id`，
    **释放租约**；`teacher_wait` 只调用 `interrupt()`，续跑状态由 checkpointer
@@ -152,11 +158,17 @@ submission 状态由批改结果驱动（保存成功 → `ready_for_review`）�
   只暴露 `configured`/`available`/`plan`/`account_last4`/`expires_at`。
   `available` 要求 access_token 未过期或存在 refresh_token；过期且无法刷新
   时发起 run 返回 409，需重新登录。
-  - 令牌生命周期：`access_token` 约 10 天，到期前 60 秒自动用 `refresh_token`
-    轮换并回写；刷新做了**单飞**（同实例并发只发一次）与**失败回读**（另一个
-    进程刚轮换时直接用库里的新令牌），正常情况下无需重新登录。
+  - 登录落库：回调线程换到令牌后**立即**调用注入的 sink 落库（重试 3 次），
+    成功后才清内存副本；`/oauth/status` 只做补偿落库，**不依赖前端轮询**。
+    回调带 generation，上一代迟到的回调不会覆盖新登录。
+  - 令牌生命周期：`expires_at` 优先取 access_token 的 JWT `exp`（实测约
+    10 天），到期前 60 秒自动用 `refresh_token` 轮换并回写；刷新做了
+    **进程内单飞**、**跨进程租约**（`system_config.chatgpt_refresh_lease`，
+    TTL 60s，赢家落库后才释放）与**失败回读**，正常情况无需重新登录。
+    轮换后的令牌若落库永久失败会显式报错，不静默继续。
   - 模型清单来自 `GET /backend-api/codex/models?client_version=<codex 版本>`
     （`CODEX_CLIENT_VERSION` 可配）；**不得写死**，订阅侧模型与官方 API 不同。
+    目录为空/畸形时返回空列表，不再伪造 fallback 模型。
   - 实测 effort 白名单 `low/medium/high/xhigh/max`（目录声明的 `ultra` 会被
     400 拒绝），前端在选中订阅通道时按此收敛选项。
   - 跨回合状态用响应头 `x-codex-turn-state` 承载（端点不返回 reasoning
@@ -193,7 +205,7 @@ PUT    /api/agent/providers/default             # 默认通道
 PUT    /api/agent/providers/{name}/config       # 通道配置（null 不改、空串清除）
 POST   /api/agent/providers/{name}/test         # 连接测试
 POST   /api/agent/providers/chatgpt_sub/oauth/start   # 发起订阅登录（返回授权地址）
-GET    /api/agent/providers/chatgpt_sub/oauth/status  # 轮询登录结果（完成即落库）
+GET    /api/agent/providers/chatgpt_sub/oauth/status  # 轮询登录结果（回调已落库，这里仅补偿）
 POST   /api/agent/providers/chatgpt_sub/oauth/logout  # 退出登录并清令牌
 ```
 

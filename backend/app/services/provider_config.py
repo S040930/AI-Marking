@@ -129,13 +129,6 @@ def chatgpt_tokens_usable(tokens: dict[str, Any] | None) -> bool:
     return bool(tokens.get("refresh_token"))
 
 
-def provider_available(db: Session, name: str) -> bool:
-    """通道当前是否可直接发起 run;凭证缺失或过期返回 False。"""
-    if name == PROVIDER_CHATGPT_SUB:
-        return chatgpt_tokens_usable(load_chatgpt_tokens(db))
-    return bool(get_provider_config(db).get(OPENAI_API_KEY_KEY) or "")
-
-
 def provider_summary(db: Session) -> dict:
     """对外可安全展示的通道状态:configured/last4,绝不回显密钥。"""
     config = get_provider_config(db)

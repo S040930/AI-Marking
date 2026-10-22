@@ -28,7 +28,6 @@ CODE_EXTENSIONS = {
     ".py", ".ipynb", ".r", ".java", ".c", ".cc", ".cpp", ".cxx",
     ".h", ".hh", ".hpp", ".hxx",
 }
-ENTRYPOINT_EXTENSIONS = {".py", ".ipynb", ".r", ".java", ".c", ".cc", ".cpp", ".cxx"}
 MAX_CODE_FILES = 20
 MAX_CODE_TOTAL_BYTES = 100 * 1024 * 1024
 MAX_CODE_FILE_BYTES = 20 * 1024 * 1024
